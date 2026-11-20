@@ -139,6 +139,14 @@ namespace GameBridge
 
         // ------------------------------------------------------------------ exec (hot-loaded code)
 
+        readonly Dictionary<Assembly, string> m_ExecLoaded = new Dictionary<Assembly, string>();
+
+        static string Hash(byte[] bytes)
+        {
+            using (var sha = System.Security.Cryptography.SHA1.Create())
+                return Convert.ToBase64String(sha.ComputeHash(bytes));
+        }
+
         object Exec(Command cmd)
         {
             var dll = P.Required(cmd.Params, "dll");
@@ -159,6 +167,17 @@ namespace GameBridge
                 try { asm = Assembly.Load(bytes, File.ReadAllBytes(pdb)); } catch { asm = null; }
             }
             if (asm == null) asm = Assembly.Load(bytes);
+            // Old Mono (CS1) hands back the copy already loaded when name + version match, so a rebuilt DLL with an
+            // unchanged version would silently run stale code. Refuse that instead of running the old copy.
+            var hash = Hash(bytes);
+            string seenHash;
+            if (m_ExecLoaded.TryGetValue(asm, out seenHash))
+            {
+                if (seenHash != hash)
+                    throw new InvalidOperationException("the runtime returned an already loaded copy of " + asm.FullName
+                        + " although the DLL changed: give every build a new version (<Deterministic>false</Deterministic><AssemblyVersion>1.0.*</AssemblyVersion>)");
+            }
+            else m_ExecLoaded[asm] = hash;
             MethodInfo method = null;
             foreach (var t in asm.GetTypes())
             {

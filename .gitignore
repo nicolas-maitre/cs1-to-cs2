@@ -22,3 +22,9 @@ decompiled/
 spikes/**/samples/
 spikes/**/dumps/
 network-*.json
+
+# local game-automation output (gamectl screenshots, ad-hoc captures)
+.gamectl/
+screenshots/
+# gamectl CLI entry point (not build output)
+!tools/gamectl/bin/

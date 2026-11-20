@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Example exec library for the CS2 bridge (tools/PROTOCOL.md, "exec"). A plain class library, not a mod: it is not
+    deployed, the bridge hot-loads bin/Release/net48/HelloExec.dll on every call:
+      {"method":"exec","params":{"dll":"<abs path>\HelloExec.dll","type":"HelloExec.Hello"}}
+      {"method":"exec","params":{"dll":"...","type":"HelloExec.HelloCoroutine","args":{"frames":3}}}
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>HelloExec</AssemblyName>
+    <Nullable>disable</Nullable>
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(CS2Managed)\mscorlib.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\netstandard.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Game.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Entities.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Mathematics.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+</Project>

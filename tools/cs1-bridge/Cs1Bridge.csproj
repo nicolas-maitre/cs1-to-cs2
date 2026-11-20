@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Cities: Skylines 1 bridge mod (see tools/PROTOCOL.md). Builds against the game's own mscorlib (Mono 2,
+    .NET 3.5 profile), like spikes/m0-cs1-network-dump. `dotnet build -c Release` builds and copies the DLL into
+    CS1's local Addons\Mods\Cs1Bridge folder. CS1 notices a changed mod DLL and reloads it while the game runs.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>Cs1Bridge</AssemblyName>
+    <RootNamespace>Cs1Bridge</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <NoConfig>true</NoConfig>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- CS1's Mono 2 hands back an already-loaded assembly with the same name and version instead of loading the
+         new bytes, so every build gets a new version: CS1 then really reloads the mod when the DLL changes. -->
+    <Deterministic>false</Deterministic>
+    <AssemblyVersion>0.1.*</AssemblyVersion>
+    <NoWarn>$(NoWarn);CS7035</NoWarn>
+    <!-- CS1Managed comes from ../../local.props (see local.props.example) -->
+    <CS1ModsDir Condition="'$(CS1ModsDir)' == ''">$(LOCALAPPDATA)\Colossal Order\Cities_Skylines\Addons\Mods\$(AssemblyName)</CS1ModsDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- examples/ are separate class libraries for `exec`, not part of the mod -->
+    <Compile Remove="examples\**" />
+    <None Remove="examples\**" />
+    <Compile Include="..\bridge-common\*.cs" Link="bridge-common\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="mscorlib"><HintPath>$(CS1Managed)\mscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System"><HintPath>$(CS1Managed)\System.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Core"><HintPath>$(CS1Managed)\System.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(CS1Managed)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ICities"><HintPath>$(CS1Managed)\ICities.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ColossalManaged"><HintPath>$(CS1Managed)\ColossalManaged.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(CS1Managed)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <Target Name="DeployToCS1" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(CS1ModsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(CS1ModsDir)" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) to $(CS1ModsDir)" />
+  </Target>
+</Project>

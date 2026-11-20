@@ -42,7 +42,9 @@ It refuses any request that carries `Origin`, `Sec-Fetch-Site` or `Sec-Fetch-Mod
 {"ok":true,"game":"cs2","bridge_version":"0.1.0","protocol":1,"pid":12345,"status_age_ms":120,"status":{ ...state object... }}
 ```
 
-`status` is a snapshot that the main thread refreshes about every 15 frames. Before the first frame it is `null`.
+`status` is a snapshot that the main thread refreshes about every 15 frames. Before the first frame it is `null` and `status_age_ms` is -1. While the main thread is blocked, for example during parts of a load, the snapshot goes stale (`status_age_ms` grows).
+
+Clients must not use Node's built-in `fetch()`. It adds `Sec-Fetch-Mode`, which the bridge refuses with 403, and it gives up after 300 s. Use `node:http`, as `gamectl` does.
 
 **`POST /rpc`** needs these headers:
 - `Authorization: Bearer <token>`
@@ -125,7 +127,7 @@ Converter commands and spikes run this way without restarting the game.
    - a JSON-serializable object (dictionaries, lists, strings, numbers);
    - or a string that is JSON, which is passed through as-is;
    - or an `IEnumerator`. The bridge steps it once per frame, like a Unity coroutine. The last non-null value it yields is the result. This is for anything that needs a frame to pass, such as creating a road and then reading back the nodes the game generated.
-4. **How the DLL is loaded:** `exec` reads the DLL's bytes on every call and loads them with `Assembly.Load(bytes)`. A rebuild therefore takes effect on the next call, and the file is never locked. Old copies stay loaded until the game exits, which is fine for development.
+4. **How the DLL is loaded:** `exec` reads the DLL's bytes on every call and loads them with `Assembly.Load(bytes)`. A rebuild therefore takes effect on the next call, and the file is never locked. Old copies stay loaded until the game exits, which is fine for development. Give every build a new assembly version (`<Deterministic>false</Deterministic><AssemblyVersion>1.0.*</AssemblyVersion>`): CS1's Mono returns the copy already loaded for an unchanged name and version, and `exec` then fails with an error instead of running stale code.
 5. **Statics:** don't rely on static state surviving between calls, because each call loads a new copy. Keep state in the game world, or in a file.
 6. **New ECS systems** cannot be registered into the CS2 update loop from `exec`. Use `phase:"tool"` or a coroutine instead.
 
@@ -138,3 +140,16 @@ Converter commands and spikes run this way without restarting the game.
 
 - **Missing env var:** without `SteamAppId`, CS2 fails to initialise its platform services and floods its log.
 - **Install paths:** the install folders come from `local.props` (`CS1Managed` / `CS2Managed` are `<install>\<Game>_Data\Managed`).
+
+## CS1 notes
+
+Verified in the running game (CS1 with Unity 5.6, Mono 2) with the user's mod set:
+
+- **Enabling the mod:** CS1 keeps new local mods disabled, and there is no command-line switch that enables them. Run `tools/cs1-bridge/enable-mod.ps1 -Write` once while the game is closed. Note that `-disableMods` also disables the bridge.
+- **`exec` hot reload needs a new assembly version on every build.** Mono 2's `Assembly.Load(bytes)` returns the copy already loaded under the same name and version. A rebuilt DLL then silently runs the old code. Set `<Deterministic>false</Deterministic><AssemblyVersion>1.0.*</AssemblyVersion>` in the library's project, as `cs1-bridge/examples/HelloExec` does. A portable `.pdb` next to the DLL does no harm.
+- **One `save.load` per game session.** A second load, whether from the menu or from inside a game, hangs forever at "Custom assets loaded n/m". Loading Screen Mod Revisited throws `IndexOutOfRangeException` in `ScenesAndAssetsStatus.EnsureLines`, which kills its asset loader. The first load after a start works (40–70 s for Skibidi.02). To switch saves, `quit` and relaunch the game (`-continuelastsave` also works).
+- **While the main thread is blocked:** during `menu` (about 14 s) and parts of a load, the main thread barely ticks. Gated commands wait in the queue and run once it is free, instead of being refused. `/health` keeps answering and shows `mode:"loading"`.
+- **`quit`** works in the menu, in game and in the middle of a hung load. With a city loaded, the process takes about 55 s to exit. An RPC still waiting at exit gets a dropped connection, not a reply.
+- **`state.mode`:** `"menu"` means a `MainMenu` scene is loaded. At startup that scene sits additively under `IntroScreen`. `save_name` falls back to the game's own last loaded or saved name.
+- **`sim.set`:** in CS1, changing the speed unpauses the game, so the bridge applies `speed` before `paused`.
+- **`camera`:** `x`/`y`/`z` is the camera controller's target pivot, and the controller adjusts `y` itself. `distance` is clamped to the controller's minimum and maximum.
