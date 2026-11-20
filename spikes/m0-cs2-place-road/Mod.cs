@@ -19,11 +19,15 @@ using UnityEngine.InputSystem;
 namespace M0RoadSpike
 {
     /// <summary>
-    /// M0 spike 1. In a loaded city, hold Ctrl+Shift and press:
-    ///   1  vanilla "Small Road", 120 m straight, ~150 m in front of the camera
+    /// M0 spike 1/1b. In a loaded city, hold Ctrl+Shift and press (all at the ground point under the screen centre):
+    ///   1  vanilla "Small Road", 120 m straight
     ///   2  every generated "*-cs1conv" Road Builder road, side by side (spike 3 check)
-    ///   3  a second Small Road crossing road #1 at right angles (do crossings become intersections?)
+    ///   3  a second Small Road crossing road #1 at right angles (result: FAILS, existing edge left as Temp ghost)
     ///   4  elevated Small Road (+12 m, should become a bridge with pillars)
+    ///   5  1b: X junction, 4 arms from one centre point, all created in the same frame
+    ///   6  1b: X junction in two frames: west arm first, then 3 arms attached to its real end Node entity
+    ///   7  1b: T junction in two frames: west arm first, then east + north arms attached to the Node
+    ///   9  1b: log nodes near the last junction centre (edge count, Temp?) and count Temp edges/nodes in the world
     ///   0  log every road prefab name (RoadData) to M0RoadSpike.log
     /// Placement is permanent (CreationFlags.Permanent): no Temp entities, so the tool
     /// validation (collisions, cost) never runs, which is the same effect Anarchy achieves.
@@ -54,8 +58,17 @@ namespace M0RoadSpike
         private PrefabSystem m_PrefabSystem;
         private TerrainSystem m_TerrainSystem;
         private EntityQuery m_RoadPrefabs;
+        private EntityQuery m_RealNodes;
+        private EntityQuery m_TempNodes;
+        private EntityQuery m_TempEdges;
         private float2 m_LastPivot;
         private bool m_HavePivot;
+
+        // Spike 1b phase 2: arms to attach to the node at m_JunctionCentre once it exists.
+        private readonly List<float2> m_PendingArms = new List<float2>();
+        private float2 m_JunctionCentre;
+        private bool m_HaveJunction;
+        private int m_PendingWait;
 
         protected override void OnCreate()
         {
@@ -63,11 +76,19 @@ namespace M0RoadSpike
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
             m_TerrainSystem = World.GetOrCreateSystemManaged<TerrainSystem>();
             m_RoadPrefabs = GetEntityQuery(ComponentType.ReadOnly<RoadData>(), ComponentType.ReadOnly<PrefabData>());
+            m_RealNodes = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Game.Net.Node>() },
+                None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() },
+            });
+            m_TempNodes = GetEntityQuery(ComponentType.ReadOnly<Game.Net.Node>(), ComponentType.ReadOnly<Temp>());
+            m_TempEdges = GetEntityQuery(ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Temp>());
         }
 
         protected override void OnUpdate()
         {
             if (GameManager.instance == null || !GameManager.instance.gameMode.IsGame()) return;
+            if (m_PendingArms.Count > 0) AttachPendingArms();
             var kb = Keyboard.current;
             if (kb == null || !kb.ctrlKey.isPressed || !kb.shiftKey.isPressed) return;
 
@@ -100,6 +121,29 @@ namespace M0RoadSpike
                     var pivot = CameraPivot() + new float2(0f, 80f);
                     TryPlace(new PrefabID("RoadPrefab", "Small Road"), pivot + A, pivot + B, 12f);
                 }
+                else if (kb.digit5Key.wasPressedThisFrame)
+                {
+                    var c = StartJunction();
+                    Mod.Log.Info($"1b X same-frame at {c}");
+                    foreach (var arm in Arms(c, 4)) TryPlace(SmallRoad, c, arm, 0f);
+                }
+                else if (kb.digit6Key.wasPressedThisFrame || kb.digit7Key.wasPressedThisFrame)
+                {
+                    bool x = kb.digit6Key.wasPressedThisFrame;
+                    var c = StartJunction();
+                    var arms = Arms(c, 4);
+                    Mod.Log.Info($"1b {(x ? "X" : "T")} two-frame at {c}: phase 1 west arm");
+                    TryPlace(SmallRoad, arms[0], c, 0f); // ends at the centre → creates the node there
+                    m_PendingArms.Clear();
+                    m_PendingArms.Add(arms[1]);          // east
+                    m_PendingArms.Add(arms[2]);          // north
+                    if (x) m_PendingArms.Add(arms[3]);   // south
+                    m_PendingWait = 0;
+                }
+                else if (kb.digit9Key.wasPressedThisFrame)
+                {
+                    InspectJunction();
+                }
                 else if (kb.digit0Key.wasPressedThisFrame)
                 {
                     LogRoadPrefabs();
@@ -111,14 +155,92 @@ namespace M0RoadSpike
             }
         }
 
-        private static float2 CameraPivot()
+        private static readonly PrefabID SmallRoad = new PrefabID("RoadPrefab", "Small Road");
+
+        private float2 StartJunction()
+        {
+            m_JunctionCentre = CameraPivot();
+            m_HaveJunction = true;
+            return m_JunctionCentre;
+        }
+
+        /// <summary>Arm end points 60 m from the centre: west, east, north, south.</summary>
+        private static float2[] Arms(float2 c, int n) => new[]
+        {
+            c + new float2(-60f, 0f), c + new float2(60f, 0f), c + new float2(0f, 60f), c + new float2(0f, -60f),
+        };
+
+        /// <summary>Phase 2 of keys 6/7: wait for the real (non-Temp) node at the centre, then attach arms to it.</summary>
+        private void AttachPendingArms()
+        {
+            if (++m_PendingWait < 3) return; // let GenerateNodes/Edges + CleanUp finish
+            Entity node = FindNode(m_JunctionCentre, 1f, out Game.Net.Node data);
+            if (node == Entity.Null)
+            {
+                if (m_PendingWait > 120) { Mod.Log.Warn("1b phase 2: no real node at centre after 120 frames, giving up"); m_PendingArms.Clear(); }
+                return;
+            }
+            if (!m_PrefabSystem.TryGetPrefab(SmallRoad, out PrefabBase prefab) || !m_PrefabSystem.TryGetEntity(prefab, out Entity prefabEntity)) { m_PendingArms.Clear(); return; }
+            TerrainHeightData heights = m_TerrainSystem.GetHeightData(true);
+            Mod.Log.Info($"1b phase 2 (frame +{m_PendingWait}): node {node} at {data.m_Position}, attaching {m_PendingArms.Count} arms");
+            foreach (var arm in m_PendingArms)
+            {
+                float3 end = new float3(arm.x, 0f, arm.y);
+                end.y = TerrainUtils.SampleHeight(ref heights, end);
+                CreateSegment(EntityManager, prefabEntity, data.m_Position, end, 0f, node, Entity.Null);
+            }
+            m_PendingArms.Clear();
+        }
+
+        private Entity FindNode(float2 at, float maxDist, out Game.Net.Node data)
+        {
+            data = default;
+            Entity best = Entity.Null;
+            float bestD = maxDist;
+            using (var es = m_RealNodes.ToEntityArray(Allocator.Temp))
+            using (var ns = m_RealNodes.ToComponentDataArray<Game.Net.Node>(Allocator.Temp))
+            {
+                for (int i = 0; i < es.Length; i++)
+                {
+                    float d = math.distance(ns[i].m_Position.xz, at);
+                    if (d < bestD) { bestD = d; best = es[i]; data = ns[i]; }
+                }
+            }
+            return best;
+        }
+
+        private void InspectJunction()
+        {
+            Mod.Log.Info($"1b inspect: Temp nodes in world {m_TempNodes.CalculateEntityCount()}, Temp edges {m_TempEdges.CalculateEntityCount()}");
+            if (!m_HaveJunction) return;
+            using (var es = m_RealNodes.ToEntityArray(Allocator.Temp))
+            using (var ns = m_RealNodes.ToComponentDataArray<Game.Net.Node>(Allocator.Temp))
+            {
+                for (int i = 0; i < es.Length; i++)
+                {
+                    float d = math.distance(ns[i].m_Position.xz, m_JunctionCentre);
+                    if (d > 8f) continue;
+                    int edges = EntityManager.HasBuffer<ConnectedEdge>(es[i]) ? EntityManager.GetBuffer<ConnectedEdge>(es[i], true).Length : -1;
+                    Mod.Log.Info($"  node {es[i]} {d:0.00} m from centre, connected edges {edges}");
+                }
+            }
+        }
+
+        /// <summary>Ground point under the screen centre (ray marched against the terrain).</summary>
+        private float2 CameraPivot()
         {
             var cam = UnityEngine.Camera.main;
             if (cam == null) return float2.zero;
-            var p = cam.transform.position;
-            var f = cam.transform.forward;
-            var fwd = math.normalizesafe(new float2(f.x, f.z), new float2(0f, 1f));
-            return new float2(p.x, p.z) + fwd * 150f;
+            var ray = cam.ViewportPointToRay(new UnityEngine.Vector3(0.5f, 0.5f, 0f));
+            float3 o = ray.origin, dir = ray.direction;
+            TerrainHeightData heights = m_TerrainSystem.GetHeightData(true);
+            for (float t = 0f; t < 5000f; t += 2f)
+            {
+                float3 p = o + dir * t;
+                if (p.y <= TerrainUtils.SampleHeight(ref heights, p)) return p.xz;
+            }
+            var fwd = math.normalizesafe(dir.xz, new float2(0f, 1f));
+            return o.xz + fwd * 150f; // looking at the sky: fall back to 150 m ahead
         }
 
         private static IEnumerable<string> GeneratedRoadBuilderIds()

@@ -1,14 +1,15 @@
 # M0 – feasibility spikes report
 
-Status: **DRAFT – in-game verification pending** (verdicts marked *pending* until the user has confirmed in the game).
+Status: **DRAFT** – Spikes 1, 2 and 3 verified in game (with caveats). Spike 1b (explicit junctions) and the remaining Spike 3 checks are pending.
 
 Environment: CS1 (Steam, Mono/.NET 3.5) with IMT 1.15, TM:PE, NC-R, WQ roads; CS2 1.6.0f1 with Road Builder **0.7.0** (installed; source read at 0.8.0), Anarchy, Move It, Traffic 0.2.12.
 
 | # | Spike | Verdict | Code |
 |---|---|---|---|
-| 1 | CS2: place a road from code (vanilla + Road Builder prefab) | *pending in-game test* – compiles against game DLLs | [`m0-cs2-place-road/`](m0-cs2-place-road/) |
+| 1 | CS2: place a road from code (vanilla + Road Builder prefab) | **works with caveats** – free ground, bridges, zoning and RB prefabs work; crossing an existing edge leaves `Temp` ghosts | [`m0-cs2-place-road/`](m0-cs2-place-road/) |
+| 1b | CS2: T/X junctions through explicit shared nodes | *pending in-game test* | [`m0-cs2-place-road/`](m0-cs2-place-road/) |
 | 2 | CS1: export network + lane layouts + IMT fill polygons | **works** – ran on Skibidi.02 (see below) | [`m0-cs1-network-dump/`](m0-cs1-network-dump/) |
-| 3 | WQ road → Road Builder config (+ IMT paint → bus lane / median) | *pending in-game check* – 5 configs generated from the real dump and placed in `ModsData\RoadBuilder` | [`m0-roadbuilder-configs/`](m0-roadbuilder-configs/) |
+| 3 | WQ road → Road Builder config (+ IMT paint → bus lane / median) | **works with caveats** – all 5 configs load; 3 look right; the median road, the centre bus lane and the widths still need a check on free ground | [`m0-roadbuilder-configs/`](m0-roadbuilder-configs/) |
 | – | Bike lanes / trolleybus / monorail in CS2 + RB | **answered from source** (see below) | – |
 
 ---
@@ -23,15 +24,40 @@ Environment: CS1 (Steam, Mono/.NET 3.5) with IMT 1.15, TM:PE, NC-R, WQ roads; CS
 
 **Toolchain.** The official CS2 modding toolchain is **not needed** for managed-only mods: a `net48` SDK project with `NoStdLib` referencing the game's own `Managed\*.dll` builds fine, deployed to `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\<Name>\`. Constraints: no Burst, no `SystemAPI`, no `partial` systems / `IJobEntity` (those need the source generators + post-processor). For M2 bulk import this is fine (main-thread `EntityManager` writes of definition entities); Burst can be added later if import speed requires it.
 
-In-game test (Ctrl+Shift+…): `1` Small Road, `2` all generated RB roads, `3` crossing road, `4` elevated (+12 m), `0` list road prefab names.
+In-game test (Ctrl+Shift+…): `1` Small Road, `2` all generated RB roads, `3` crossing road, `4` elevated (+12 m), `5`/`6`/`7` junctions (Spike 1b), `9` junction inspection log, `0` list road prefab names.
+
+Results (CS2, fresh Sweeping Plains city "M0 spike test", 2026-11-20, not saved; Road Builder, Traffic, Anarchy, Move It, TLE active):
+- [x] **Mod loads:** `M0RoadSpike.log` shows OnLoad and no errors. Ctrl+Shift+0 lists 97 road prefabs, including all 5 `RoadBuilderPrefab "*-cs1conv"`.
+- [x] **Small Road on empty land:** it is a real road. It gets an automatic street name and dead-end turnarounds, and it can be selected.
+- [x] **Elevated (+12 m):** it becomes a proper bridge with pillars and is named automatically.
+- [x] **Zoning:** placed roads, including Road Builder roads, get zone cells on both sides.
+- [x] **Road Builder road by config ID:** all 5 were placed (see Spike 3).
+- [ ] **FAIL – crossing an existing edge.** With Ctrl+Shift+3 no crossing road appears. Instead, the existing road turns into a pale-blue "ghost" that can't be selected and looks like an unapplied `Temp` preview.
+  - The same happened where Ctrl+Shift+2 roads landed on existing highways: a highway section became a ghost, one RB road merged into the highway with a big terrain trench and retaining walls, and one RB road did not appear at all.
+  - Cause (inferred): `CourseSplitSystem` splits the existing edge and creates its replacement through the `Temp` → `ApplyNetSystem` path. A `Permanent` definition never applies, so those replacement edges stay `Temp`.
+- [ ] Not checked: whether trees and buildings under a new road are removed (the test area had almost no trees).
+
+**Verdict: works with caveats.** Placing permanent roads from code works on free ground, including bridges, zoning and Road Builder prefabs. Crossings and connections to *existing* edges don't work with `Permanent` definitions.
+- The importer has to build junctions itself: shared nodes, passing node entities as course start/end, and splitting at intersections itself. The alternative is to send crossings through the normal Temp → Apply path.
+- Spike 1b (explicit T/X junctions, below) tests the first option.
+
+Testing note: `CameraPivot()` used the camera position plus 150 m along the forward direction projected onto the ground plane. When the camera looks down steeply, that point is far from what is on screen. Spike 1b changes it to the ground point under the screen centre.
+
+## Spike 1b – CS2: junctions through explicit shared nodes
+
+**Question.** Can the importer build T and X junctions without `CourseSplitSystem` touching an existing edge? It would do that by creating the junction's segments so that they share one node.
+
+**Approach.** In-game test with Ctrl+Shift; all placements go at the ground point under the screen centre:
+- `5` – **X, one frame:** four arms from one centre point. All four courses are created in the same frame with `m_Entity = Null` at the identical centre position. Does `GenerateNodesSystem` merge them into one 4-way node?
+- `6` – **X, two frames:** frame 1 creates a straight road as two segments that meet at the centre. Frame 2 looks up the real `Node` entity at the centre and creates the two remaining arms with `CoursePos.m_Entity = node`.
+- `7` – **T, two frames:** the same as `6` with only one extra arm.
+
+This keeps the M2 flow: create nodes, then attach edges to node entities, and never split an edge.
 
 Results: *pending*
-- [ ] mod loads (Logs/Modding.log)
-- [ ] vanilla Small Road appears, is drivable, zoning works
-- [ ] crossing road creates an intersection
-- [ ] elevated road becomes a bridge with pillars
-- [ ] Road Builder road (by config ID) appears
-- [ ] what happens with overlapping objects
+- [ ] `5` makes one X junction (or four dead ends / overlapping nodes?)
+- [ ] `6` makes one X junction with no ghosts
+- [ ] `7` makes one T junction with no ghosts
 
 ## Spike 2 – CS1: export the network
 
@@ -85,12 +111,16 @@ Results (Skibidi.02, CS1 1.21.1-f9, run 2026-11-20):
 
 The other generated IMT variants are not deployed: Asymmetrical Three Lane ±1.5 bus, Asymmetrical Seven-Lane −9 / ±9 bus, Asymmetrical Five-Lane 8.5 bus. Their widths are exact or within 1 m.
 
-Results: *pending in-game check*
-- [ ] plain WQ road
-- [ ] road with median (vanilla; no WQ median road in the city)
-- [ ] WQ road with bus lane
-- [ ] IMT-derived bus lanes (centre lane; parking absorbed)
-- [ ] widths CS1 vs RB match the table above
+Results (same CS2 test city as Spike 1):
+- [x] **All 5 configs load:** `RoadBuilder.log` reports "loaded 34 network configs" (29 existing + 5 `cs1conv`) with no errors. All 5 appear in the RB menu and can be placed by ID.
+- [x] **Plain WQ road** (Four-Lane One-Way): a plain 4-lane one-way, which looks right.
+- [x] **WQ road with bus lane** (Four-Lane One-Way Rd w/Bus Ln NP): 3 car lanes plus a red bus lane on the edge, which looks right.
+- [x] **IMT bus lane that absorbs parking** (Six-Lane Road IMT bus): two-way with a yellow centre line and a BUS-marked lane on one side only, which looks right.
+- [ ] **Road with median** (Four-Lane with Decorative Trees) and **IMT centre bus lane** (Five-Lane One-Way IMT bus): not judged. Both landed on the test city's highways (see Spike 1's crossing failure). Re-test on empty land.
+- [ ] **Widths in the RB editor vs the table above:** not read yet.
+- One-way roads show dead-end warnings at both unconnected ends, which is expected.
+
+**Verdict: works with caveats.** Road Builder accepts the generated configs as they are, and 3 of the 5 look right in game. The median/tree road, the centre bus lane and the widths are still to confirm. Real width loss: WQ sidewalks of 9 m become RB's 7 m maximum.
 
 ## Support matrix (CS2 + Road Builder)
 
@@ -107,7 +137,8 @@ Results: *pending in-game check*
 
 *(to be finalised after in-game results)*
 - No official CS2 toolchain needed; keep importer managed-only for now.
-- Importer places roads as permanent definitions → no Anarchy dependency for collisions; need our own cleanup of overlapping trees/props.
+- The importer places roads as permanent definitions, so it doesn't depend on Anarchy for collisions. We need our own cleanup of overlapping trees and props.
+- **The importer must never let `CourseSplitSystem` split an existing edge.** The CS1 graph already has every junction, so M2 creates each CS1 node exactly once and connects segments through those node entities, in the way Spike 1b proves. The import area must be free of CS2 roads beforehand, or the importer bulldozes them first. Matching existing CS2 roads is out of scope.
 - Road mapping must be **per-NetInfo profile generation** (generated RB configs), not a lookup table; RB IDs are ours and deterministic. RB configs must be written **before CS2 starts** (RB loads them once at startup) → the web tool / a pre-step writes them, not the in-game importer.
 - IMT data must be exported by reflection, not via the public API.
 - The exporter must also dump the **parent** NetInfo of every used variant (elevated-only roads).
