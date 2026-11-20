@@ -2,7 +2,7 @@
 
 Research notes, 2026-11-20. Sources:
 - Repos under `scratchpad/src/`: Anarchy @22880bc, CS2-MoveIt @6bde569, RoadBuilder-CSII @5f4b1ab, Traffic.
-- The installed game's `Game.dll` and friends (`E:\GamesLibrarySteam\steamapps\common\Cities Skylines II\Cities2_Data\Managed`). I read them with a throwaway System.Reflection.Metadata dumper and IL disassembler in `scratchpad/tools/meta`:
+- The installed game's `Game.dll` and friends (`<Steam library>\steamapps\common\Cities Skylines II\Cities2_Data\Managed`). I read them with a throwaway System.Reflection.Metadata dumper and IL disassembler in `scratchpad/tools/meta`:
   - `dotnet scratchpad/tools/meta/out/meta.dll <dll> type|il|refs|types ...`
   - Statements marked **[IL]** were verified against the current Game.dll, not guessed.
 - The ps1ke docs pages came back almost entirely as navigation sidebar through WebFetch (no member docs in the readable text), so nothing below relies on them.
@@ -365,7 +365,7 @@ Other Anarchy pieces:
     <AssemblyName>RoadSpike</AssemblyName>
     <NoStdLib>true</NoStdLib>                                      <!-- compile against the game's Mono BCL -->
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
-    <ManagedPath Condition="'$(ManagedPath)'==''">E:\GamesLibrarySteam\steamapps\common\Cities Skylines II\Cities2_Data\Managed</ManagedPath>
+    <ManagedPath Condition="'$(ManagedPath)'==''">&lt;Steam library&gt;\steamapps\common\Cities Skylines II\Cities2_Data\Managed</ManagedPath>
     <LocalModsPath>$(USERPROFILE)\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods</LocalModsPath>
     <DeployToGame Condition="'$(DeployToGame)'==''">false</DeployToGame>
   </PropertyGroup>
