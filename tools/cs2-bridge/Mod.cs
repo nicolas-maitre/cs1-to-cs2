@@ -27,6 +27,7 @@ namespace Cs2Bridge
                 Server.Log = m => Log.Info(m);
                 Core = new BridgeCore(Server);
                 Core.Log = m => Log.Info(m);
+                AutosaveGuard.Init();
                 Server.Start();
             }
             catch (Exception e)
@@ -46,6 +47,7 @@ namespace Cs2Bridge
         public void OnDispose()
         {
             Log.Info("OnDispose");
+            AutosaveGuard.Release(Unity.Entities.World.DefaultGameObjectInjectionWorld);
             try { if (Server != null) Server.Stop(); } catch (Exception e) { Log.Warn("stop failed: " + e.Message); }
             Server = null;
             Core = null;

@@ -31,6 +31,17 @@ Needs `CS2Managed` in the repo's `local.props`. Same build setup as `spikes/m0-c
 - **Autosave:** the game keeps autosaving while a city is loaded, using the interval and count from Options. When it creates an autosave it deletes the oldest one beyond that count, for every city. Keep test sessions short, or back up autosaves you care about.
 - **HTTP clients:** Node's global `fetch` adds `Sec-Fetch-Mode: cors`, which the bridge refuses with 403. Use `node:http`, curl or PowerShell instead.
 
+## Autosave guard
+
+`AutosaveGuard.cs` keeps scripted sessions from rotating out the user's autosaves.
+
+- **When it turns on:** the game was launched by `gamectl` (env `CS1TOCS2_GAMECTL=1`), a save was loaded through the bridge, or `autosave.set {"enabled":false}` was called.
+- **What it does:** it disables the game's `AutoSaveSystem` in memory only. Settings are never written, and quitting the game undoes it.
+- **How to undo it:** `autosave.set {"enabled":true}`, or the mod unloading.
+- **Where it shows:** `state.autosave_blocked`.
+
+Details: `tools/PROTOCOL.md`, section "CS2 autosave guard".
+
 ## Example exec library
 
 `examples/HelloExec/` is a plain class library, not deployed. Build it with `dotnet build -c Release` and call it like this:

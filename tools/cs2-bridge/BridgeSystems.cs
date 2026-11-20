@@ -25,6 +25,8 @@ namespace Cs2Bridge
         {
             var core = Mod.Core;
             if (core == null) return;
+            try { AutosaveGuard.Apply(World); }
+            catch (Exception e) { Mod.Log.Error("autosave guard failed: " + e); }
             try { core.Tick(); }
             catch (Exception e) { Mod.Log.Error("tick failed: " + e); }
         }

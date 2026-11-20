@@ -62,6 +62,7 @@ namespace Cs2Bridge
             m_Core.Register("quit", "Quit the game; replies {quitting:true} first.", Quit, true);
             m_Core.Register("camera.get", "Camera {x, y, z, distance, yaw, pitch} (pivot, zoom distance, degrees).", c => CameraGet());
             m_Core.Register("camera.set", "Set any of {x, y, z, distance, yaw, pitch}; returns the new camera.", CameraSet);
+            m_Core.Register("autosave.set", "{enabled: bool}. false = block the game's autosaves (in memory only, never saved to settings); true = give them back.", AutosaveSet, true);
             m_Core.Register("sim.set", "Set {paused?, speed? 1-3}; returns {paused, speed}.", SimSet);
         }
 
@@ -92,6 +93,15 @@ namespace Cs2Bridge
             return "other";
         }
 
+        object AutosaveSet(Command cmd)
+        {
+            if (!P.Has(cmd.Params, "enabled")) throw new ArgumentException("missing required param 'enabled' (bool)");
+            bool enabled = P.Bool(cmd.Params, "enabled", true);
+            AutosaveGuard.Request(!enabled, "autosave.set");
+            AutosaveGuard.Apply(World);
+            return new Dictionary<string, object> { { "autosave_blocked", AutosaveGuard.Active(World) }, { "reason", AutosaveGuard.Reason } };
+        }
+
         Dictionary<string, object> State()
         {
             bool loaded = CityLoaded();
@@ -107,6 +117,7 @@ namespace Cs2Bridge
                 { "save_name", loaded ? m_SaveName : null },
                 { "paused", loaded ? (object)(m_Simulation.selectedSpeed <= 0f) : null },
                 { "speed", loaded ? (object)m_LastSpeedLevel : null },
+                { "autosave_blocked", AutosaveGuard.Active(World) },
                 { "frame", m_Core.Frame },
                 { "bridge_version", Mod.Version },
             };
@@ -175,6 +186,9 @@ namespace Cs2Bridge
             if (save == null) throw new ArgumentException("no save named '" + name + "' (see saves.list)");
             var t = save.target;
             var world = World;
+            // A city loaded by a script must not autosave over the user's autosaves (see AutosaveGuard).
+            AutosaveGuard.Request(true, "save loaded through the bridge");
+            AutosaveGuard.Apply(world);
             Task<bool> load = null;
             Exception error = null;
             m_SaveName = null;

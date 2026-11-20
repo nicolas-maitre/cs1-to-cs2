@@ -84,6 +84,7 @@ Both games return the same keys. A key the game can't provide is `null`.
 | `speed` | number | selected simulation speed (CS1 1–3, CS2 1–3 as the game reports it) |
 | `frame` | number | bridge frame counter; it increments once per rendered frame |
 | `bridge_version` | string | |
+| `autosave_blocked` | bool | CS2 only: the game's autosave is switched off by the bridge (see below); CS1 omits it |
 
 ## Methods
 
@@ -109,6 +110,7 @@ Each game implements these game-specific methods, with the same names and shapes
 | `camera.get` | – | `{x, y, z, distance, yaw, pitch}`: pivot / target position, zoom distance, angles in degrees | no |
 | `camera.set` | any of `x, y?, z, distance, yaw, pitch`, `instant?`=true | the new camera, same shape as `camera.get` | no |
 | `sim.set` | `paused?`, `speed?` | `{paused, speed}` | no |
+| `autosave.set` | `enabled` (bool) | CS2 only: `{autosave_blocked, reason}` | yes |
 
 On the CS2 bridge `exec` takes an extra param, `phase`: `"main"` (default) or `"tool"`. `"tool"` runs the entry point inside a system in the `ToolUpdate` phase, the phase the road-placement spike needs.
 
@@ -140,6 +142,19 @@ Converter commands and spikes run this way without restarting the game.
 
 - **Missing env var:** without `SteamAppId`, CS2 fails to initialise its platform services and floods its log.
 - **Install paths:** the install folders come from `local.props` (`CS1Managed` / `CS2Managed` are `<install>\<Game>_Data\Managed`).
+
+## CS2 autosave guard
+
+With the user's settings (autosave every minute, keep 10), each minute a script spends in a loaded city would write an autosave and delete the oldest one. The CS2 bridge prevents that:
+
+- **When it's on:**
+  - when the game was started by `gamectl`, which sets `CS1TOCS2_GAMECTL=1` in the game's environment;
+  - after a `save.load` through the bridge;
+  - after `autosave.set {"enabled":false}`.
+- **How it blocks autosaves:** it disables the game's `AutoSaveSystem` in memory (`Enabled = false`). That system's update is the only place that autosaves and prunes old autosaves. `GeneralSettings.autoSave` is never changed, so nothing reaches `Settings.coc`, and a normal game start always has autosave as configured.
+- **How it's undone:** `autosave.set {"enabled":true}` gives the system back, and so does the mod unloading when the game quits.
+  - Re-enabling it in a city that has been running longer than the autosave interval triggers an autosave straight away. Re-enable from the main menu if that matters.
+- **Verified:** a city ran unpaused for 3 minutes with no autosave written. The autosave lines in `Settings.coc` and the save files were identical before and after.
 
 ## CS1 notes
 

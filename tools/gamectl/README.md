@@ -77,7 +77,7 @@ gamectl cs2 stop
    - CS2: `Logs\SceneFlow.log`, marker `MainMenu reached`.
    - CS1: `Cities_Data\output_log.txt`, marker `Scene [MainMenu] loaded`.
 
-   It then spawns the exe detached, with `SteamAppId` and `SteamGameId` set (CS2 949230, CS1 255710). CS2 always gets `-developerMode`, followed by your `--flags`.
+   It then spawns the exe detached, with `SteamAppId` and `SteamGameId` set (CS2 949230, CS1 255710). It also sets `CS1TOCS2_GAMECTL=1`, which makes the CS2 bridge block autosaves for that run (in memory only, see `tools/PROTOCOL.md`). CS2 always gets `-developerMode`, followed by your `--flags`.
 4. **Ready marker.** Only bytes written after the snapshot are scanned for the marker, so a marker left by the previous run never counts. If the file shrank or its creation time changed (Unity recreates its logs), it is read again from offset 0, because all of it is new.
 5. **Bridge.** After the marker, `start` needs all three of these:
    - a discovery file whose `pid` is the spawned process and whose mtime is after the spawn;

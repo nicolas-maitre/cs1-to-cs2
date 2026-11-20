@@ -132,7 +132,9 @@ async function spawnAndWait(cfg, deps, flags, deadline, progress, relaunchGraceM
   const markerSince = snapshot(cfg.markerFile); // BEFORE spawning: anything already in the log is from an older run
   const before = new Set(await deps.listPids(cfg.image));
   const spawnTime = Date.now();
-  const env = { ...process.env, SteamAppId: cfg.appId, SteamGameId: cfg.appId };
+  // CS1TOCS2_GAMECTL=1 tells the CS2 bridge this game is script-driven: it blocks autosaves (in memory only) so tests
+  // never rotate out the user's autosaves. See tools/cs2-bridge/AutosaveGuard.cs.
+  const env = { ...process.env, SteamAppId: cfg.appId, SteamGameId: cfg.appId, CS1TOCS2_GAMECTL: '1' };
   const args = [...cfg.args, ...flags];
   const child = deps.spawn(cfg.exe, args, { env, cwd: cfg.installDir ?? undefined });
   progress(`spawned ${cfg.exe} ${args.join(' ')} (pid ${child.pid})`);

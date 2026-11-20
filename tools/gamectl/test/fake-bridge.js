@@ -185,7 +185,7 @@ async function fakeGame() {
   const dir = /** @type {string} */ (get('dir'));
   const log = /** @type {string} */ (get('log'));
   const marker = get('marker') ?? (game === 'cs2' ? 'MainMenu reached' : 'Scene [MainMenu] loaded');
-  fs.writeFileSync(`${log}.env.json`, JSON.stringify({ SteamAppId: process.env.SteamAppId, SteamGameId: process.env.SteamGameId, argv: args, pid: process.pid }));
+  fs.writeFileSync(`${log}.env.json`, JSON.stringify({ SteamAppId: process.env.SteamAppId, SteamGameId: process.env.SteamGameId, CS1TOCS2_GAMECTL: process.env.CS1TOCS2_GAMECTL, argv: args, pid: process.pid }));
   if (has('truncate')) fs.writeFileSync(log, 'new run\n');
   else fs.appendFileSync(log, `[${process.pid}] starting\n`);
   const keepAlive = setInterval(() => {}, 1 << 30);
