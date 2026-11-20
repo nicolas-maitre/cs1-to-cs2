@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    M0 spike 1: CS2 code mod that places roads through the game's own
+    CreationDefinition + NetCourse pipeline. Built without the official CS2 toolchain:
+    compiles against the game's Mono BCL and DLLs (CS2Managed from ../../local.props),
+    managed code only (no Burst, no SystemAPI / IJobEntity / partial systems), so no
+    post-processing is required. `dotnet build -c Release` deploys to the local Mods folder.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>M0RoadSpike</AssemblyName>
+    <RootNamespace>M0RoadSpike</RootNamespace>
+    <Nullable>disable</Nullable>
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <CS2LocalMods Condition="'$(CS2LocalMods)' == ''">$(USERPROFILE)\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods</CS2LocalMods>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(CS2Managed)\mscorlib.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\netstandard.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Game.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Logging.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Mathematics.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Entities.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Mathematics.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Burst.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.InputSystem.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="DeployToCS2" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(CS2LocalMods)\$(AssemblyName)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(CS2LocalMods)\$(AssemblyName)" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) to $(CS2LocalMods)\$(AssemblyName)" />
+  </Target>
+</Project>
