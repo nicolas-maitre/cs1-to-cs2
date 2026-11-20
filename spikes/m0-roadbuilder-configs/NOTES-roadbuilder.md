@@ -449,3 +449,15 @@ Only registered if the `Harbor Drive Section 4` section exists (:14-15, returns 
 - Section widths for vanilla sections are inferred from their names. I could not read the game's prefab data offline.
 - Behaviour notes are from 0.8.0 source. The installed 0.7.0 lacks the case-insensitive and closest-variant fallback and has different playset logic (string scan only, no decompile). Emit exact casing and existing combinations, and omit `Playsets`.
 - The "Transport" and "Tram" car-lane semantics, and the vanilla absence of trolleybus and monorail, are from CS2 knowledge, not from code.
+
+## 9. CS1 lane geometry and IMT lane coverage (from the Skibidi.02 dump)
+- **Lane side, checked in the CS1 IL** (Assembly-CSharp, read with a local metadata dumper; nothing decompiled is committed):
+  - `NetSegment.CalculateCorner` offsets the corner by `Cross(startDir, up)` × (`leftSide ? +halfWidth : -halfWidth`). In Unity's left-handed frame, that vector is the **left** of start→end.
+  - `NetAI.UpdateLanes` computes `t = m_position / (2·halfWidth) + 0.5`, flips it when `m_flags & 16` (Invert), then lerps from the left corner to the right one.
+  - Result: positive `m_position` = **right of start→end**, mirrored on inverted segments. For a direction (dx, dz), right is (dz, −dx).
+- **IMT fills in the dump:** 66 = 55 node fills + 11 segment fills, with no duplicates (every polygon is unique). The 55 node fills match the count from the save (38 red, 15 grey, 2 pavement). The 11 segment fills are all red.
+- **Segment fills always span the whole segment marking.** An IMT segment marking only has points at its two end lines, so a fill runs from one end line to the other, and `extent` is the visible segment length.
+  - A lane counts as covered when its centre is inside the fill for ≥ 90 % of `extent` and, on average, ≥ 70 % of its width is inside. IMT insets fills by the line offset; 11 samples across the lane resolve that.
+  - On real data, whole-lane fills score a lateral ≥ 0.80. Partial or diagonal fills score ≤ 0.67 (seg 12520: a lane-change taper; seg 31218: the half lane next to a painted parking lane).
+- **Node fills never cover a whole lane.** The longest run of a node fill along a lane is 19.4 m. They are the bus paint continuing through junctions, and CS2/RB has nothing to map them to.
+- **Fills from other segments** (bridges overlapping a road below) are excluded because they must belong to the segment's own marking (`markingId`).

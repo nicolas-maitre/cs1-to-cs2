@@ -4,6 +4,11 @@
 //
 //   node wq-to-rb.mjs <dump.json> --list                 list candidate road NetInfos with features
 //   node wq-to-rb.mjs <dump.json> --out <dir> "<netinfo name>" ...   generate configs + width report
+//   node wq-to-rb.mjs <dump.json> --imt                  IMT fill → lane coverage report
+//   node wq-to-rb.mjs <dump.json> --out-imt <dir>        one config per (road, IMT override) variant
+//
+// IMT overrides (imt-lanes.mjs): a red solid fill covering a whole lane makes it a bus lane,
+// a pavement/grass island fill covering a whole lane makes it a median.
 //
 // Option names/values come from Road Builder 0.7/0.8 source (see NOTES-roadbuilder.md).
 // Only exact, existing section combinations are emitted (RB 0.7.0 has no fuzzy fallback).
@@ -11,6 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { laneCoverage, wholeLaneOverrides } from './imt-lanes.mjs';
 
 const RB = 'RoadBuilder.LaneGroups.';
 const SIDEWALK_WIDTHS = {
@@ -35,7 +41,7 @@ const nearest = (v, list) => list.reduce((a, b) => (Math.abs(b - v) < Math.abs(a
 const fmtM = v => `${v}m`;
 
 /** Normalise a CS1 NetInfo into a left→right cross-section model. */
-function analyse(info) {
+function analyse(info, overrides = null) {
   const f = info.fields;
   const halfWidth = f.m_halfWidth, pavement = f.m_pavementWidth;
   const lanes = info.lanes.map(l => ({
@@ -73,14 +79,37 @@ function analyse(info) {
     s.invert = /Backward/.test(dirs) && !/Forward/.test(dirs);
     s.speedKmh = Math.max(...s.parts.map(p => p.speed ?? 0)) * 50;
   }
+  if (overrides && overrides.size) applyOverrides(slots, overrides);
   // Decoration lanes (laneType None) with trees, located between drive slots → median trees.
   const decor = lanes.filter(l => l.laneType === 'None');
   return { halfWidth, pavement, slots, decor, lanes };
 }
 
-function convert(info) {
-  const a = analyse(info);
+/** IMT overrides: Map(lanePos → 'bus' | 'median' | 'median-grass'), positions in NetInfo space. */
+function applyOverrides(slots, overrides) {
+  for (const [pos, kind] of overrides) {
+    const s = slots.find(s => Math.abs(s.pos - pos) < 0.25);
+    if (!s) continue;
+    s.imt = kind;
+    if (kind === 'bus') s.kind = s.kind === 'parking' ? 'bus-on-parking' : 'bus';
+    else { s.kind = 'median'; s.grass = kind === 'median-grass'; }
+  }
+  // Red paint over a parking lane *and* the car lane next to it = one bus lane (parking is gone).
+  for (let i = slots.length - 1; i >= 0; i--) {
+    if (slots[i].kind !== 'bus-on-parking') continue;
+    const nb = [slots[i - 1], slots[i + 1]].find(n => n && n.kind === 'bus' && n.imt === 'bus');
+    if (nb) { nb.absorbedParking = slots[i].width; slots.splice(i, 1); }
+    else slots[i].kind = 'bus';
+  }
+}
+
+function convert(info, overrides = null) {
+  const a = analyse(info, overrides);
   const notes = [];
+  for (const s of a.slots) {
+    if (s.imt === 'bus') notes.push(`IMT red fill covers lane @${s.pos} → bus lane${s.absorbedParking ? ` (paint also covers the ${s.absorbedParking}m parking lane next to it → parking dropped)` : ''}`);
+    if (s.imt && s.imt.startsWith('median')) notes.push(`IMT ${s.grass ? 'grass' : 'pavement'} island covers lane @${s.pos} → median`);
+  }
   const out = [];
   const addons = new Set(['HasUndergroundWaterPipes', 'HasUndergroundElectricityCable']);
   const ai = info.aiFields ?? {};
@@ -146,7 +175,7 @@ function convert(info) {
       }
     }
     const lw = s.width >= 3.5 ? 4 : 3;
-    if (Math.abs(lw - s.width) > 0.01) notes.push(`${s.kind} lane @${s.pos}: CS1 ${s.width}m → RB ${lw}m`);
+    if (s.kind !== 'median' && Math.abs(lw - s.width) > 0.01) notes.push(`${s.kind} lane @${s.pos}: CS1 ${s.width}m → RB ${lw}m`);
     let lane;
     switch (s.kind) {
       case 'car':
@@ -159,6 +188,13 @@ function convert(info) {
         lane = { GroupPrefabName: RB + 'TramGroupPrefab', GroupOptions: {} };
         if (lw !== 3) notes.push('tram lane forced to 3m (only width RB offers)');
         break;
+      case 'median': {
+        const mw = s.grass ? 5 : nearest(s.width, MEDIAN_WIDTHS);
+        if (s.grass) addons.add('GrassCenter');
+        if (Math.abs(mw - s.width) > 0.01) notes.push(`IMT median @${s.pos}: CS1 lane ${s.width}m → RB median ${mw}m${s.grass ? ' (5m: only 5m medians carry grass)' : ''}`);
+        out.push({ lane: { Version: 5, SectionPrefabName: null, GroupPrefabName: RB + 'MedianGroupPrefab', GroupOptions: { 'Median Width': fmtM(mw) }, Invert: false }, width: mw });
+        continue;
+      }
       case 'parking':
         lane = { GroupPrefabName: RB + 'ParkingGroupPrefab', GroupOptions: { 'Parking Angle': 'Parallel', Markings: '' } };
         notes.push(`interior parking lane @${s.pos} → RB Parking 2m`);
@@ -175,13 +211,17 @@ function convert(info) {
   const speed = Math.max(0, ...a.slots.filter(s => s.kind === 'car' || s.kind === 'bus').map(s => s.speedKmh));
   const rbWidth = out.reduce((t, l) => t + l.width, 0);
   const cs1Width = a.halfWidth * 2;
-  const idHash = crypto.createHash('sha1').update('cs1conv:' + info.name).digest('hex');
+  const sig = overrides && overrides.size ? [...overrides].sort((x, y) => x[0] - y[0]).map(([p, k]) => `${p}=${k}`).join(',') : '';
+  const idHash = crypto.createHash('sha1').update('cs1conv:' + info.name + (sig ? '|' + sig : '')).digest('hex');
   const id = `r${idHash.slice(0, 8)}-${idHash.slice(8, 12)}-5${idHash.slice(13, 16)}-8${idHash.slice(17, 20)}-${idHash.slice(20, 32)}-cs1conv`;
-  const title = (info.title || info.name.replace(/^\d+\./, '').replace(/_Data$/, ''));
+  // Elevated-only WQ roads: the ground NetInfo is not in the dump (dumper adds variants of used infos, not parents).
+  const rawTitle = info.title && !/^NET_TITLE\[/.test(info.title) ? info.title : info.name.replace(/^\d+\./, '').replace(/_Data$/, '');
+  const title = rawTitle.replace(/ (Elevated|Bridge|Slope|Tunnel)\d*$/, '');
+  if (title !== rawTitle) notes.push(`only the ${rawTitle.slice(title.length + 1)} variant is in the dump; its sidewalks may be narrower than the ground road's`);
 
   const config = {
     Type: 'RoadConfig', Version: 5, OriginalID: id, ID: id,
-    Name: `[CS1] ${title}`.slice(0, 60),
+    Name: `[CS1] ${title}${sig ? ' (IMT ' + [...new Set([...overrides.values()].map(k => k.replace('median-grass', 'median')))].join('+') + ')' : ''}`.slice(0, 60),
     PillarPrefabName: 'Pillar Placeholder',
     SpeedLimit: Math.round(speed / 5) * 5 * 2 || 100,
     MaxSlopeSteepness: 0.2,
@@ -190,7 +230,7 @@ function convert(info) {
     Lanes: out.map(o => o.lane),
     ToolbarState: 'Inherit',
   };
-  return { config, report: { cs1: info.name, title, id, cs1Width, rbWidth, diff: +(rbWidth - cs1Width).toFixed(2), speedKmh: speed, notes,
+  return { config, report: { cs1: info.name, imtOverrides: sig || undefined, title, id, cs1Width, rbWidth, diff: +(rbWidth - cs1Width).toFixed(2), speedKmh: speed, notes,
     cs1Slots: a.slots.map(s => `${s.kind}${s.invert ? '←' : '→'} ${s.width}m @${s.pos}`), rbLanes: out.map(o => `${o.lane.GroupPrefabName.replace(RB, '').replace('GroupPrefab', '')}${o.lane.Invert ? '←' : '→'} ${o.width}m ${JSON.stringify(o.lane.GroupOptions)}`) } };
 }
 
@@ -206,6 +246,43 @@ if (args[1] === '--list') {
   }
   rows.sort((x, y) => y.used - x.used);
   console.table(rows);
+} else if (args[1] === '--imt' || args[1] === '--out-imt') {
+  const cov = laneCoverage(dump, info => analyse(info).slots);
+  const ov = wholeLaneOverrides(cov);
+  // Elevated/bridge/slope/tunnel variants → base road (RB generates those forms itself).
+  const baseOf = new Map();
+  for (const i of infos.values()) for (const k of ['m_elevatedInfo', 'm_bridgeInfo', 'm_slopeInfo', 'm_tunnelInfo']) {
+    const v = i.aiFields?.[k]; if (v && v !== i.name) baseOf.set(v, i.name);
+  }
+  const variants = new Map(); // base|sig → {base, overrides, segments[]}
+  for (const [segId, m] of ov) {
+    const seg = dump.segments.find(s => s.id === segId);
+    const base = baseOf.get(seg.info) ?? seg.info;
+    const sig = [...m].sort((x, y) => x[0] - y[0]).map(([p, k]) => `${p}=${k}`).join(',');
+    const key = base + '|' + sig;
+    if (!variants.has(key)) variants.set(key, { base, overrides: m, segments: [] });
+    variants.get(key).segments.push(segId);
+  }
+  if (args[1] === '--imt') {
+    const segPairs = cov.filter(c => c.markingType === 'Segment');
+    const nodePairs = cov.filter(c => c.markingType === 'Node');
+    console.log(`IMT fillers: ${dump.imtFillers.length} (segment ${dump.imtFillers.filter(f => f.markingType === 'Segment').length}, node ${dump.imtFillers.filter(f => f.markingType === 'Node').length})`);
+    console.table(segPairs.map(c => ({ segment: c.segment, info: c.info, own: c.markingId === c.segment, fill: c.fillerKind, extent: c.extent,
+      lanes: c.lanes.map(l => `${l.kind}@${l.pos} run ${l.runFrac} lat ${l.lateral}${l.whole ? ' WHOLE' : ''}`).join(' | ') })));
+    const nodeMax = Math.max(0, ...nodePairs.flatMap(c => c.lanes.map(l => l.run)));
+    console.log(`node fills touching segment lanes: ${nodePairs.length} pairs, longest lane run ${nodeMax} m (never whole-lane)`);
+    console.table([...variants.values()].map(v => ({ base: v.base, overrides: [...v.overrides].map(([p, k]) => `${p}=${k}`).join(' '), segments: v.segments.join(',') })));
+  } else {
+    const dir = args[2];
+    fs.mkdirSync(dir, { recursive: true });
+    const reports = [];
+    for (const v of variants.values()) {
+      const { config, report } = convert(infos.get(v.base), v.overrides);
+      fs.writeFileSync(path.join(dir, `${config.ID}.json`), JSON.stringify(config, null, 4));
+      reports.push({ ...report, segments: v.segments });
+    }
+    console.log(JSON.stringify(reports, null, 2));
+  }
 } else if (args[1] === '--out') {
   const dir = args[2];
   fs.mkdirSync(dir, { recursive: true });
