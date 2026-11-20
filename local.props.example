@@ -1,0 +1,9 @@
+<Project>
+  <!-- Copy to local.props (git-ignored) and adjust to your machine. -->
+  <PropertyGroup>
+    <!-- Cities: Skylines 1: ...\steamapps\common\Cities_Skylines\Cities_Data\Managed -->
+    <CS1Managed>D:\Steam\steamapps\common\Cities_Skylines\Cities_Data\Managed</CS1Managed>
+    <!-- Cities: Skylines 2: ...\steamapps\common\Cities Skylines II\Cities2_Data\Managed -->
+    <CS2Managed>D:\Steam\steamapps\common\Cities Skylines II\Cities2_Data\Managed</CS2Managed>
+  </PropertyGroup>
+</Project>

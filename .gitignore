@@ -1,0 +1,24 @@
+# build output
+bin/
+obj/
+*.user
+.vs/
+node_modules/
+dist/
+
+# machine-specific paths (game installs, Steam folders) – copy local.props.example to local.props
+local.props
+
+# game binaries / decompiled game code must never be committed
+*.dll
+*.pdb
+*.so
+*.bundle
+decompiled/
+
+# exported save data and dumps
+*.cs1x
+*.crp
+spikes/**/samples/
+spikes/**/dumps/
+network-*.json

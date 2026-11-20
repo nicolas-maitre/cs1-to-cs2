@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    M0 spike 2: Cities: Skylines 1 network dumper.
+    Builds against the game's own mscorlib (Mono, .NET 3.5 profile), so no
+    reference-assembly package is needed. Run `dotnet build -c Release`; the
+    post-build step copies the DLL into CS1's local Addons\Mods folder.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>M0NetworkDump</AssemblyName>
+    <RootNamespace>M0NetworkDump</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <NoConfig>true</NoConfig>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <Deterministic>true</Deterministic>
+    <!-- CS1Managed comes from ../../local.props (see local.props.example) -->
+    <CS1ModsDir Condition="'$(CS1ModsDir)' == ''">$(LOCALAPPDATA)\Colossal Order\Cities_Skylines\Addons\Mods\$(AssemblyName)</CS1ModsDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="mscorlib"><HintPath>$(CS1Managed)\mscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System"><HintPath>$(CS1Managed)\System.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Core"><HintPath>$(CS1Managed)\System.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(CS1Managed)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ICities"><HintPath>$(CS1Managed)\ICities.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ColossalManaged"><HintPath>$(CS1Managed)\ColossalManaged.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(CS1Managed)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <Target Name="DeployToCS1" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(CS1ModsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(CS1ModsDir)" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) to $(CS1ModsDir)" />
+  </Target>
+</Project>
