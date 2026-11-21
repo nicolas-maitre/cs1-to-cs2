@@ -7,17 +7,35 @@ import { categorize, prefabKeyVanilla, resolveTarget } from './mapping.ts';
 import type { MappingOverride, NetCategory, ResolvedTarget } from './mapping.ts';
 import { analyse, convert, netInfoTitle } from './rb.ts';
 import type { RbConfig, RbReport } from './rb.ts';
+import { packageReadme } from './readme.ts';
+import { conversionSummary } from './summary.ts';
+import type { ConvCategory } from './summary.ts';
+import type { PlanContext } from './m2/context.ts';
+import { buildNodeController } from './m2/nodecontroller.ts';
+import { buildTraffic, trafficLaneVariants } from './m2/traffic.ts';
+import { buildTransit } from './m2/transit.ts';
+import { buildWater } from './m2/water.ts';
+import { DEFAULT_ZONING, buildZoning } from './m2/zoning.ts';
+import type { ZoningOptions } from './m2/zoning.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
 } from './types.ts';
 
-export const GENERATOR = { name: 'cs1conv-web', version: '0.1.0' };
+export const GENERATOR = { name: 'cs1conv-web', version: '0.2.0' };
 
 export interface BuildOptions {
   crop: Crop;
   /** Per ground-NetInfo mapping overrides (key: NetInfo name). */
   overrides?: Record<string, MappingOverride>;
   generatedAt?: string;
+  /** M2: zoning (theme, densities); omitted = DEFAULT_ZONING. */
+  zoning?: ZoningOptions;
+  /** M2: TM:PE rules, speed limits, bus lanes and traffic lights (default on). */
+  traffic?: boolean;
+  /** M2: transit lines (default on). */
+  transit?: boolean;
+  /** M2: sea level and water sources (default on). */
+  water?: boolean;
 }
 
 export interface MappingRow {
@@ -46,6 +64,10 @@ export interface BuiltPackage {
   rbVariants: RbVariant[];
   mapping: MappingRow[];
   errors: string[];
+  /** What converts per category (filled by buildPackage). */
+  summary: ConvCategory[];
+  /** Per-category entries added by the M2 sections (zoning, traffic, transit, water...). */
+  extraSummary?: ConvCategory[];
 }
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -125,6 +147,11 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const roadSegs = inside.filter(s => targetOf.get(baseName(s.info))?.mode === 'rb' && !isBuildingNet(s));
   const coverage = laneCoverage({ segments: roadSegs, netInfos: infos, imtFillers: city.imtFillers }, info => analyse(info).slots);
   const segOverrides = wholeLaneOverrides(coverage);
+  // TM:PE speed limits and bus-only lanes become RB variants too.
+  const lv = trafficLaneVariants(city, infos, roadSegs, opts.traffic !== false);
+  items.push(...lv.items);
+  const speedGroups = new Map<string, number>();
+  let speedOnVanilla = 0;
 
   // ---- segments
   const prefabs: Record<string, PlanPrefab> = {};
@@ -164,30 +191,44 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     }
     let key: string;
     if (target.mode === 'rb') {
-      // IMT overrides are found on the segment's own NetInfo; keep the ones that match a base lane.
-      const raw = segOverrides.get(s.id);
+      // Lane overrides are found on the segment's own NetInfo (IMT fills first, then TM:PE bus-only
+      // lanes); keep the ones that match a lane of the ground NetInfo.
+      const imt = segOverrides.get(s.id), tmBus = lv.bus.get(s.id);
       let ov: Map<number, LaneOverrideKind> | null = null;
-      if (raw) {
+      let label = 'IMT';
+      if (imt || tmBus) {
+        const raw = new Map<number, LaneOverrideKind>(imt ?? []);
+        let fromTm = false;
+        for (const [p, k] of tmBus ?? []) if (!raw.has(p)) { raw.set(p, k); fromTm = true; }
+        label = imt && fromTm ? 'IMT+TM:PE' : imt ? 'IMT' : 'TM:PE';
         const baseSlots = analyse(baseInfo).slots;
         ov = new Map([...raw].filter(([p]) => baseSlots.some(sl => Math.abs(sl.pos - p) < 0.25)));
         const lost = [...raw].filter(([p]) => !ov!.has(p));
-        if (lost.length) items.push({ level: 'warning', kind: 'imt-partial-fill', message: `IMT lane override(s) ${lost.map(([p, k]) => `${p}=${k}`).join(', ')} on ${s.info} have no matching lane in ${base}; ignored`, cs1: { segment: s.id } });
+        if (lost.length) items.push({ level: 'warning', kind: imt ? 'imt-partial-fill' : 'traffic', message: `lane override(s) ${lost.map(([p, k]) => `${p}=${k}`).join(', ')} on ${s.info} have no matching lane in ${base}; ignored`, cs1: { segment: s.id } });
         if (!ov.size) ov = null;
       }
-      const sig = overrideSignature(ov);
+      const tmSpeed = lv.speed.get(s.id);
+      const speed = tmSpeed != null && row.rb && Math.abs(tmSpeed - row.rb.speedKmh) >= 5 ? Math.round(tmSpeed / 5) * 5 : null;
+      const laneSig = overrideSignature(ov);
+      const sig = speed != null ? `${laneSig ? laneSig + ',' : ''}speed=${speed}` : laneSig;
       const ck = `${base}|${sig}`;
       let entry = rbConfigs.get(ck);
       if (!entry) {
-        const res = convert(baseInfo, ov);
+        const res = convert(baseInfo, ov, { speedKmh: speed, overrideLabel: label });
         if (!res) { skip(base, 'unmapped-netinfo', 'road has no drive lane Road Builder can represent', s.id); continue; }
         entry = { ...res, key: rbKey(res.config.ID), segments: 0 };
         rbConfigs.set(ck, entry);
-        prefabs[entry.key] = { type: 'RoadBuilderPrefab', name: res.config.ID, source: base, ...(sig ? { imt: sig } : {}) };
+        prefabs[entry.key] = {
+          type: 'RoadBuilderPrefab', name: res.config.ID, source: base,
+          ...(laneSig ? { imt: laneSig, lanesFrom: label } : {}), ...(speed != null ? { speedKmh: speed } : {}),
+        };
       }
       entry.segments++;
       key = entry.key;
-      if (ov) items.push({ level: 'info', kind: 'imt-override', message: `IMT fill → ${sig} on ${base}: segment uses RB variant ${entry.config.ID}`, cs1: { segment: s.id } });
+      if (speed != null) speedGroups.set(`${base}|${speed}`, (speedGroups.get(`${base}|${speed}`) ?? 0) + 1);
+      if (ov) items.push({ level: 'info', kind: label === 'TM:PE' ? 'traffic' : 'imt-override', message: `${label} lane override ${laneSig} on ${base}: segment uses RB variant ${entry.config.ID}`, cs1: { segment: s.id } });
     } else {
+      if (lv.speed.has(s.id)) speedOnVanilla++;
       key = prefabKeyVanilla(target.name);
       if (!prefabs[key]) prefabs[key] = { type: target.type, name: target.name, source: base };
       else if (prefabs[key].source !== base && !prefabs[key].source.split(', ').includes(base)) prefabs[key].source += `, ${base}`;
@@ -217,6 +258,24 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     return { id, x: r3(n.position[0] + dx), z: r3(n.position[2] + dz), y: r3(n.position[1]), heightAboveTerrain: r2(Number(n.heightAboveTerrain ?? 0)), elevation: Number(n.elevation ?? 0) };
   });
 
+  // ---- M2 sections
+  const ctx: PlanContext = {
+    city, crop, dx, dz, infos, nodes, segments: new Map(city.segments.map(s => [s.id, s])),
+    planSegments: new Set(planSegments.map(s => s.id)), planNodes: usedNodes, reversed: new Set(planSegments.filter(s => s.reversed).map(s => s.id)),
+    inCrop: (x, z) => inCrop(crop, x, z),
+  };
+  const zoning = buildZoning(ctx, opts.zoning ?? DEFAULT_ZONING);
+  const water = buildWater(ctx, opts.water !== false);
+  const transit = buildTransit(ctx, opts.transit !== false);
+  const traffic = buildTraffic(ctx, opts.traffic !== false);
+  const nc = buildNodeController(ctx);
+  for (const r of [zoning, water, transit, traffic, nc]) items.push(...r.items);
+  for (const [k, n] of speedGroups) {
+    const [base, kmh] = k.split('|');
+    items.push({ level: 'info', kind: 'speed-limit', message: `${base}: ${n} segment(s) with a TM:PE speed limit of ${kmh} km/h use a Road Builder variant with that speed`, count: n, cs1: { netInfo: base } });
+  }
+  if (speedOnVanilla) items.push({ level: 'info', kind: 'speed-limit', message: `${speedOnVanilla} track or path segment(s) with a TM:PE speed limit keep the CS2 default speed`, count: speedOnVanilla });
+
   // ---- report
   if (outside) items.push({ level: 'info', kind: 'outside-crop', message: `${outside} segments lie outside the crop`, count: outside });
   if (crossing.length) items.push({ level: 'info', kind: 'crossing-crop-edge', message: `${crossing.length} segments cross the crop edge (one node outside) and are left out`, count: crossing.length, cs1: { segments: crossing.slice(0, 50) } });
@@ -232,7 +291,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     if (!loss && !e.report.notes.length) continue;
     items.push({
       level: loss ? 'warning' : 'info', kind: loss ? 'width-loss' : 'lane-approximation',
-      message: `${e.report.title}${e.report.imtOverrides ? ` (IMT ${e.report.imtOverrides})` : ''}: CS1 ${e.report.cs1Width} m → RB ${e.report.rbWidth} m${e.report.notes.length ? '; ' + e.report.notes.join('; ') : ''}`,
+      message: `${e.report.title}${e.report.imtOverrides ? ` (${e.report.imtOverrides})` : ''}: CS1 ${e.report.cs1Width} m → RB ${e.report.rbWidth} m${e.report.notes.length ? '; ' + e.report.notes.join('; ') : ''}`,
       cs1: { netInfo: e.report.cs1 }, count: e.segments,
     });
   }
@@ -274,17 +333,26 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
       segments: planSegments.length, skipped: skippedCount, nodes: planNodes.length, outsideCrop: outside, crossingCropEdge: crossing.length,
       unmapped: [...skipped.values()].reduce((t, e) => t + e.count, 0), rbConfigs: rbConfigs.size, byPrefabType,
     },
+    requires: [...new Set([...(rbConfigs.size ? ['RoadBuilder'] : []), ...(traffic.section?.requires ?? [])])],
+    ...(zoning.section ? { zoning: zoning.section } : {}),
+    ...(water.section ? { water: water.section } : {}),
+    ...(transit.section ? { transit: transit.section } : {}),
+    ...(traffic.section ? { traffic: traffic.section } : {}),
   };
   const order: Record<string, number> = { warning: 0, info: 1 };
   items.sort((x, y) => order[x.level] - order[y.level]);
-  return {
+  const pkg: BuiltPackage = {
     plan,
     report: { format: 'cs1conv-report', formatVersion: 1, items },
     rbConfigs: [...rbConfigs.values()].map(e => e.config),
     rbVariants: [...rbConfigs.values()].map(e => ({ ...e.report, key: e.key, segments: e.segments })),
     mapping: [...rows.values()].sort((a, b) => Number(a.target.mode === 'skip') - Number(b.target.mode === 'skip') || b.segmentsInCrop - a.segmentsInCrop || b.segments - a.segments),
     errors: cv.errors,
+    summary: [],
+    extraSummary: [zoning.summary, water.summary, transit.summary, traffic.summary, nc.summary],
   };
+  pkg.summary = conversionSummary(city, pkg);
+  return pkg;
 }
 
 /** Default crop: the square of the given size holding the most road/highway segments. */
@@ -309,12 +377,21 @@ export function autoCrop(city: Cs1City, size: number): Crop & { roadSegments: nu
   return { centerX: c.x, centerZ: c.z, size, roadSegments: c.count };
 }
 
+const SCALAR = String.raw`(?:-?\d[\d.eE+-]*|"(?:[^"\\\n]|\\.)*"|true|false|null)`;
+const FLAT_ARRAY = new RegExp(String.raw`\[\s*(${SCALAR}(?:,\s*${SCALAR})*)\s*\]`, 'g');
+
+/** JSON indented by one space, with arrays of scalars kept on one line (zone cells, beziers, ids). */
+export function compactJson(v: unknown): string {
+  return JSON.stringify(v, null, 1).replace(FLAT_ARRAY, (_m, inner: string) => `[${inner.match(new RegExp(SCALAR, 'g'))!.join(',')}]`);
+}
+
 /** Files of the package, relative paths → text (UTF-8, no BOM). */
 export function packageFiles(pkg: BuiltPackage): { path: string; text: string }[] {
   return [
-    { path: 'cs1conv-plan.json', text: JSON.stringify(pkg.plan, null, 1) + '\n' },
+    { path: 'cs1conv-plan.json', text: compactJson(pkg.plan) + '\n' },
     { path: 'report.json', text: JSON.stringify(pkg.report, null, 2) + '\n' },
     ...pkg.rbConfigs.map(c => ({ path: `roadbuilder/${c.ID}.json`, text: JSON.stringify(c, null, 4) + '\n' })),
+    { path: 'README.txt', text: packageReadme(pkg, pkg.summary) },
   ];
 }
 

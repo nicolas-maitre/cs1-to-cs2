@@ -18,6 +18,8 @@ import { readCityFile } from '../src/core/cs1x.ts';
 import { validateCrop } from '../src/core/crop.ts';
 import { autoCrop, buildPackage, mappingStats, packageFiles } from '../src/core/plan.ts';
 import type { MappingOverride } from '../src/core/mapping.ts';
+import { DEFAULT_ZONING } from '../src/core/m2/zoning.ts';
+import type { ZoningOptions } from '../src/core/m2/zoning.ts';
 import type { Crop, Cs1City } from '../src/core/types.ts';
 
 const RB_SUFFIX = '-cs1conv.json';
@@ -27,6 +29,7 @@ function usage(msg?: string): never {
   console.error(`usage:
   node web/cli/cs1conv.ts inspect <file.cs1x|dump.json> [--json]
   node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb] [--keep-other-rb]
+       [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
   node web/cli/cs1conv.ts install-rb <package dir> [--keep-other-rb]`);
   process.exit(2);
 }
@@ -38,7 +41,7 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'help'];
+      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water'];
       if (boolFlags.includes(name)) flags[name] = true;
       else { const v = argv[++i]; if (v == null) usage(`--${name} needs a value`); flags[name] = v; }
     } else pos.push(a);
@@ -140,7 +143,17 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
   if (v.errors.length) usage(v.errors.join('; '));
   let overrides: Record<string, MappingOverride> = {};
   if (typeof flags.overrides === 'string') overrides = JSON.parse(fs.readFileSync(flags.overrides, 'utf8'));
-  const pkg = buildPackage(city, { crop, overrides });
+  const theme = typeof flags.theme === 'string' ? flags.theme.toUpperCase() : DEFAULT_ZONING.theme;
+  if (theme !== 'EU' && theme !== 'NA') usage('--theme must be EU or NA');
+  const resHigh = typeof flags['residential-high'] === 'string' ? flags['residential-high'] : DEFAULT_ZONING.residentialHigh;
+  if (!['High', 'Medium', 'Mixed'].includes(resHigh)) usage('--residential-high must be High, Medium or Mixed');
+  const office = typeof flags.office === 'string' ? flags.office : DEFAULT_ZONING.office;
+  if (!['High', 'Low'].includes(office)) usage('--office must be High or Low');
+  const pkg = buildPackage(city, {
+    crop, overrides,
+    zoning: { enabled: !flags['no-zoning'], theme, residentialHigh: resHigh as ZoningOptions['residentialHigh'], office: office as ZoningOptions['office'] },
+    traffic: !flags['no-traffic'], transit: !flags['no-transit'], water: !flags['no-water'],
+  });
   if (pkg.errors.length) usage(pkg.errors.join('; '));
 
   // Rewrite the package folder: remove our own previous outputs only.
@@ -159,6 +172,8 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
   console.log(`  ${s.segments} segments, ${s.nodes} nodes, ${s.rbConfigs} RB configs; by type ${JSON.stringify(s.byPrefabType)}`);
   console.log(`  skipped ${s.skipped} (crossing crop edge ${s.crossingCropEdge}, not placeable / unmapped ${s.unmapped}); outside crop ${s.outsideCrop}`);
   console.log(`  ground NetInfos in crop: ${ms.netInfos.inCrop} → RB ${ms.rb.inCrop}, vanilla ${ms.vanilla.inCrop}, not placeable ${ms.skippedNotPlaceable.inCrop}, unmapped ${ms.skippedUnmapped.inCrop}`);
+  for (const c of pkg.summary) console.log(`  ${c.label.padEnd(38)} ${c.status.padEnd(13)} ${c.summary}`);
+  if (pkg.plan.requires?.length) console.log(`  CS2 mods needed: ${pkg.plan.requires.join(', ')}`);
   const warn = pkg.report.items.filter(i => i.level === 'warning').length;
   console.log(`  report: ${pkg.report.items.length} items (${warn} warnings)`);
   if (flags['install-rb']) printInstall(installRb(out, { keepOther: !!flags['keep-other-rb'] }));

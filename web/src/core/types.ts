@@ -109,6 +109,72 @@ export interface Cs1ReportItem {
   message: string;
 }
 
+// ---------------------------------------------------------------- M2 sections (schema/README.md §1)
+
+export interface ZoneBlock {
+  id: number;
+  position: Vec3;
+  /** CS1 ZoneBlock.m_angle, radians. */
+  angle: number;
+  rows: number;
+  segment: number;
+  /** rows × 4 chars, row-major: hex zone code per cell, "-" = invalid cell. */
+  zones: string;
+  occupied?: string;
+}
+export interface ZonesSection { cellSize: number; columns: number; zoneCodes: Record<string, string>; blocks: ZoneBlock[] }
+
+export interface WaterSource {
+  index?: number; id?: number;
+  type: 'natural' | 'facility' | 'cleaner' | string;
+  inputPosition: Vec3; outputPosition: Vec3;
+  inputRate?: number; outputRate?: number;
+  target?: number; targetHeight?: number;
+  flow?: number; water?: number; pollution?: number; terrainHeightAtOutput?: number;
+}
+export interface WaterSection {
+  seaLevel: number | null;
+  nextSeaLevel?: number | null;
+  depth?: { file?: string; resolution: number; size: number; heightScale: number; wetSamples?: number; maxDepth?: number };
+  sources: WaterSource[];
+  /** Decoded water.r16 (depth above terrain, raw units), when present. */
+  depthGrid?: Uint16Array;
+}
+
+export interface TransitStop {
+  node: number; position: Vec3;
+  lane?: number; segment?: number; laneIndex?: number; laneOffset?: number; building?: number;
+}
+export interface TransitLine {
+  id: number; name?: string; number?: number; info?: string; type: string; vehicleType?: string;
+  color?: number[]; customColor?: boolean; complete?: boolean; vehicles?: number; flags?: string;
+  stops: TransitStop[];
+}
+export interface TransitSection { lines: TransitLine[] }
+
+export interface TmpeLaneRef { lane?: number; segment: number; laneIndex: number; node?: number }
+export interface TmpeSection {
+  assembly?: { name?: string; version?: string };
+  laneArrows?: (TmpeLaneRef & { arrows: string[] })[] | null;
+  laneConnections?: { sourceSegment: number; sourceLaneIndex: number; targetSegment: number; targetLaneIndex: number; sourceStartNode?: boolean; node: number; group?: string }[] | null;
+  speedLimits?: (TmpeLaneRef & { kmh: number; unlimited?: boolean })[] | null;
+  defaultSpeedLimits?: Record<string, number> | null;
+  vehicleRestrictions?: (TmpeLaneRef & { allowed: string[] })[] | null;
+  junctionRestrictions?: ({ segment: number; startNode?: boolean; node: number } & Record<string, unknown>)[] | null;
+  prioritySigns?: { segment: number; node: number; type: 'Main' | 'Stop' | 'Yield' | string }[] | null;
+  parkingRestrictions?: { segment: number; forwardParkingAllowed?: boolean; backwardParkingAllowed?: boolean }[] | null;
+  trafficLights?: { node: number; trafficLight: boolean }[] | null;
+  timedTrafficLights?: { nodeId: number; nodeGroup?: number[] }[] | null;
+  parts?: Record<string, string>;
+}
+
+export interface NcSegmentEnd { segment: number; isStartNode?: boolean; noMarkings?: boolean | null; [k: string]: unknown }
+export interface NcNode {
+  id: number; type: string; defaultType?: string; mode?: string; offset?: number | null; noMarkings?: boolean | null;
+  segmentEnds?: NcSegmentEnd[]; [k: string]: unknown;
+}
+export interface NodeControllerSection { assembly?: { name?: string; version?: string }; nodes: NcNode[] }
+
 /** A loaded CS1 city, whatever the source (.cs1x or the M0 network dump). */
 export interface Cs1City {
   source: 'cs1x' | 'm0-dump';
@@ -118,6 +184,11 @@ export interface Cs1City {
   netInfos: NetInfo[];
   imtFillers: ImtFiller[];
   terrain: Terrain | null;
+  zones?: ZonesSection | null;
+  water?: WaterSection | null;
+  transit?: TransitSection | null;
+  tmpe?: TmpeSection | null;
+  nodeController?: NodeControllerSection | null;
   /** The exporter's own report plus anything the reader noticed. */
   report: Cs1ReportItem[];
   /** sha256 of the source file bytes (hex), when computed. */
@@ -139,8 +210,12 @@ export interface PlanPrefab {
   name: string;
   /** CS1 ground NetInfo this prefab stands for. */
   source: string;
-  /** IMT lane overrides baked into this RB config, e.g. "6=bus,8.5=bus". */
+  /** Lane overrides baked into this RB config, e.g. "6=bus,8.5=bus" (field name from M1; since M2 also from TM:PE). */
   imt?: string;
+  /** Where the lane overrides come from: "IMT", "TM:PE" or "IMT+TM:PE". */
+  lanesFrom?: string;
+  /** Speed limit of this RB variant when it differs from the CS1 road's default (TM:PE). */
+  speedKmh?: number;
 }
 
 export interface PlanNode {
@@ -182,6 +257,63 @@ export interface Plan {
   nodes: PlanNode[];
   segments: PlanSegment[];
   stats: PlanStats;
+  /** CS2 mods the plan needs besides Road Builder (e.g. "Traffic" for lane connections and priority signs). */
+  requires?: string[];
+  zoning?: PlanZoning;
+  water?: PlanWater;
+  transit?: PlanTransit;
+  traffic?: PlanTraffic;
+}
+
+/** Zoned cells: centre of every zoned CS1 cell (CS2 coordinates) → index into prefabs (CS2 zone prefab names). */
+export interface PlanZoning {
+  theme: string;
+  cellSize: number;
+  prefabs: string[];
+  /** [x, z, prefabIndex] */
+  cells: [number, number, number][];
+  stats: { cells: number; blocks: number; outsideCrop: number; roadNotInPlan: number };
+}
+
+export interface PlanWater {
+  /** CS1 sea level, absolute metres (terrain datum). */
+  seaLevel: number | null;
+  /** Share of the crop under water in the CS1 snapshot (0–1), null without a depth grid. */
+  wetFraction: number | null;
+  maxDepth: number;
+  /** Natural CS1 water sources in the crop (CS2 coordinates). */
+  sources: { cs1Index: number; x: number; z: number; y: number; targetHeight: number | null; outputRate: number | null }[];
+}
+
+export interface PlanTransitLine {
+  cs1Id: number;
+  name: string;
+  number: number | null;
+  cs1Type: string;
+  /** CS2 transport line prefab, e.g. "Bus Line". */
+  line: string;
+  /** CS2 kerbside stop prefab, or null for station-based lines. */
+  stopPrefab: string | null;
+  color: string | null;
+  vehicles: number | null;
+  /** true for lines whose stops are stations (train, metro, ship, plane). */
+  requiresStations: boolean;
+  /** true when stops outside the crop / off the imported roads were dropped. */
+  truncated: boolean;
+  stops: { cs1Node: number; x: number; z: number; y: number; segment: number | null; side: 'left' | 'right' | null; t: number | null; cs1Building: number }[];
+}
+export interface PlanTransit { lines: PlanTransitLine[] }
+
+export interface PlanLane {
+  segment: number; ordinal: number; count: number; offset: number; dir: 'forward' | 'backward' | 'both'; cs1LaneIndex: number;
+}
+export interface PlanTraffic {
+  requires: string[];
+  /** Every junction in the plan with its CS1 traffic-light state. */
+  nodes: { id: number; trafficLights: boolean; allWayStop?: boolean }[];
+  segmentEnds: { segment: number; node: number; priority?: 'main' | 'stop' | 'yield'; forbid?: ('left' | 'straight' | 'right')[]; crosswalk?: boolean; uturn?: boolean }[];
+  laneConnections: { node: number; from: PlanLane; to: PlanLane }[];
+  laneArrows: { node: number; lane: PlanLane; arrows: ('left' | 'straight' | 'right')[] }[];
 }
 
 export interface PlanStats {
@@ -211,7 +343,13 @@ export type PackageReportKind =
   | 'lane-approximation'
   | 'crop'
   | 'source'
-  | 'mapping-override';
+  | 'mapping-override'
+  | 'speed-limit'
+  | 'zoning'
+  | 'water'
+  | 'transit'
+  | 'traffic'
+  | 'node-controller';
 
 export interface PackageReportItem {
   level: 'info' | 'warning';

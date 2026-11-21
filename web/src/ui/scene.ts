@@ -2,6 +2,7 @@
 // hillshade image and a coarse spatial grid for hover hit-tests. World units: CS1 metres, screen y = −z.
 
 import { bezierPoint } from '../core/imt.ts';
+import { cellCentre } from '../core/m2/zoning.ts';
 import { categorize } from '../core/mapping.ts';
 import type { NetCategory } from '../core/mapping.ts';
 import type { Cs1City, Cs1Segment, NetInfo, Terrain } from '../core/types.ts';
@@ -24,7 +25,11 @@ export const CATEGORY_STYLE: Record<NetCategory, { color: string; label: string;
 /** Categories drawn under the roads, thin and dim; hidden unless "show skipped" is on. */
 export const SKIPPED_CATS = new Set<NetCategory>(['utility', 'transport-line', 'building', 'monorail', 'other']);
 
-export interface Bucket { cat: NetCategory; width: number; path: Path2D; tunnel: boolean; elevated: boolean }
+export interface Bucket { cat: NetCategory; width: number; path: Path2D; tunnel: boolean; elevated: boolean; count: number;
+  /** World bbox (x, z) for viewport culling; buckets are split into TILE-sized tiles. */
+  minX: number; minZ: number; maxX: number; maxZ: number }
+
+const TILE = 2048;
 
 export interface SegInfo { seg: Cs1Segment; base: string; cat: NetCategory; pts: [number, number][]; halfWidth: number }
 
@@ -37,7 +42,24 @@ export interface Scene {
   extent: { minX: number; maxX: number; minZ: number; maxZ: number };
   terrain: HTMLCanvasElement | null;
   terrainSize: number;
+  /** Per segment: start x, start z, end x, end z (fast crop-edge test). */
+  ends: Float64Array;
+  /** Per segment: 1 when its category is skipped (not drawn unless "show skipped"). */
+  skipped: Uint8Array;
+  /** Zoned CS1 cells, one path per CS1 zone type. */
+  zones: { zone: string; color: string; path: Path2D; count: number }[];
+  /** Transit lines through their stops. */
+  lines: { name: string; color: string; path: Path2D; stops: Path2D }[];
 }
+
+export const ZONE_STYLE: Record<string, { color: string; label: string }> = {
+  ResidentialLow: { color: '#6ac46a', label: 'Residential low' },
+  ResidentialHigh: { color: '#2f8f3a', label: 'Residential high' },
+  CommercialLow: { color: '#5aa9e6', label: 'Commercial low' },
+  CommercialHigh: { color: '#2f6fc4', label: 'Commercial high' },
+  Industrial: { color: '#e0b040', label: 'Industrial' },
+  Office: { color: '#47c9c9', label: 'Office' },
+};
 
 const SAMPLES = 8;
 
@@ -66,10 +88,12 @@ export function buildScene(city: Cs1City): Scene {
     const kind = s.elevationKind ?? 'ground';
     const tunnel = kind === 'tunnel' || kind === 'underground';
     const elevated = kind === 'elevated' || kind === 'bridge';
-    const key = `${cat}|${Math.round(hw)}|${tunnel}|${elevated}`;
-    let b = buckets.get(key);
-    if (!b) { b = { cat, width: Math.round(hw) * 2, path: new Path2D(), tunnel, elevated }; buckets.set(key, b); }
     const p = s.bezier;
+    const key = `${cat}|${Math.round(hw)}|${tunnel}|${elevated}|${Math.floor(p[0][0] / TILE)},${Math.floor(p[0][2] / TILE)}`;
+    let b = buckets.get(key);
+    if (!b) { b = { cat, width: Math.round(hw) * 2, path: new Path2D(), tunnel, elevated, count: 0, minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity }; buckets.set(key, b); }
+    b.count++;
+    for (const q of p) { if (q[0] < b.minX) b.minX = q[0]; if (q[0] > b.maxX) b.maxX = q[0]; if (q[2] < b.minZ) b.minZ = q[2]; if (q[2] > b.maxZ) b.maxZ = q[2]; }
     b.path.moveTo(p[0][0], -p[0][2]);
     b.path.bezierCurveTo(p[1][0], -p[1][2], p[2][0], -p[2][2], p[3][0], -p[3][2]);
     const pts: [number, number][] = [];
@@ -106,7 +130,46 @@ export function buildScene(city: Cs1City): Scene {
   // Draw order: skipped stuff first, then paths, tracks, roads, highways.
   const order: NetCategory[] = ['transport-line', 'utility', 'building', 'other', 'monorail', 'pedestrian', 'bike', 'metro', 'train', 'tram', 'road', 'highway'];
   const sorted = [...buckets.values()].sort((a, b) => (a.tunnel === b.tunnel ? 0 : a.tunnel ? -1 : 1) || order.indexOf(a.cat) - order.indexOf(b.cat) || (a.elevated === b.elevated ? 0 : a.elevated ? 1 : -1) || a.width - b.width);
-  return { buckets: sorted, fills, segs, grid, cell, extent: { minX, maxX, minZ, maxZ }, terrain: city.terrain ? hillshade(city.terrain) : null, terrainSize: city.terrain?.size ?? 0 };
+  const ends = new Float64Array(segs.length * 4);
+  const skipped = new Uint8Array(segs.length);
+  segs.forEach((g, i) => {
+    const a = g.pts[0], b = g.pts[g.pts.length - 1];
+    ends[i * 4] = a[0]; ends[i * 4 + 1] = a[1]; ends[i * 4 + 2] = b[0]; ends[i * 4 + 3] = b[1];
+    skipped[i] = SKIPPED_CATS.has(g.cat) ? 1 : 0;
+  });
+  // zoned cells as rotated squares
+  const zonePaths = new Map<string, { zone: string; color: string; path: Path2D; count: number }>();
+  if (city.zones) {
+    const z = city.zones, cols = z.columns || 4, cs = z.cellSize || 8, h = cs / 2 - 0.6;
+    for (const b of z.blocks) {
+      const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
+      for (let i = 0; i < b.zones.length; i++) {
+        const ch = b.zones[i];
+        if (ch === '-') continue;
+        const name = z.zoneCodes[String(parseInt(ch, 16))];
+        const st = name ? ZONE_STYLE[name] : undefined;
+        if (!st) continue;
+        const [x, zz] = cellCentre(b.position[0], b.position[2], b.angle, i % cols, Math.floor(i / cols), cs);
+        let e = zonePaths.get(name);
+        if (!e) { e = { zone: name, color: st.color, path: new Path2D(), count: 0 }; zonePaths.set(name, e); }
+        e.count++;
+        // corners: ±h along the column direction (ca, sa) and the row direction (sa, −ca); screen y = −z
+        const pts = [[-h, -h], [h, -h], [h, h], [-h, h]].map(([u, v]) => [x + u * ca + v * sa, -(zz + u * sa - v * ca)]);
+        e.path.moveTo(pts[0][0], pts[0][1]);
+        for (let k = 1; k < 4; k++) e.path.lineTo(pts[k][0], pts[k][1]);
+        e.path.closePath();
+      }
+    }
+  }
+  const lines = (city.transit?.lines ?? []).filter(l => l.stops.length >= 2).map(l => {
+    const path = new Path2D(), stops = new Path2D();
+    l.stops.forEach((s, i) => (i ? path.lineTo(s.position[0], -s.position[2]) : path.moveTo(s.position[0], -s.position[2])));
+    path.closePath();
+    for (const s of l.stops) { stops.moveTo(s.position[0] + 9, -s.position[2]); stops.arc(s.position[0], -s.position[2], 9, 0, Math.PI * 2); }
+    const c = l.color ?? [255, 255, 255];
+    return { name: l.name ?? l.type, color: `rgb(${c[0]},${c[1]},${c[2]})`, path, stops };
+  });
+  return { buckets: sorted, fills, segs, grid, cell, extent: { minX, maxX, minZ, maxZ }, terrain: city.terrain ? hillshade(city.terrain) : null, terrainSize: city.terrain?.size ?? 0, ends, skipped, zones: [...zonePaths.values()], lines };
 }
 
 /** Hillshade + hypsometric tint of the raw heightmap; image row 0 = north (screen top). */

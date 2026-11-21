@@ -12,6 +12,19 @@ function samples(): Plugin {
     name: 'cs1conv-samples',
     apply: 'serve',
     configureServer(server) {
+      // Dev only: scripted checks POST a canvas snapshot here (saved to test/.out/, git-ignored).
+      server.middlewares.use('/__shot', (req, res) => {
+        if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+        const name = (new URL(req.url ?? '/', 'http://x').searchParams.get('name') ?? 'shot').replace(/[^\w-]/g, '');
+        const chunks: Buffer[] = [];
+        req.on('data', c => chunks.push(c));
+        req.on('end', () => {
+          const out = path.join(import.meta.dirname, 'test', '.out');
+          fs.mkdirSync(out, { recursive: true });
+          fs.writeFileSync(path.join(out, `${name}.png`), Buffer.concat(chunks));
+          res.end('ok');
+        });
+      });
       server.middlewares.use('/samples', (req, res, next) => {
         const name = decodeURIComponent((req.url ?? '/').split('?')[0]).replace(/^\/+/, '');
         if (!name) {
@@ -30,7 +43,10 @@ function samples(): Plugin {
 }
 
 export default defineConfig({
+  // relative asset paths: dist/ can be hosted from any folder or sub-path
+  base: './',
   plugins: [react(), samples()],
+  worker: { format: 'es' },
   server: { port: 5178, strictPort: true },
   test: { include: ['test/**/*.test.ts'] },
 } as never);

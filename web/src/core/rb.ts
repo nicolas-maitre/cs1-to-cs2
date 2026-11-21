@@ -169,8 +169,15 @@ export function netInfoTitle(info: Pick<NetInfo, 'name' | 'title'>): string {
   return info.title && !/^NET_TITLE\[/.test(info.title) ? info.title : info.name.replace(/^\d+\./, '').replace(/_Data$/, '');
 }
 
-/** Generate the RB config for a road NetInfo (+ IMT overrides). null when the road has no drive lane. */
-export function convert(info: NetInfo, overrides: Map<number, LaneOverrideKind> | null = null): { config: RbConfig; report: RbReport } | null {
+export interface ConvertOptions {
+  /** Speed limit override (km/h), e.g. from TM:PE; becomes part of the id (",speed=60"). */
+  speedKmh?: number | null;
+  /** Label for lane overrides in the road name (default "IMT"). */
+  overrideLabel?: string;
+}
+
+/** Generate the RB config for a road NetInfo (+ lane overrides, + speed). null when the road has no drive lane. */
+export function convert(info: NetInfo, overrides: Map<number, LaneOverrideKind> | null = null, opts: ConvertOptions = {}): { config: RbConfig; report: RbReport } | null {
   const a = analyse(info, overrides);
   if (!a.slots.length) return null;
   const notes: string[] = [];
@@ -283,10 +290,14 @@ export function convert(info: NetInfo, overrides: Map<number, LaneOverrideKind> 
 
   out.push(edge(rightExtra, false, 'right'));
 
-  const speed = Math.max(0, ...a.slots.filter(s => s.kind === 'car' || s.kind === 'bus').map(s => s.speedKmh));
+  const cs1Speed = Math.max(0, ...a.slots.filter(s => s.kind === 'car' || s.kind === 'bus').map(s => s.speedKmh));
+  const speedOverride = opts.speedKmh != null && opts.speedKmh > 0 ? Math.round(opts.speedKmh / 5) * 5 : null;
+  const speed = speedOverride ?? cs1Speed;
+  if (speedOverride != null) notes.push(`speed limit ${speedOverride} km/h (TM:PE; default ${cs1Speed} km/h)`);
   const rbWidth = out.reduce((t, l) => t + l.width, 0);
   const cs1Width = a.halfWidth * 2;
-  const sig = overrideSignature(overrides);
+  const laneSig = overrideSignature(overrides);
+  const sig = speedOverride != null ? `${laneSig ? laneSig + ',' : ''}speed=${speedOverride}` : laneSig;
   const id = rbConfigId(info.name, sig);
   // Elevated-only roads: the ground NetInfo may be missing (M0 dump), so the variant stands in.
   const rawTitle = netInfoTitle(info);
@@ -296,7 +307,7 @@ export function convert(info: NetInfo, overrides: Map<number, LaneOverrideKind> 
 
   const config: RbConfig = {
     Type: 'RoadConfig', Version: 5, OriginalID: id, ID: id,
-    Name: `[CS1] ${title}${sig ? ' (IMT ' + [...new Set([...overrides!.values()].map(k => k.replace('median-grass', 'median')))].join('+') + ')' : ''}`.slice(0, 60),
+    Name: `[CS1] ${title}${laneSig ? ` (${opts.overrideLabel ?? 'IMT'} ` + [...new Set([...overrides!.values()].map(k => k.replace('median-grass', 'median')))].join('+') + ')' : ''}${speedOverride != null ? ` ${speedOverride} km/h` : ''}`.slice(0, 60),
     PillarPrefabName: 'Pillar Placeholder',
     SpeedLimit: Math.round(speed / 5) * 5 * 2 || 100,
     MaxSlopeSteepness: 0.2,

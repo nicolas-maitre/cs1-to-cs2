@@ -93,3 +93,20 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - It's tested against missing IMT / TM:PE / NC / 81 Tiles.
     - Workshop preview, description and changelog are prepared. **Uploading to the Workshop is left to the user.**
 37. **The web tool has no public URL yet** (Claude). The exporter's "Open web tool" button defaults to the local dev address until a hosting decision is made, which is the user's call.
+38. **Web tool: release-grade static site** (Claude).
+    - A landing page with 6 steps and clear error states.
+    - Packages are built in a Web Worker, and the map is drawn in 2 km tiles (4–7 ms per redraw on a 64k-segment city).
+    - Keyboard, accessibility and phone layout covered.
+    - The package zip includes a `README.txt`.
+    - It builds to a relocatable `dist/`. **Nothing is deployed**: hosting is the user's call.
+39. **Import plan M2 additions stay `formatVersion: 1`, all optional** (Claude). An M1 importer still builds the roads. Details are in `schema/README.md` §2 and `web/DECISIONS-web.md` 16–32. Each conversion is aimed at a specific CS2 target:
+
+    | CS1 data | CS2 target |
+    | --- | --- |
+    | Zoning | CS2 zone cells, NA theme by default |
+    | TM:PE speed limits, bus lanes | new Road Builder variants |
+    | Traffic lights, all-way stops, turn bans, crosswalks | vanilla CS2 settings |
+    | Priority signs, lane arrows, lane connections | Traffic mod |
+    | Transit lines | CS2 lines (the station lines need stations) |
+    | Water | sea level + sources |
+    | Node Controller | reported only |

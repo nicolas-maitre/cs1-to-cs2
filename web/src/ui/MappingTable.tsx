@@ -42,7 +42,7 @@ export function MappingTable({ rows, overrides, onOverride }: Props) {
                 </td>
                 <td className="num">{r.segmentsInCrop}<span className="muted"> / {r.segments}</span></td>
                 <td>
-                  <select value={encode(overrides[r.netInfo])} onChange={e => onOverride(r.netInfo, decode(e.target.value))}>
+                  <select aria-label={`CS2 target for ${r.title}`} value={encode(overrides[r.netInfo])} onChange={e => onOverride(r.netInfo, decode(e.target.value))}>
                     <option value="auto">Auto: {autoLabel(r)}</option>
                     {(r.category === 'road' || r.category === 'highway') && <option value="rb">Generated Road Builder road</option>}
                     <optgroup label="Vanilla CS2">

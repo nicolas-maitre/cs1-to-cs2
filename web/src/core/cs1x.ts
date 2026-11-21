@@ -4,7 +4,7 @@
 
 import { unzipSync, strFromU8 } from 'fflate';
 import { sha256Hex } from './hash.ts';
-import type { Cs1City, Cs1Node, Cs1ReportItem, Cs1Segment, ImtFiller, Manifest, NetInfo, Terrain } from './types.ts';
+import type { Cs1City, Cs1Node, Cs1ReportItem, Cs1Segment, ImtFiller, Manifest, NetInfo, NodeControllerSection, Terrain, TmpeSection, TransitSection, WaterSection, ZonesSection } from './types.ts';
 
 const VARIANT_FIELDS: Record<string, string> = {
   elevated: 'm_elevatedInfo', bridge: 'm_bridgeInfo', slope: 'm_slopeInfo', tunnel: 'm_tunnelInfo',
@@ -16,23 +16,59 @@ export function parseJson<T = unknown>(text: string): T {
 
 const isZip = (b: Uint8Array) => b.length > 4 && b[0] === 0x50 && b[1] === 0x4b && (b[2] === 3 || b[2] === 5);
 
-/** Read a .cs1x (zip) or an M0 dump (JSON) from raw bytes. */
+/** .cs1x format versions this reader understands (the version bumps only on breaking changes). */
+export const SUPPORTED_FORMAT_VERSION = 1;
+
+export type ReadErrorCode = 'empty' | 'crp-save' | 'not-cs1x' | 'corrupt-zip' | 'no-manifest' | 'format-too-old' | 'format-too-new';
+
+/** A file that cannot be read at all, with a message and a hint meant for the user. */
+export class ReadError extends Error {
+  code: ReadErrorCode;
+  hint: string;
+  constructor(code: ReadErrorCode, message: string, hint: string) {
+    super(message);
+    this.name = 'ReadError';
+    this.code = code;
+    this.hint = hint;
+  }
+}
+
+const EXPORT_HINT = 'Export the city with the CS1 → CS2 Exporter mod in Cities: Skylines (Options → Mod Settings → Export city) and open the .cs1x it writes.';
+
+/** Read a .cs1x (zip) or an M0 dump (JSON) from raw bytes. Throws ReadError for unusable files. */
 export async function readCityFile(bytes: Uint8Array, opts: { hash?: boolean } = {}): Promise<Cs1City> {
-  const city = isZip(bytes) ? readCs1x(bytes) : fromM0Dump(parseJson(strFromU8(bytes)));
+  if (!bytes.length) throw new ReadError('empty', 'The file is empty.', EXPORT_HINT);
+  let city: Cs1City;
+  if (isZip(bytes)) city = readCs1x(bytes);
+  else if (bytes[0] === 0x43 && bytes[1] === 0x52 && bytes[2] === 0x41 && bytes[3] === 0x50) {
+    throw new ReadError('crp-save', 'This is a Cities: Skylines save or asset (.crp), not a .cs1x export.', EXPORT_HINT);
+  } else {
+    let json: unknown;
+    try { json = parseJson(strFromU8(bytes)); }
+    catch { throw new ReadError('not-cs1x', 'This file is neither a .cs1x export nor a network dump.', EXPORT_HINT); }
+    try { city = fromM0Dump(json as never); }
+    catch { throw new ReadError('not-cs1x', 'This JSON file is not a .cs1x export or a network dump.', EXPORT_HINT); }
+  }
   if (opts.hash !== false) city.sha256 = await sha256Hex(bytes);
   return city;
 }
 
 /** Synchronous .cs1x reader (no hash). Throws only when the file is not a .cs1x at all. */
 export function readCs1x(bytes: Uint8Array): Cs1City {
-  const entries = unzipSync(bytes);
+  let entries: Record<string, Uint8Array>;
+  try { entries = unzipSync(bytes); }
+  catch (e) { throw new ReadError('corrupt-zip', `The file looks like a zip but cannot be unpacked (${e instanceof Error ? e.message : e}).`, 'The download or copy may be incomplete. Export the city again.'); }
   const text = (name: string) => (entries[name] ? strFromU8(entries[name]) : null);
   const manifestText = text('manifest.json');
-  if (manifestText == null) throw new Error('not a .cs1x: manifest.json is missing');
-  const manifest = parseJson<Manifest>(manifestText);
-  if (manifest.format !== 'cs1x') throw new Error(`not a .cs1x: manifest format is ${JSON.stringify(manifest.format)}`);
+  if (manifestText == null) throw new ReadError('no-manifest', 'This zip has no manifest.json, so it is not a .cs1x export.', EXPORT_HINT);
+  let manifest: Manifest;
+  try { manifest = parseJson<Manifest>(manifestText); }
+  catch { throw new ReadError('no-manifest', 'manifest.json in this file is not valid JSON.', 'The export may have been interrupted. Export the city again.'); }
+  if (manifest.format !== 'cs1x') throw new ReadError('not-cs1x', `This zip is not a .cs1x export (format ${JSON.stringify(manifest.format)}).`, EXPORT_HINT);
+  const v = Number(manifest.formatVersion);
+  if (!Number.isFinite(v) || v < 1) throw new ReadError('format-too-old', `This .cs1x has format version ${manifest.formatVersion ?? '(none)'}, from a pre-release exporter.`, 'Update the CS1 → CS2 Exporter mod and export the city again.');
+  if (v > SUPPORTED_FORMAT_VERSION) throw new ReadError('format-too-new', `This .cs1x has format version ${v}; this tool reads version ${SUPPORTED_FORMAT_VERSION}.`, 'The exporter is newer than this web tool. Reload the page to get the latest version of the tool.');
   const report: Cs1ReportItem[] = [];
-  if (manifest.formatVersion !== 1) report.push({ level: 'warning', section: 'reader', message: `formatVersion ${manifest.formatVersion}; this reader knows v1` });
   const exporterReport = text('report.json');
   if (exporterReport) {
     try { report.push(...(parseJson<{ items?: Cs1ReportItem[] }>(exporterReport).items ?? [])); }
@@ -68,10 +104,26 @@ export function readCs1x(bytes: Uint8Array): Cs1City {
       terrain = { ...terrainMeta, heights };
     }
   }
+  // M2 sections: read when present and not "absent"; a damaged one never stops the rest.
+  const decodeR16 = (file: string, n: number) => {
+    const raw = entries[file];
+    if (!raw || raw.length < n * 2) { report.push({ level: 'warning', section: 'reader', message: `${file} missing or short` }); return undefined; }
+    const out = new Uint16Array(n);
+    const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    for (let i = 0; i < n; i++) out[i] = dv.getUint16(i * 2, true);
+    return out;
+  };
+  const zones = section('zones', 'zones.json', (j: ZonesSection) => (Array.isArray(j.blocks) ? j : null), null as ZonesSection | null);
+  const water = section('water', 'water.json', (j: WaterSection) => ({ ...j, sources: j.sources ?? [] }), null as WaterSection | null);
+  if (water?.depth?.resolution) water.depthGrid = decodeR16(water.depth.file ?? 'water.r16', water.depth.resolution * water.depth.resolution);
+  const transit = section('transit', 'transit.json', (j: TransitSection) => (Array.isArray(j.lines) ? j : null), null as TransitSection | null);
+  const tmpe = section('tmpe', 'tmpe.json', (j: TmpeSection) => j, null as TmpeSection | null);
+  const nodeController = section('nodecontroller', 'nodecontroller.json', (j: NodeControllerSection) => (Array.isArray(j.nodes) ? j : null), null as NodeControllerSection | null);
+  for (const [k, v] of Object.entries(tmpe?.parts ?? {})) if (v !== 'ok') report.push({ level: 'warning', section: 'tmpe', message: `TM:PE part ${k}: ${v}` });
   completeVariants(netInfos);
   return {
     source: 'cs1x', manifest, nodes: network.nodes ?? [], segments: network.segments ?? [],
-    netInfos, imtFillers, terrain, report, sha256: null,
+    netInfos, imtFillers, terrain, zones, water, transit, tmpe, nodeController, report, sha256: null,
   };
 }
 
