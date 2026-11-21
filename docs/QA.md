@@ -477,7 +477,12 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
   - production 280 MW against 294 MW consumption, the rest imported.
 - **Vehicles after 5 min:** 55 public transport vehicles (36 buses, 2 trains with 6 carriages, 10 prison vans, 1 plane) on 20 routes, from 12 depots. No metro or tram vehicles (#83).
 - **Segments lost after the import:** 21 plan segments that were built can't be resolved by later read-only ops (`heights`, `lanedirs`; the lane check's 67 `segment_or_node_not_found`). Only 2 failed in the import itself.
-  - **Cause** (op `inspect` in the saved city, `inspect-missing.json`): the utilities step's line-end snapping (buildings 0.3.3) **splits road junctions**. At 10 sampled junctions a Low-voltage Line or Combined Small Pipe node sits at the road node's exact position and has taken over one of the road edges. The junction becomes two nodes, so traffic can't pass, and junction data written before (lane connections) goes stale.
-  - Sent to the buildings worker with the repro, and to worker-5 for #142.
-  - Expected after the fix: one node per junction, and `heights` reporting only the import's 2 failures.
+  - **Cause:** the importer's resolver, not the utilities.
+    - Where a CS1 power line or pipe ends on a road node, CS2 gives the line its own node at the same position. That node lists the road edge in `ConnectedEdge` as a local connection (how a line joins a road), not as an endpoint.
+    - The importer's node lookup could pick that node, and its path walk followed the local connection (buildings worker's analysis, confirmed against `inspect-missing.json`).
+    - Fixed in the importer: `GameWorld.EdgesOf` returns only edges the node starts or ends, and the node index ranks utility nodes last (DECISIONS-importer.md #64).
+    - The buildings worker also pulls line ends 3 m back from road nodes, with a road guard.
+  - **Roads that change on reload (#142):** 19 segments on Skibidi.
+    - They carry bus stops placed by the transit step. The edge's composition picks the stop variant (`PrimaryStop`, plus a Car Bay Lane) only on the next load, which shifts lane indices, so lane connections written in session break.
+    - Fix with worker-4 (`Transit.cs` marks the attached edge `Updated`). Acceptance now fails on any road that differs after a save and reload (`roads-reload` step).
 - **Not covered:** memory (to repeat with the fixed sampler), the lane repair step (#142, uncommitted), metro and tram vehicles.

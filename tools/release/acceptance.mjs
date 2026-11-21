@@ -203,6 +203,35 @@ try {
     if (wrongTurns > 0) throw new Error(`${wrongTurns} written lane connection(s) go to a different arm than in CS1: ${JSON.stringify(res).slice(0, 1500)}`);
     return res;
   }).catch(() => {});
+  // The roads must be the same after a save and reload (DECISIONS-importer.md #64): per plan segment, the car lanes
+  // (op lanedirs) and each edge's prefab and composition (op edgestate) before saving vs after reloading. A road whose
+  // composition CS2 only re-selects on load (bus stops placed without updating the edge) gains a bus bay on reload, and
+  // the lane connections written for the old lanes break.
+  await step('roads-reload', async () => {
+    const plan = path.join(S.package, 'cs1conv-plan.json');
+    const dump = async () => ({
+      lanes: (await b.exec(LIB, { args: { op: 'lanedirs', plan }, timeout: 900 })).lanes ?? {},
+      edges: (await b.exec(LIB, { args: { op: 'edgestate', plan, lanes: false }, timeout: 900 })).edges ?? {},
+    });
+    const key = (es) => (es ?? []).map((e) => `${e.prefab} | ${e.comp_flags} | ${e.comp_lanes}`).join(' ; ');
+    const before = await dump();
+    const name = `cs1conv-acceptance-${tag}-roads`;
+    await b.saveWrite(name);
+    await b.load(name);
+    await b.pause();
+    await b.wait(120, 4, { timeout: 300 });
+    const after = await dump();
+    const changed = [];
+    for (const id of Object.keys(before.lanes)) {
+      const lb = before.lanes[id], la = after.lanes[id], cb = key(before.edges[id]), ca = key(after.edges[id]);
+      if (la === undefined) changed.push(`${id}: gone after reload`);
+      else if (lb !== la || cb !== ca) changed.push(`${id}: ${lb} → ${la}${cb !== ca ? ` | ${cb} → ${ca}` : ''}`);
+    }
+    fs.writeFileSync(path.join(runDir, 'roads-reload.json'), JSON.stringify({ changed, before, after }, null, 1));
+    const res = { segments: Object.keys(before.lanes).length, changed: changed.length, examples: changed.slice(0, 10) };
+    if (changed.length > 0) throw new Error(`${changed.length} road(s) differ after a save and reload: ${JSON.stringify(res).slice(0, 1500)}`);
+    return res;
+  }).catch(() => {});
   // The lane connections must survive a save and reload: the Traffic mod's loader drops a junction's data when it fails
   // its checks ("couldn't load data from N of M intersections"). Predicted before saving (op lanedata), then measured
   // after a real save + load: nodes with data, loader failures, and the turn check again.

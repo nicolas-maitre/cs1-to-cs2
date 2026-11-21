@@ -52,6 +52,7 @@ namespace Cs2Importer
                 case "lanedata": return LaneOps.LoaderCheck(args);
                 case "lanesrepair": args["repair"] = true; return LaneOps.Apply(args);
                 case "lanedirs": return LaneDirs.Dump(args);
+                case "edgestate": return EdgeState.Dump(args);
                 case "roadlayouts": return RoadLayouts.Dump(args);
                 case "heights": return Heights.Dump(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify, zoning, traffic, trafficmod, terrain, inspect, mod)");

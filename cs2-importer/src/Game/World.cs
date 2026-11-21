@@ -131,7 +131,12 @@ namespace Cs2Importer
         {
             const float Cell = 8f;
             readonly Dictionary<long, List<KeyValuePair<Entity, float3>>> m_Cells = new Dictionary<long, List<KeyValuePair<Entity, float3>>>();
+            /// <summary>Nodes that aren't road, track or path nodes (a power line's or pipe's end on a road node, #64): found
+            /// only when no transport node is in range.</summary>
+            readonly HashSet<Entity> m_Secondary = new HashSet<Entity>();
             public int Count;
+
+            public void AddSecondary(Entity e, float3 p) { Add(e, p); m_Secondary.Add(e); }
 
             static long Key(int x, int z) { return ((long)x << 32) ^ (uint)z; }
 
@@ -165,7 +170,7 @@ namespace Cs2Importer
                             if (dy > maxDY) continue;
                             float dxz = math.distancesq(kv.Value.xz, p.xz);
                             if (dxz > maxXZ * maxXZ) continue;
-                            float d = dxz + 0.01f * dy * dy;
+                            float d = dxz + 0.01f * dy * dy + (m_Secondary.Contains(kv.Key) ? 1e6f : 0f);
                             if (d < bestD) { bestD = d; best = kv.Key; found = kv.Value; }
                         }
                     }
@@ -183,7 +188,11 @@ namespace Cs2Importer
             }))
             using (var es = q.ToEntityArray(Allocator.Temp))
             using (var ns = q.ToComponentDataArray<Node>(Allocator.Temp))
-                for (int i = 0; i < es.Length; i++) idx.Add(es[i], ns[i].m_Position);
+                for (int i = 0; i < es.Length; i++)
+                {
+                    if (IsTransportNode(es[i])) idx.Add(es[i], ns[i].m_Position);
+                    else idx.AddSecondary(es[i], ns[i].m_Position);
+                }
             return idx;
         }
 
@@ -225,13 +234,32 @@ namespace Cs2Importer
         }
 
         /// <summary>Real edges connected to a node.</summary>
+        /// <summary>
+        /// The edges that start or end at the node. ConnectedEdge also lists local connections: a power line's or pipe's
+        /// end joins a road in the middle of the road's edge, and that edge then appears on the line's node too (buildings
+        /// worker, #64). Those aren't the node's edges.
+        /// </summary>
         public List<Entity> EdgesOf(Entity node)
         {
             var r = new List<Entity>();
             if (!IsReal(node) || !Em.HasBuffer<ConnectedEdge>(node)) return r;
             var buf = Em.GetBuffer<ConnectedEdge>(node, true);
-            for (int i = 0; i < buf.Length; i++) if (IsReal(buf[i].m_Edge) && Em.HasComponent<Edge>(buf[i].m_Edge)) r.Add(buf[i].m_Edge);
+            for (int i = 0; i < buf.Length; i++)
+            {
+                var e = buf[i].m_Edge;
+                if (!IsReal(e) || !Em.HasComponent<Edge>(e)) continue;
+                var ed = Em.GetComponentData<Edge>(e);
+                if (ed.m_Start == node || ed.m_End == node) r.Add(e);
+            }
             return r;
+        }
+
+        /// <summary>A node of a road, track or path (its prefab has RoadData, TrackData or PathwayData), not a utility net's.</summary>
+        public bool IsTransportNode(Entity node)
+        {
+            if (!Em.HasComponent<Game.Prefabs.PrefabRef>(node)) return true;
+            var pf = Em.GetComponentData<Game.Prefabs.PrefabRef>(node).m_Prefab;
+            return Em.HasComponent<Game.Prefabs.RoadData>(pf) || Em.HasComponent<Game.Prefabs.TrackData>(pf) || Em.HasComponent<Game.Prefabs.PathwayData>(pf);
         }
 
         public Entity OtherEnd(Entity edge, Entity node)

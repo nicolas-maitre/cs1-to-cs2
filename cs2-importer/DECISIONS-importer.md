@@ -462,3 +462,13 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
       
       Left-hand, as they should be: `cs1conv-lht-cacao`, `cs1conv-conform-cacao`, `cs1conv-heights-before-cacao`, `cs1conv-heights-after-cacao`, `cs1conv-heights4-after-cacao`, `cs1conv-lanes6-lanes-cacao`, `cs1conv-walls8-cacao-093`, and `cs1conv-acceptance-20261121-134438`. All went through Prepare map, so every CacaoCity number in #57–#62 came from a left-hand city.
     - **Tests:** `DrivingSideTests` (2).
+64. **The roads after a save and reload must be the roads we built** (coordinator, worker-5's #142 measurements; the full-city stress run, docs/QA.md §10).
+    - **Resolver** (importer bug, found in the full-city run):
+      - where a CS1 power line or pipe ends on a road node, CS2 gives the line its own node at the same position, listing the road edge in `ConnectedEdge` as a local connection;
+      - the importer's node index could pick that node, and `EdgesOf` returned the local connection as if it were the node's edge, so 21 built segments became unresolvable for `heights`, `lanedirs`, the lane step and traffic.
+      - Fixed: `GameWorld.EdgesOf` returns only edges whose `m_Start`/`m_End` is the node, and `IndexRealNodes` ranks nodes that aren't road/track/path nodes (`IsTransportNode`) last.
+    - **Roads that change on reload:** 19 of 2028 Skibidi segments (17 r260c00c0, 1 rdad5619a, 1 rc5895258) gain car lanes after a save and reload.
+      - Op `edgestate` (new: per edge prefab, composition flags and lanes, Upgraded, sub-lanes with master/slave/secondary) shows it on all of them: the composition sides go from `L 0 | R 0` in session to `L PrimaryStop | R PrimaryStop` after load, plus a Car Bay Lane. Lane indices shift (e.g. 1516: the bay takes index 1).
+      - All 19 carry a bus stop from the transit step. `transit/cs2-exec` `StopsCreate` marks only its CreationDefinition `Updated`, not the attached edge, so CS2 re-selects the composition only on the next load. The other 85 stops of that road type are on compositions without a stop variant.
+      - Fix with worker-4 (transit): mark the attached edges `Updated`. Worker-5's final `lanesrepair` step rewrites junctions whose lanes changed after the lanes step.
+    - **Acceptance:** step `roads-reload` dumps `lanedirs` and `edgestate` before a save and after reloading it, and fails on any segment whose car lanes, prefab or composition differ (`roads-reload.json`).
