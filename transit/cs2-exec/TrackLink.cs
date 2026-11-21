@@ -443,8 +443,11 @@ namespace Cs1ConvTransit
                         usedTargets.Add(best.Node);
                         var li = new Dictionary<string, object>();
                         bool crosses = Crosses(ep, best.Pos, en, best.Node, out string what);
-                        Make(li, en, best, bd, ref data, dry, !crosses);
-                        if (crosses) { li["crossing"] = what; if (!dry) pendingTemp.Add(li); }
+                        // always the player's way: a Permanent course that starts on a building-owned node (the
+                        // station's platform end) is silently not built (QA 5c); Temp + apply attaches properly
+                        Make(li, en, best, bd, ref data, dry, false);
+                        if (crosses) li["crossing"] = what;
+                        if (!dry) pendingTemp.Add(li);
                         links.Add(li);
                     }
                     sitem["links"] = links;
@@ -484,7 +487,8 @@ namespace Cs1ConvTransit
                     var en = pairs[i].Value.Key; var t = pairs[i].Value.Value;
                     float3 ep = Em.GetComponentData<Node>(en).m_Position;
                     if (Crosses(ep, t.Pos, en, t.Node, out string what)) { if (tried.Count < 5) tried.Add(new Dictionary<string, object> { { "to", Id(t.Node) }, { "distance", pairs[i].Key }, { "crosses", what } }); continue; }
-                    Make(item, en, t, pairs[i].Key, ref data, dry, true);
+                    Make(item, en, t, pairs[i].Key, ref data, dry, false); // the yard end is building-owned too
+                    if (!dry) pendingTemp.Add(item);
                     done = true;
                 }
                 // otherwise the shortest course, built like the player's track tool: a Temp definition and one apply

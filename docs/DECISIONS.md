@@ -258,3 +258,10 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - Road Builder stays for everything without an equivalent: IMT variants, workshop roads, TM:PE speed and bus-lane variants.
      - The web tool gets a "Prefer vanilla roads" switch, on by default, plus the existing per-type override.
      - This reduces the dependency on Road Builder configs and gives native CS2 behaviour.
+101. **Why converted trains and metros don't run: four causes found** (Claude; `docs/QA.md` §5c).
+     1. CS2 only pathfinds a route segment when its target lanes change, so lines created before their stations are joined never get a path. Fixed: `transit depots --recreate`.
+     2. A Permanent course from a building-owned node is silently not built. Fixed: links go through Temp + a forced apply.
+     3. Elevated CS1 metro stations are matched to ground-level CS2 stations. They need SubwayStationElevated01/02. Open, buildings worker.
+     4. CS2 train stations are placed over the imported track instead of continuing it. They need the CS1 position and orientation. Open, buildings worker.
+
+     Trains and metros stay a known limit until 3–4 are fixed and verified.

@@ -58,6 +58,7 @@ namespace Cs1ConvTransit
                 case "lines.repath": return LinesRepath(a);
                 case "lines.delete": return LinesDelete(a);
                 case "lines.debug": return LinesDebug(Str(a, "name", null));
+                case "node.at": return NodeAt(a);
                 case "counts": return Counts();
                 case "infoviews": return Infoviews(null);
                 case "yards.inspect": return TrackLink.Inspect();
@@ -493,6 +494,53 @@ namespace Cs1ConvTransit
                 }
             }
             return d;
+        }
+
+        /// <summary>Nodes within r of each point: owner, connected edges (prefab, owner, elevation of the far end), node
+        /// sub-lanes by prefab (track lane connections across the node live there).</summary>
+        static object NodeAt(Dictionary<string, object> a)
+        {
+            float r = F(a, "r", 2f);
+            var res = new List<object>();
+            var nodes = Query(new[] { ComponentType.ReadOnly<Game.Net.Node>() });
+            if (a.TryGetValue("points", out var po) && po is IList<object> pts)
+                foreach (var p0 in pts)
+                {
+                    var xz = p0 as IList<object>;
+                    var pt = new float3(Convert.ToSingle(xz[0]), Convert.ToSingle(xz[1]), Convert.ToSingle(xz[2]));
+                    var hits = new List<object>();
+                    foreach (var n in nodes)
+                    {
+                        var np = Em.GetComponentData<Game.Net.Node>(n).m_Position;
+                        if (math.distance(np, pt) > r) continue;
+                        var it = new Dictionary<string, object> { { "node", Id(n) }, { "pos", V(np) }, { "owned", Em.HasComponent<Owner>(n) } };
+                        if (Em.HasComponent<Owner>(n)) it["owner"] = PrefabName(Em.GetComponentData<PrefabRef>(Em.GetComponentData<Owner>(n).m_Owner).m_Prefab);
+                        var edges = new List<object>();
+                        if (Em.HasBuffer<ConnectedEdge>(n))
+                        {
+                            var cb = Em.GetBuffer<ConnectedEdge>(n, true);
+                            for (int i = 0; i < cb.Length; i++)
+                            {
+                                var e = cb[i].m_Edge;
+                                var ed = new Dictionary<string, object> { { "edge", Id(e) }, { "prefab", PrefabName(Em.GetComponentData<PrefabRef>(e).m_Prefab) }, { "owned", Em.HasComponent<Owner>(e) } };
+                                if (Em.HasBuffer<Game.Net.SubLane>(e)) ed["lanes"] = Em.GetBuffer<Game.Net.SubLane>(e, true).Length;
+                                edges.Add(ed);
+                            }
+                        }
+                        it["edges"] = edges;
+                        var nl = new Dictionary<string, int>();
+                        if (Em.HasBuffer<Game.Net.SubLane>(n))
+                        {
+                            var sb = Em.GetBuffer<Game.Net.SubLane>(n, true);
+                            for (int i = 0; i < sb.Length; i++) { var l = sb[i].m_SubLane; string ln = Em.HasComponent<PrefabRef>(l) ? PrefabName(Em.GetComponentData<PrefabRef>(l).m_Prefab) : "?"; nl[ln] = nl.TryGetValue(ln, out int c) ? c + 1 : 1; }
+                        }
+                        it["nodeLanes"] = nl;
+                        hits.Add(it);
+                    }
+                    res.Add(new Dictionary<string, object> { { "at", V(pt) }, { "nodes", hits } });
+                }
+            nodes.Dispose();
+            return res;
         }
 
         static object LinesList()
