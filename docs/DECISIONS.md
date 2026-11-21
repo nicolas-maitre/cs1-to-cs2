@@ -491,3 +491,12 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - High-voltage plants (coal, gas, incineration) feed the city's grid only through a transformer, a CS2 building with no CS1 counterpart. Following the user's rule that the importer doesn't invent buildings (#83, #106), transformer placement and the HV line to it are an opt-in setting. When it's off, the report names each plant that needs one, and the city keeps power through its outside connection (homes ~99 % supplied).
     - Producers that stand away from any road (8 on the full city) produce nothing in CS2, which needs the building's own road connection. The report names them, and no road is invented.
     - `utilities` and `powerhook` carry a road guard: every road edge's endpoints are compared before and after, and any change fails the step.
+151. **RC3 runs on b71a160** (Claude). Everything found since RC2 is in:
+    - heights: the ground meets zoneable roads, other roads use per-type modes;
+    - tunnels in the right places, Node Controller shifts, no invented medians;
+    - the driving side is enforced;
+    - lane connections and arrows are right and survive a reload (#149);
+    - roads are unchanged after a reload (bus stops #148, settle step);
+    - utility lines and stubs never touch a junction node (#148);
+    - power plants are linked, with transformers opt-in (#150).
+    The acceptance run now also fails on a missing import step in the report, on missing heights or tunnels, on a stub splitting a junction, and on any road or lane-connection change across a save and reload. RC3 builds from `git archive` of that commit and runs the real mod flow on Skibidi and CacaoCity with 5 minutes of simulation. Results go in docs/QA.md §11. Publishing stays the user's call.
