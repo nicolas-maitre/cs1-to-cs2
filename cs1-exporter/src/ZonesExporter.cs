@@ -49,9 +49,12 @@ namespace Cs1Exporter
             var blocks = zm.m_blocks.m_buffer;
             var segs = Singleton<NetManager>.instance.m_segments.m_buffer;
 
-            // Geometry check: mean distance of each column's cell centres from the block's road centre line.
-            var colDist = new double[4];
-            var colN = new int[4];
+            // Geometry check: median distance of each column's cell centres from the block's road centre line.
+            // Median, not mean: a block can keep a stale m_segment (deleted or reused id), which is km away and would
+            // dominate a mean (QA Q2: 3343 m on a city whose data is fine). Blocks whose segment isn't Created are skipped.
+            var colDist = new List<float>[4];
+            for (int x = 0; x < 4; x++) colDist[x] = new List<float>();
+            int staleSegments = 0;
 
             w.BeginObject();
             w.Prop("cellSize", 8);
@@ -96,14 +99,15 @@ namespace Cs1Exporter
                     try
                     {
                         var seg = segs[b.m_segment];
-                        for (int x = 0; x < 4; x++)
-                        {
-                            var p = CellCentre(ref b, x, 0);
-                            Vector3 cp, cd;
-                            seg.GetClosestPositionAndDirection(p, out cp, out cd);
-                            colDist[x] += VectorUtils.LengthXZ(p - cp);
-                            colN[x]++;
-                        }
+                        if ((seg.m_flags & (NetSegment.Flags.Created | NetSegment.Flags.Deleted)) != NetSegment.Flags.Created) staleSegments++;
+                        else
+                            for (int x = 0; x < 4; x++)
+                            {
+                                var p = CellCentre(ref b, x, 0);
+                                Vector3 cp, cd;
+                                seg.GetClosestPositionAndDirection(p, out cp, out cd);
+                                colDist[x].Add(VectorUtils.LengthXZ(p - cp));
+                            }
                     }
                     catch { }
                 }
@@ -123,9 +127,17 @@ namespace Cs1Exporter
             w.EndObject();
 
             var sb = new StringBuilder();
-            for (int x = 0; x < 4; x++) sb.AppendFormat("col {0}: {1:F1} m; ", x, colN[x] > 0 ? colDist[x] / colN[x] : double.NaN);
+            int far = 0, sampled = colDist[0].Count;
+            foreach (var d in colDist[0]) if (d > 100f) far++;
+            for (int x = 0; x < 4; x++)
+            {
+                var l = colDist[x];
+                l.Sort();
+                sb.AppendFormat("col {0}: {1:F1} m; ", x, l.Count > 0 ? l[l.Count / 2] : float.NaN);
+            }
+            sb.AppendFormat("{0} blocks sampled, {1} with col 0 over 100 m, {2} skipped (segment not created)", sampled, far, staleSegments);
             _report.Info("zones", Blocks + " blocks, " + Cells + " valid cells, " + ZonedCells + " zoned, " + OccupiedCells + " occupied");
-            _report.Info("zones", "geometry check, mean distance of cell centres (row 0) from the block's road centre line: " + sb);
+            _report.Info("zones", "geometry check, median distance of cell centres (row 0) from the block's road centre line: " + sb);
         }
     }
 }
