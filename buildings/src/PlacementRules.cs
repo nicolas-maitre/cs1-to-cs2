@@ -58,6 +58,48 @@ namespace Cs2Buildings
             return "CS1 " + Position(planX - dx, planZ - dz) + " = CS2 " + Position(planX + offsetX, planZ + offsetZ);
         }
 
+        /// <summary>
+        /// Decision 128 (user): a highlighted warning when the plan has power plants (or water facilities) and none of them
+        /// was placed. A city whose CS1 original had none gets no warning.
+        /// </summary>
+        public static System.Collections.Generic.List<string> SupplyWarnings(int powerPlanned, int powerPlaced, int waterPlanned, int waterPlaced)
+        {
+            var l = new System.Collections.Generic.List<string>();
+            const string Rerun = ": place them yourself, or re-run the package with 'let utilities move nearby'";
+            if (powerPlanned > 0 && powerPlaced == 0) l.Add("This city has no power plant placed (" + powerPlanned + " in CS1)" + Rerun);
+            if (waterPlanned > 0 && waterPlaced == 0) l.Add("This city has no water supply placed (" + waterPlanned + " in CS1)" + Rerun);
+            return l;
+        }
+
+        /// <summary>Plan item families that count for SupplyWarnings (buildings/match/match.mjs families).</summary>
+        public static bool IsPower(string family) { return family == "power"; }
+        public static bool IsWater(string family) { return family == "waterPump"; }
+
+        /// <summary>How far past its lot a surface-water pump looks for water (DECISIONS-buildings #42).</summary>
+        public const float DefaultPumpShoreReach = 30f;
+
+        /// <summary>
+        /// DECISIONS-buildings #42, what a surface-water pump gets, from the distance to the nearest water (+inf: none),
+        /// the lot's reach (half its long side) and whether the ground has water: "keep" (water under the lot), "slide"
+        /// (water within shoreReach more: slides toward it first), "groundwater" (swap to the groundwater pump), "dry"
+        /// (no water found either way: placed as planned and reported; never dropped on a water reading alone).
+        /// </summary>
+        public static string PumpWaterAction(float waterDistance, float lotReach, float shoreReach, bool groundwater)
+        {
+            if (waterDistance <= lotReach) return "keep";
+            if (waterDistance <= lotReach + shoreReach) return "slide";
+            return groundwater ? "groundwater" : "dry";
+        }
+
+        /// <summary>Families whose buildings need a road edge to work: power reaches them (and leaves plants) through it.</summary>
+        public static bool NeedsRoad(string family) { return family == "power" || family == "waterPump" || family == "sewage"; }
+
+        /// <summary>A "connect a road" line for a utility building placed without a road connection.</summary>
+        public static string ConnectRoad(string name, string cs2Position)
+        {
+            return (string.IsNullOrEmpty(name) ? "Building" : name) + " at CS2 " + cs2Position + " is not connected to a road, so it gets no electricity: connect a road to it";
+        }
+
         /// <summary>One report line for a building that wasn't placed: "Hospital: place it yourself at CS1 (…) = CS2 (…) (why)".</summary>
         public static string PlaceYourself(string name, string where, string why)
         {

@@ -123,3 +123,13 @@ test('stations keep their height and through/terminus kind, and match by platfor
   assert.ok(!train.alternatives.some((a) => /Terminus/.test(a.cs2)));
   assert.equal(matchAsset(cs1('Train Terminal', 'TransportStationAI', { footprint: [16, 30] }), idx).cs2, 'TrainStationTerminus01');
 });
+
+// DECISIONS-buildings #43: a CS1 water tower works away from water, as CS2's groundwater pump does.
+test('a water tower becomes the groundwater pump, a water intake the surface pump', () => {
+  const idx = indexCatalogue({ prefabs: [
+    cs2('WaterPumpingStation01', { WaterPumpingStation: { m_Capacity: 100000, m_AllowedWaterTypes: 'SurfaceWater' } }, { capacity: { water: 100000 }, lot: [4, 6] }),
+    cs2('GroundwaterPumpingStation01', { WaterPumpingStation: { m_Capacity: 75000, m_AllowedWaterTypes: 'Groundwater' } }, { capacity: { water: 75000 }, lot: [6, 6] }),
+  ] });
+  assert.equal(matchAsset(cs1('Water Tower', 'WaterFacilityAI', { aiFields: { m_waterStorage: 600 } }), idx).cs2, 'GroundwaterPumpingStation01');
+  assert.equal(matchAsset(cs1('Water Intake', 'WaterFacilityAI', { aiFields: { m_waterIntake: 1200 } }), idx).cs2, 'WaterPumpingStation01');
+});

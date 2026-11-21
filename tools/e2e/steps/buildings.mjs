@@ -36,6 +36,13 @@ export default {
       out.buildings = { ...pick(r, ['items', 'placed', 'alreadyPlaced', 'usedAlternative', 'slid', 'movedToFreeLand', 'connected', 'failed', 'missingPrefabs']), ms: t() - t0 };
     } else out.buildings = { skipped: 'no buildings section in the plan' };
 
+    // 1b. utilities: the player's off-road CS1 power lines and pipes (plan.utilities, web 0.8.0+), after the buildings
+    if (roadPlan.utilities?.segments?.length) {
+      const t0 = t();
+      const r = await exec({ op: 'utilities', plan: ctx.planFile, offsetX, offsetZ });
+      out.utilities = { ...pick(r, ['items', 'placed', 'byUtility', 'ends', 'endsSnapped', 'snappedTo', 'prefabsMissing', 'elevation', 'notSnappedSample']), ms: t() - t0 };
+    } else out.utilities = { skipped: 'no utilities section in the plan' };
+
     // 2. objects plan from the .cs1x: trees/rocks, districts, surfaces
     const catalogueFile = path.join(LOCAL_DIR, 'samples', 'cs2-catalogue.json');
     if (!ctx.cs1x || !fs.existsSync(catalogueFile)) { out.objects = { skipped: 'no .cs1x or CS2 catalogue' }; return out; }

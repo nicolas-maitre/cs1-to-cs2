@@ -176,6 +176,8 @@ Screenshots are in `.gamectl/buildings/<ts>/` (git-ignored).
 
 **Idempotent:** an item whose prefab (or an alternative) already stands within 30 m + the slide range of its spot is `alreadyPlaced`, so re-runs on a saved city don't stack duplicates.
 
+**Pumps on dry land (decision #42):** a surface-water pump whose lot has no water at its CS1 spot first tries the slides toward water within `pumpShoreReach` (30) m, up to that far along its road. With no water near, it becomes `groundwaterPump` (GroundwaterPumpingStation01) where the ground has water; otherwise it is placed as planned and reported as dry. When the game's water maps read empty (they can from an exec op), pumps stay as planned (`pumps.noWaterData`). The report's `pumps` counts them, and `connectRoad` lists every power, water or sewage building placed without a road edge ("connect a road to it": no electricity reaches it otherwise). `warnings` says when no power plant or no water facility was placed at all (decision #41).
+
 ## 6. Trees, props, districts, IMT surfaces: `cs1conv-objects.json`
 
 ```powershell
@@ -228,7 +230,7 @@ The same C# runs inside the CS2 importer mod (Cs2ImporterMod) as import steps, a
 
 ```csharp
 // Mod.OnLoad
-Cs2Buildings.Steps.RegisterAll(ImportSteps.Register);   // registers buildings, objects, districts, surfaces (in that order)
+Cs2Buildings.Steps.RegisterAll(ImportSteps.Register);   // registers buildings, objects, districts, surfaces, utilities (in that order)
 ```
 
 | Arg | Meaning |
@@ -239,3 +241,13 @@ Cs2Buildings.Steps.RegisterAll(ImportSteps.Register);   // registers buildings, 
 | `buildings.<option>`, `objects.<option>`, … | passed to that step without the prefix, e.g. `buildings.fallback`, `buildings.nearbyRadius`, `objects.batchSize` |
 
 Each step yields once per frame batch and ends with a result dictionary (the same as the exec op's JSON); a missing section gives `{ "skipped": "…" }`. No extra references are needed beyond what the mod already has. Versions: `Steps.Version` (see [docs/RELEASE.md](../docs/RELEASE.md)).
+
+## 8. Power lines and pipes: op `utilities` (decision #40)
+
+`utilities {plan, offsetX, offsetZ, kinds="power,pipe", powerPrefab="Low-voltage Line", pipePrefab="Combined Small Pipe", snapRadius=40}` builds the plan's `utilities.segments`, the player's own off-road CS1 power lines and pipes (DECISIONS.md #115), after the buildings. Power lines are low voltage, at ground level. Pipes are one combined water and sewage pipe, 10 m down.
+- **Snapping, line ends:** a building's connection marker within `snapRadius` (attached), else a road node (roads take low-voltage lines and pipes locally), else another utility node.
+- **Snapping, inner nodes:** these snap only to a marker, when a CS1 line runs through the building.
+- **Report:** `endsSnapped`, `innerNodesToMarkers`, `snappedTo` (by target and layer) and `notSnappedSample`.
+- **Where it runs:** the mod step `utilities` (options `utilities.<option>`) and the e2e step `buildings`.
+
+CacaoCity (`cs1conv-util-cacao2`): 147 of 147 segments, 45 of 65 ends snapped; homes with water went from 0 to 43 %. Electricity stays at 0 % there: none of the 7 power plants could be placed at its CS1 spot (#106), and the map had no outside connections yet.

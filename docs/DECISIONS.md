@@ -444,3 +444,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - Import (mod and exec) refuses when the loaded city's driving side differs from the plan's, unless explicitly overridden.
      - Acceptance asserts it.
      - Right-hand CacaoCity test saves are listed so they aren't used as evidence.
+139. **Utilities work on CacaoCity: homes 97% powered, 98% water, 98% sewage** (buildings 0.3.3; Claude). The release candidate had 0% water.
+     - **Lines:** CS1's off-road power lines and pipes are rebuilt (147/147 segments) as low-voltage lines and combined small pipes at −10 m. Their ends snap to building markers, road nodes or line nodes (45/65 ends), and inner nodes snap where a CS1 line runs through a building, which is what connected the treatment plant.
+     - **Pumps:** a dry pump slides toward water within 30 m, else becomes a groundwater pump, else is flagged. Matcher 1.2.0 maps CS1 water towers to the groundwater pump.
+     - **Warnings:** the import report warns when no power plant or water facility was placed (#128).
+     - **Electricity source:** on this test it came through worker-2's new outside connection, because no plant was placed under #106.
+     - **Open:** CS2's water maps read as empty from exec, so the slide-to-water guard can't tell where water is; the simulation's own "not enough surface water" flag is the reliable signal.

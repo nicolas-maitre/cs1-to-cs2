@@ -7,6 +7,9 @@
 //   list      {type=regex, name=regex}         [phase main]  prefabs by class name (areas, policies, …)
 //   objects   {plan, offsetX, offsetZ, batchSize=2000} [phase tool, pump tool]  trees / props of plan.objects
 //   areas     {plan, section=districts|surfaces, offsetX, offsetZ} [phase tool, pump tool]  districts (name, policies) or surfaces
+//   utilities {plan, offsetX, offsetZ, kinds, powerPrefab, pipePrefab, snapRadius} [phase tool, pump tool]  plan.utilities
+//             power lines and pipes as CS2 nets, ends snapped to plant / pump / outlet markers (decision #40)
+//   water     {points: "x,z;x,z", r=60}          [any phase]  surface-water depth, nearest water within r, groundwater (read only)
 //   prefab    {names: "A,B"}                  [phase main]  a building prefab's sub-nets, sub-objects and placement flags (read only)
 //
 // Statics never survive between calls (the bridge loads a fresh copy of the DLL every time).
@@ -34,8 +37,132 @@ namespace Cs2Buildings
                 case "objects": return Objects.Place(args);
                 case "areas": return Objects.Areas(args);
                 case "prefab": return PrefabOp(args);
-                default: throw new ArgumentException("unknown op '" + op + "' (catalogue, place, inspect, list, objects, areas, prefab)");
+                case "utilities": return Utilities.Place(args);
+                case "netlayers": return NetLayersOp(args);
+                case "instance": return InstanceOp(args);
+                case "water": return WaterOp(args);
+                default: throw new ArgumentException("unknown op '" + op + "' (catalogue, place, inspect, list, objects, areas, prefab, utilities, netlayers, instance, water)");
             }
+        }
+
+        // water {points: "x,z;…", r=60}: what the placer's pump rule (decision #42) sees at each point. Read only.
+        static object WaterOp(Dictionary<string, object> a)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            var ws = world.GetOrCreateSystemManaged<Game.Simulation.WaterSystem>();
+            var deps = default(Unity.Jobs.JobHandle);
+            var sd = ws.GetSurfaceData(out deps);
+            deps.Complete();
+            var gdeps = default(Unity.Jobs.JobHandle);
+            var gd = world.GetOrCreateSystemManaged<Game.Simulation.GroundWaterSystem>().GetData(true, out gdeps);
+            gdeps.Complete();
+            float r = (float)P.Num(a, "r", 60);
+            var res = new List<object>();
+            foreach (var pt in P.Required(a, "points").Split(';'))
+            {
+                var xz = pt.Split(',');
+                float x = float.Parse(xz[0], System.Globalization.CultureInfo.InvariantCulture), z = float.Parse(xz[1], System.Globalization.CultureInfo.InvariantCulture);
+                float nearest = -1, maxDepth = 0;
+                for (float rr = 0; rr <= r && nearest < 0; rr += 4)
+                    for (int k = 0; k < (rr == 0 ? 1 : 24); k++)
+                    {
+                        float ang = k * (float)Math.PI * 2f / 24f;
+                        float d = Game.Simulation.WaterUtils.SampleDepth(ref sd, new Unity.Mathematics.float3(x + rr * (float)Math.Cos(ang), 0, z + rr * (float)Math.Sin(ang)));
+                        if (d > maxDepth) maxDepth = d;
+                        if (d > 0.5f && nearest < 0) nearest = rr;
+                    }
+                var g = Game.Simulation.GroundWaterSystem.GetGroundWater(new Unity.Mathematics.float3(x, 0, z), gd.m_Buffer);
+                res.Add(new Dictionary<string, object> { { "x", x }, { "z", z }, { "depth", Game.Simulation.WaterUtils.SampleDepth(ref sd, new Unity.Mathematics.float3(x, 0, z)) }, { "nearestWater", nearest }, { "maxDepthSeen", maxDepth }, { "groundwater", (int)g.m_Amount }, { "groundwaterMax", (int)g.m_Max } });
+            }
+            return new Dictionary<string, object> { { "seaLevel", ws.SeaLevel }, { "points", res } };
+        }
+
+        // instance {prefab, limit=3} [phase main]: placed buildings of a prefab, with their own sub-net edges (Game.Net.SubNet)
+        // and the layers of those edges' nodes, plus the road edge they connect to. Read only, for the utilities step.
+        static object InstanceOp(Dictionary<string, object> a)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            var em = world.EntityManager;
+            var ps = world.GetOrCreateSystemManaged<PrefabSystem>();
+            PrefabBase prefab;
+            Entity pe;
+            if (!ps.TryGetPrefab(new PrefabID("BuildingPrefab", P.Required(a, "prefab")), out prefab) || !ps.TryGetEntity(prefab, out pe)) return "not found";
+            int limit = (int)P.Num(a, "limit", 3);
+            var list = new List<object>();
+            using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Buildings.Building>(), ComponentType.ReadOnly<PrefabRef>()))
+            using (var es = q.ToEntityArray(Unity.Collections.Allocator.Temp))
+                foreach (var b in es)
+                {
+                    if (em.GetComponentData<PrefabRef>(b).m_Prefab != pe || list.Count >= limit) continue;
+                    var o = new Dictionary<string, object> { { "entity", b.Index } };
+                    var road = em.GetComponentData<Game.Buildings.Building>(b).m_RoadEdge;
+                    o["roadEdge"] = road == Entity.Null ? null : (object)ps.GetPrefabName(em.GetComponentData<PrefabRef>(road).m_Prefab);
+                    var subs = new List<object>();
+                    if (em.HasBuffer<Game.Net.SubNet>(b))
+                    {
+                        var buf = em.GetBuffer<Game.Net.SubNet>(b, true);
+                        for (int i = 0; i < buf.Length; i++)
+                        {
+                            var e = buf[i].m_SubNet;
+                            if (!em.HasComponent<PrefabRef>(e)) continue;
+                            var name = ps.GetPrefabName(em.GetComponentData<PrefabRef>(e).m_Prefab);
+                            if (name.StartsWith("Invisible")) continue;
+                            string nodes = "";
+                            if (em.HasComponent<Game.Net.Edge>(e))
+                            {
+                                var ed = em.GetComponentData<Game.Net.Edge>(e);
+                                foreach (var n in new[] { ed.m_Start, ed.m_End })
+                                {
+                                    int c = em.HasBuffer<Game.Net.ConnectedEdge>(n) ? em.GetBuffer<Game.Net.ConnectedEdge>(n, true).Length : -1;
+                                    nodes += " node" + n.Index + "(" + c + " edges)";
+                                }
+                            }
+                            subs.Add(name + (em.HasComponent<Game.Net.Edge>(e) ? " edge" : " node") + nodes);
+                        }
+                    }
+                    o["subNets"] = subs;
+                    list.Add(o);
+                }
+            return new Dictionary<string, object> { { "prefab", prefab.name }, { "instances", list } };
+        }
+
+        // netlayers {names: "type:Name,…"} [phase main]: a net prefab's NetData layers (what it needs / connects to), read
+        // only. With a loaded city, also counts the existing edges of each prefab. For the utilities step's snapping.
+        static object NetLayersOp(Dictionary<string, object> a)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            var em = world.EntityManager;
+            var ps = world.GetOrCreateSystemManaged<PrefabSystem>();
+            var res = new Dictionary<string, object>();
+            foreach (var spec in P.Required(a, "names").Split(','))
+            {
+                var parts = spec.Split(new[] { ':' }, 2);
+                PrefabBase prefab;
+                Entity pe;
+                if (parts.Length != 2 || !ps.TryGetPrefab(new PrefabID(parts[0].Trim(), parts[1].Trim()), out prefab) || !ps.TryGetEntity(prefab, out pe)) { res[spec] = "not found"; continue; }
+                var o = new Dictionary<string, object>();
+                if (em.HasComponent<NetData>(pe))
+                {
+                    var nd = em.GetComponentData<NetData>(pe);
+                    o["required"] = nd.m_RequiredLayers.ToString();
+                    o["connect"] = nd.m_ConnectLayers.ToString();
+                    o["localConnect"] = nd.m_LocalConnectLayers.ToString();
+                }
+                if (em.HasComponent<PlaceableNetData>(pe))
+                {
+                    var pn = em.GetComponentData<PlaceableNetData>(pe);
+                    o["elevationRange"] = pn.m_ElevationRange.min + ".." + pn.m_ElevationRange.max;
+                    o["placementFlags"] = pn.m_PlacementFlags.ToString();
+                    o["snapDistance"] = pn.m_SnapDistance;
+                }
+                int edges = 0;
+                using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Net.Edge>(), ComponentType.ReadOnly<PrefabRef>()))
+                using (var es = q.ToEntityArray(Unity.Collections.Allocator.Temp))
+                    foreach (var e in es) if (em.GetComponentData<PrefabRef>(e).m_Prefab == pe) edges++;
+                o["edgesInCity"] = edges;
+                res[spec] = o;
+            }
+            return res;
         }
 
         // prefab {names: "A,B"} [phase main]: a building prefab's runtime nets and sub-objects (SubNet elements, SubObject

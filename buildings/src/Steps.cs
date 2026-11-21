@@ -11,6 +11,7 @@
 //               tool), and "objects" / "districts" / "surfaces" when present; otherwise from a cs1conv-objects.json next
 //               to the plan, or the path in `objectsPlan`.
 //   offsetX/Z   the importer's offset (same as for the roads)
+//   utilities.* options of the "utilities" step (power lines and pipes from plan.utilities, buildings decision #40)
 //   buildings.* / objects.* run options, e.g. "fallback", "nearbyRadius", "batchSize" (see buildings/README.md), passed
 //               through unchanged: the step args are the import args plus these keys without the prefix.
 //
@@ -27,15 +28,17 @@ namespace Cs2Buildings
 {
     public static class Steps
     {
-        public const string Version = "0.3.2";
+        public const string Version = "0.3.3";
 
-        /// <summary>Registers "buildings", "objects", "districts" and "surfaces" (in that order) with a step hook.</summary>
+        /// <summary>Registers "buildings", "objects", "districts", "surfaces" and "utilities" (in that order) with a step hook.</summary>
         public static void RegisterAll(Action<string, Func<Dictionary<string, object>, IEnumerator>> register)
         {
             register("buildings", Buildings);
             register("objects", Objects);
             register("districts", Districts);
             register("surfaces", Surfaces);
+            // after the buildings: CS1 power lines and pipes end at plants, pumps and outlets, and snap to their markers
+            register("utilities", UtilityNets);
         }
 
         /// <summary>Places plan.buildings.items (or a standalone cs1conv-buildings.json given as `buildingsPlan`).</summary>
@@ -53,6 +56,16 @@ namespace Cs2Buildings
         public static IEnumerator Districts(Dictionary<string, object> args)
         {
             return Section(args, "districts", "districts.", a => { a["section"] = "districts"; return (IEnumerator)Cs2Buildings.Objects.Areas(a); });
+        }
+
+        /// <summary>The player's off-road CS1 power lines and pipes (plan.utilities, web 0.8.0+): DECISIONS.md #115.</summary>
+        public static IEnumerator UtilityNets(Dictionary<string, object> args)
+        {
+            var a = Prefixed(args, "utilities.");
+            string file = PlanFile(args);
+            if (file == null || !HasSection(file, "utilities", false)) return Skipped("none in this package");
+            a["plan"] = file;
+            return (IEnumerator)Utilities.Place(a);
         }
 
         public static IEnumerator Surfaces(Dictionary<string, object> args)

@@ -24,7 +24,7 @@
 // 0.35 − the name weight. For depots, stations, cargo terminals and schools the kind is strict: no prefab of that kind
 // means noEquivalent (a ferry depot is not a subway yard).
 
-export const MATCHER_VERSION = '1.1.0'; // 1.1: stations keep their height (elevated / ground) and match by platform length
+export const MATCHER_VERSION = '1.2.0'; // 1.2: a CS1 water tower becomes the groundwater pump. 1.1: stations keep their height (elevated / ground) and match by platform length
 
 // ------------------------------------------------------------------ CS1 classification
 
@@ -150,7 +150,8 @@ export function classifyCs2(p) {
   // Sewage first: a wastewater treatment plant also has a WaterPumpingStation component (with 0 water capacity).
   if (has('SewageOutlet') && (cap.sewage > 0 || !(cap.water > 0)))
     return out('sewage', Number(comp(p, 'SewageOutlet').m_Purification ?? 0) > 0 || /treatment/.test(name) ? 'treatment' : 'outlet', cap.sewage ?? null);
-  if (has('WaterPumpingStation')) return out('waterPump', /tower/.test(name) ? 'tower' : null, cap.water ?? null);
+  // A groundwater-only pump is CS2's answer to a CS1 water tower: both work away from water (DECISIONS-buildings #43).
+  if (has('WaterPumpingStation')) return out('waterPump', /tower/.test(name) || comp(p, 'WaterPumpingStation').m_AllowedWaterTypes === 'Groundwater' ? 'tower' : null, cap.water ?? null);
   if (has('TransportDepot')) return out('depot', transportType(comp(p, 'TransportDepot').m_TransportType, name), cap.depotVehicles ?? null);
   if (has('CargoTransportStation')) return out('cargo', transportType(null, name), null);
   if (has('TransportStation')) return out('station', transportType(null, name), null);

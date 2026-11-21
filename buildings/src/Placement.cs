@@ -48,6 +48,7 @@ namespace Cs2Buildings
             public float MaxDistance;        // > 0: no fallback spot farther than this from the CS1 spot
             public bool RequireRoad;         // only spots whose lot faces a road a building can connect to (no highway)
             public bool Station;             // plan family "station": stays at its CS1 spot (no slide, no fallback move)
+            public string Family;            // plan family (buildings/match), e.g. "power", "waterPump"
             public double Dx, Dz, Ox, Oz;    // plan transform (CS1 → plan) and import offset (plan → CS2), for "place it yourself"
             public float Distance = -1;     // metres between the placed lot centre and the CS1 lot centre (every placed item)
             public string FallbackPass;      // "nearby" | "wide" | "anywhere" when a fallback pass placed it
@@ -65,6 +66,7 @@ namespace Cs2Buildings
             public float SnapDistance = -1;
             public Entity Placed;
             public int SubNetsExpected = -1, SubNetsBuilt = -1; // course definitions written / edges owned by the building
+            public string PumpWater;         // surface-water pump: "shore N m away" (slid toward the water) or "groundwater pump" (swapped)
         }
 
         internal sealed class RoadEdge
@@ -110,6 +112,20 @@ namespace Cs2Buildings
             if (defaultFallback != "nearby" && defaultFallback != "anywhere" && defaultFallback != "skip") throw new ArgumentException("fallback must be \"nearby\", \"anywhere\" or \"skip\"");
             var movedByPass = new Dictionary<string, int>();
             int moved = 0;
+            // DECISIONS-buildings #42: surface-water pumps need water at their lot (CS1 and CS2 shorelines differ).
+            float pumpShoreReach = (float)P.Num(a, "pumpShoreReach", PlacementRules.DefaultPumpShoreReach);
+            string groundwaterPump = P.Str(a, "groundwaterPump", "GroundwaterPumpingStation01");
+            var waterSystem = world.GetOrCreateSystemManaged<WaterSystem>();
+            var waterDeps = default(Unity.Jobs.JobHandle);
+            var surfaceData = waterSystem.GetSurfaceData(out waterDeps);
+            waterDeps.Complete();
+            Func<float2, float> waterDepth = q => WaterUtils.SampleDepth(ref surfaceData, new float3(q.x, 0f, q.y));
+            var groundDeps = default(Unity.Jobs.JobHandle);
+            var groundData = world.GetOrCreateSystemManaged<GroundWaterSystem>().GetData(true, out groundDeps);
+            groundDeps.Complete();
+            Func<float2, GroundWater> groundWater = q => GroundWaterSystem.GetGroundWater(new float3(q.x, 0f, q.y), groundData.m_Buffer);
+            int pumpsSlidToWater = 0, pumpsSwapped = 0, pumpsDry = 0, pumpsUnknown = 0;
+            var pumpSamples = new List<object>();
 
             var items = LoadItems(P.Required(a, "plan"), limit);
             foreach (var x in items) { x.Ox = ox; x.Oz = oz; }
@@ -214,6 +230,55 @@ namespace Cs2Buildings
                     }
                     prefabs = kept;
                 }
+                // Surface-water pump (DECISIONS-buildings #42): water under its lot at the CS1 spot → as is; water within
+                // pumpShoreReach m more → the slides toward the water first (up to that far along its road); none → the
+                // groundwater pump where the ground has water; else not placed (place it yourself).
+                var itemSlides = slides;
+                float itemMaxSlide = maxSlide;
+                if (IsSurfacePump(em, prefabs[0].Value))
+                {
+                    var lot0 = em.GetComponentData<BuildingData>(prefabs[0].Value).m_LotSize;
+                    float reach = 4f * math.cmax(lot0);
+                    float wet = NearestWater(waterDepth, centre, reach + pumpShoreReach);
+                    var gw = groundWater(centre);
+                    int ground = gw.m_Amount;
+                    // Read from an exec op, the water and groundwater maps can come back empty (all 0, even where a pump
+                    // works: probe on cs1conv-util-cacao2). No water and a 0 groundwater capacity = no data: as planned.
+                    var action = float.IsInfinity(wet) && gw.m_Max == 0 ? "unknown" : PlacementRules.PumpWaterAction(wet, reach, pumpShoreReach, ground > 0);
+                    if (action == "unknown") pumpsUnknown++;
+                    if (action == "slide")
+                    {
+                        it.PumpWater = "shore " + (wet - reach).ToString("F0") + " m away";
+                        if (road != null)
+                        {
+                            var tan = math.normalizesafe(MathUtils.Tangent(road.Curve, roadT).xz, new float2(1, 0));
+                            itemMaxSlide = math.max(maxSlide, pumpShoreReach);
+                            itemSlides = new List<float> { 0f };
+                            for (float s = 4f; s <= itemMaxSlide + 0.01f; s += 4f) { itemSlides.Add(s); itemSlides.Add(-s); }
+                            var key = new Dictionary<float, float>();
+                            foreach (var s in itemSlides) key[s] = NearestWater(waterDepth, centre + tan * s, reach + pumpShoreReach);
+                            itemSlides.Sort((p, q) => key[p] != key[q] ? key[p].CompareTo(key[q]) : math.abs(p).CompareTo(math.abs(q)));
+                        }
+                    }
+                    else if (action == "groundwater")
+                    {
+                        PrefabBase gp;
+                        Entity ge;
+                        if (ps.TryGetPrefab(new PrefabID(it.Type, groundwaterPump), out gp) && ps.TryGetEntity(gp, out ge) && em.HasComponent<BuildingData>(ge))
+                        {
+                            prefabs = new List<KeyValuePair<string, Entity>> { new KeyValuePair<string, Entity>(groundwaterPump, ge) };
+                            it.PumpWater = "groundwater pump (no surface water within " + (reach + pumpShoreReach).ToString("F0") + " m)";
+                        }
+                        else action = "dry";
+                    }
+                    if (action == "dry")
+                    {
+                        pumpsDry++;
+                        it.PumpWater = "dry: no surface water within " + (reach + pumpShoreReach).ToString("F0") + " m and no groundwater found (placed as planned; check it pumps)";
+                    }
+                    if (pumpSamples.Count < 20)
+                        pumpSamples.Add(PlacementRules.Position(centre.x, centre.y) + " depth " + waterDepth(centre).ToString("F2") + " m, nearest water " + (float.IsInfinity(wet) ? "none" : wet.ToString("F0") + " m") + ", groundwater " + ground + " → " + action);
+                }
                 // Already in the city (an earlier run, or a save that already has it): the same prefab (or an alternative)
                 // within 30 m + the slide range of the CS1 spot. Keeps re-runs from stacking duplicates.
                 Found dup = null;
@@ -247,11 +312,11 @@ namespace Cs2Buildings
                     // building only along an edge, and a front inside a junction stays unconnected. Pass 1 drops that rule.
                     for (int pass = 0; pass < 2 && !done; pass++)
                         for (int ni = 0; ni < prefabs.Count && !done; ni++)
-                            foreach (var slide in slides)
+                            foreach (var slide in itemSlides)
                             {
                                 // A station's platform tracks must continue the imported CS1 track: only a short slide along
                                 // the road (a CS2 lot wider than CS1's next to a side road), which the track link absorbs.
-                                if (!PlacementRules.SlideAllowed(it.Station, slide, maxSlide, stationMaxSlide)) continue;
+                                if (!PlacementRules.SlideAllowed(it.Station, slide, itemMaxSlide, stationMaxSlide)) continue;
                                 float t = roadT + slide / roadLen;
                                 if (t < 0f || t > 1f) continue;
                                 if (pass == 0 && (t * roadLen < endMargin || (1f - t) * roadLen < endMargin)) continue;
@@ -405,11 +470,38 @@ namespace Cs2Buildings
                 it.Reason = (road != Entity.Null ? "connected" : "placed, not connected to a road" + (it.RoadSide != null ? " (road side: " + it.RoadSide + ")" : ""))
                     + (it.Alternative > 0 ? "; alternative #" + it.Alternative : "") + (it.Slide != 0 ? "; slid " + it.Slide + " m along the road" : "") + (it.NearJunction ? "; front near a junction" : "")
                     + (it.Moved >= 0 ? "; moved " + it.Moved.ToString("F0") + " m to free land (" + it.FallbackPass + " pass)" + (it.MovedToOtherRoad ? " on another road" : " on the same road") : "");
+                if (it.PumpWater != null)
+                {
+                    if (it.PumpWater.StartsWith("shore", StringComparison.Ordinal))
+                    {
+                        float reach = 4f * math.cmax(it.Lot);
+                        bool wetNow = NearestWater(waterDepth, it.Position.xz, reach) <= reach;
+                        if (wetNow) pumpsSlidToWater++;
+                        it.Reason += "; water " + it.PumpWater + (wetNow ? ", reached" : ", still dry at the placed spot");
+                    }
+                    else if (it.PumpWater.StartsWith("dry", StringComparison.Ordinal)) it.Reason += "; " + it.PumpWater;
+                    else { pumpsSwapped++; it.Reason += "; " + it.PumpWater; }
+                }
             }
+            // Utility buildings that can't work without a road (no road edge: no electricity, no water or sewage
+            // connection) get a "connect a road" line (DECISIONS-buildings #42).
+            var connectRoad = new List<object>();
+            foreach (var it in items)
+                if (it.Status == "placed" && it.Placed != Entity.Null && PlacementRules.NeedsRoad(it.Family) && em.GetComponentData<Building>(it.Placed).m_RoadEdge == Entity.Null)
+                    connectRoad.Add(PlacementRules.ConnectRoad(it.Cs1Info ?? it.Prefab, PlacementRules.Position(it.Position.x, it.Position.z)));
 
             var list = new List<object>();
             // Not placed: one "Hospital: place it yourself at CS1 (x, z) = CS2 (x, z) (why)" line each, in the web report's words.
             var placeYourself = new List<object>();
+            int powerPlanned = 0, powerPlaced = 0, waterPlanned = 0, waterPlaced = 0;
+            foreach (var it in items)
+            {
+                bool ok = it.Status == "placed" || it.Status == "alreadyPlaced";
+                if (PlacementRules.IsPower(it.Family)) { powerPlanned++; if (ok) powerPlaced++; }
+                if (PlacementRules.IsWater(it.Family)) { waterPlanned++; if (ok) waterPlaced++; }
+            }
+            var warnings = new List<object>();
+            foreach (var w in PlacementRules.SupplyWarnings(powerPlanned, powerPlaced, waterPlanned, waterPlaced)) warnings.Add(w);
             foreach (var it in items)
             {
                 if (it.Status == "placed" || it.Status == "alreadyPlaced") continue;
@@ -434,7 +526,8 @@ namespace Cs2Buildings
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "placeYourself", placeYourself }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "warnings", warnings }, { "placeYourself", placeYourself }, { "connectRoad", connectRoad },
+                { "pumps", new Dictionary<string, object> { { "slidToWater", pumpsSlidToWater }, { "groundwater", pumpsSwapped }, { "dry", pumpsDry }, { "noWaterData", pumpsUnknown }, { "shoreReach", pumpShoreReach }, { "samples", pumpSamples } } }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
                 { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "subNetCourses", subNetCourses }, { "buildingsWithSubNets", withSubNets }, { "subNetsMissing", subNetsMissing }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
                 { "offset", new List<object> { ox, oz } }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", list },
@@ -460,6 +553,26 @@ namespace Cs2Buildings
             int n;
             failures.TryGetValue(kind, out n);
             failures[kind] = n + 1;
+        }
+
+        static bool IsSurfacePump(EntityManager em, Entity prefab)
+        {
+            if (!em.HasComponent<WaterPumpingStationData>(prefab)) return false;
+            var t = em.GetComponentData<WaterPumpingStationData>(prefab).m_Types;
+            return (t & AllowedWaterTypes.SurfaceWater) != 0 && (t & AllowedWaterTypes.Groundwater) == 0;
+        }
+
+        /// <summary>Metres from p to the nearest water deeper than 0.5 m (rings every 4 m, 24 directions), +inf beyond maxR.</summary>
+        static float NearestWater(Func<float2, float> depth, float2 p, float maxR)
+        {
+            if (depth(p) > 0.5f) return 0f;
+            for (float r = 4f; r <= maxR + 0.01f; r += 4f)
+                for (int k = 0; k < 24; k++)
+                {
+                    float ang = k * math.PI * 2f / 24f;
+                    if (depth(p + r * new float2(math.cos(ang), math.sin(ang))) > 0.5f) return r;
+                }
+            return float.PositiveInfinity;
         }
 
         static string Cs1Pos(Item it) { return PlacementRules.Where(it.X, it.Z, it.Dx, it.Dz, it.Ox, it.Oz); }
@@ -578,6 +691,7 @@ namespace Cs2Buildings
                     RequireRoad = P.Bool(d, "requireRoad", false),
                     MaxDistance = (float)P.Num(d, "maxDistance", 0),
                     Station = P.Str(d, "family", null) == "station",
+                    Family = P.Str(d, "family", null),
                     Dx = dx, Dz = dz,
                     Cs1Info = P.Str(d, "cs1Info", null),
                     X = P.Num(d, "x", 0), Z = P.Num(d, "z", 0), Score = P.Num(d, "score", 0),

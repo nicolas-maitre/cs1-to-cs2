@@ -73,6 +73,30 @@ namespace RulesTests
             Eq("(-2421, 439)", PlacementRules.Position(-2421.27, 439.4), "rounded");
         }
 
+        // Decision 128: warn only when the CS1 city had them and none was placed.
+        public static void TestSupplyWarnings()
+        {
+            Eq(0, PlacementRules.SupplyWarnings(7, 1, 4, 2).Count, "some placed");
+            Eq(0, PlacementRules.SupplyWarnings(0, 0, 0, 0).Count, "none in CS1");
+            var w = PlacementRules.SupplyWarnings(7, 0, 4, 0);
+            Eq(2, w.Count, "both missing");
+            Eq(true, w[0].StartsWith("This city has no power plant placed (7 in CS1): place them yourself, or re-run the package with 'let utilities move nearby'"), "power text");
+            Eq(true, w[1].StartsWith("This city has no water supply placed (4 in CS1)"), "water text");
+            Eq(1, PlacementRules.SupplyWarnings(0, 0, 3, 0).Count, "water only");
+            Eq(true, PlacementRules.IsPower("power") && PlacementRules.IsWater("waterPump") && !PlacementRules.IsWater("sewage"), "families");
+        }
+
+        // DECISIONS-buildings #42: surface pumps keep, slide toward water, swap to groundwater, or are placed and reported dry.
+        public static void TestPumpWater()
+        {
+            Eq("keep", PlacementRules.PumpWaterAction(20, 24, 30, false), "water under the lot");
+            Eq("slide", PlacementRules.PumpWaterAction(50, 24, 30, false), "water 26 m past the lot");
+            Eq("groundwater", PlacementRules.PumpWaterAction(float.PositiveInfinity, 24, 30, true), "no water, groundwater");
+            Eq("dry", PlacementRules.PumpWaterAction(60, 24, 30, false), "no water, dry ground: placed as planned, reported");
+            Eq(true, PlacementRules.NeedsRoad("waterPump") && PlacementRules.NeedsRoad("sewage") && !PlacementRules.NeedsRoad("park"), "families");
+            Eq("Water Pump at CS2 (1, 2) is not connected to a road, so it gets no electricity: connect a road to it", PlacementRules.ConnectRoad("Water Pump", "(1, 2)"), "line");
+        }
+
         // The web report's wording: CS1 = plan − transform, CS2 = plan + import offset.
         public static void TestPlaceYourselfText()
         {
