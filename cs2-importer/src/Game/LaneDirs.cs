@@ -49,6 +49,10 @@ namespace Cs2Importer
                         // a bus stop's bay ("Car Bay Lane"): not a driving lane of CS1's road (#64; worker-5's IsBayLane rule)
                         if (w.Prefabs.GetPrefabName(em.GetComponentData<Game.Prefabs.PrefabRef>(le).m_Prefab).Contains("Bay Lane")) continue;
                         var delta = em.GetComponentData<EdgeLane>(le).m_EdgeDelta;
+                        // one cross-section of the edge (t = 0.25): CS2 sometimes has an edge's lanes in two pieces in a
+                        // running city (0–0.5 and 0.5–1, e.g. after the edge was updated) and whole after loading; the road is
+                        // the same, so the pieces must not be counted twice (#64)
+                        if (0.25f < math.min(delta.x, delta.y) || 0.25f > math.max(delta.x, delta.y)) continue;
                         bool alongEdge = delta.y > delta.x;
                         var lc = em.GetComponentData<Curve>(le).m_Bezier;
                         float off = math.dot(MathUtils.Position(lc, 0.5f).xz - mid.xz, right);
