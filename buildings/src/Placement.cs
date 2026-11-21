@@ -502,6 +502,18 @@ namespace Cs2Buildings
             }
             var warnings = new List<object>();
             foreach (var w in PlacementRules.SupplyWarnings(powerPlanned, powerPlaced, waterPlanned, waterPlaced)) warnings.Add(w);
+            // a depot type with none placed: its lines run no vehicles (RC3, Skibidi's Bus Depot)
+            var depots = new SortedDictionary<string, int[]>();
+            foreach (var it in items)
+            {
+                var k = PlacementRules.DepotKind(it.Prefab);
+                if (k == null) continue;
+                int[] c;
+                if (!depots.TryGetValue(k, out c)) depots[k] = c = new int[2];
+                c[0]++;
+                if (it.Status == "placed" || it.Status == "alreadyPlaced") c[1]++;
+            }
+            foreach (var kv in depots) if (kv.Value[1] == 0) warnings.Add(PlacementRules.DepotWarning(kv.Key, kv.Value[0]));
             foreach (var it in items)
             {
                 if (it.Status == "placed" || it.Status == "alreadyPlaced") continue;

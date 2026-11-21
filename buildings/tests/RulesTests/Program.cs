@@ -98,6 +98,16 @@ namespace RulesTests
             Eq(true, PlacementRules.NeedsTransformer("CoalPowerPlant01", "(1, 2)").StartsWith("CoalPowerPlant01 at CS2 (1, 2) feeds only the high-voltage grid: place a transformer station near it"), "transformer line");
         }
 
+        // RC3: a depot type with none placed gets a warning (its lines run no vehicles).
+        public static void TestDepotWarnings()
+        {
+            Eq("bus", PlacementRules.DepotKind("BusDepot01"), "bus");
+            Eq("train", PlacementRules.DepotKind("RailYard02"), "rail yard");
+            Eq("subway", PlacementRules.DepotKind("SubwayYard01"), "subway yard");
+            Eq(null, PlacementRules.DepotKind("Hospital01"), "not a depot");
+            Eq(true, PlacementRules.DepotWarning("bus", 1).StartsWith("This city has no bus depot placed (1 in CS1): its bus lines get no vehicles"), "text");
+        }
+
         // The web report's wording: CS1 = plan − transform, CS2 = plan + import offset.
         public static void TestPlaceYourselfText()
         {

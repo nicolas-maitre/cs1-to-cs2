@@ -71,6 +71,26 @@ namespace Cs2Buildings
             return l;
         }
 
+        /// <summary>
+        /// RC3 finding: a transit depot type the plan has (BusDepot…, TramDepot…) with none placed leaves its lines without
+        /// vehicles (Skibidi: the only Bus Depot overlapped a road, 9 bus lines, 4 buses after 300 s). The depot kind from
+        /// the prefab name, or null for other buildings.
+        /// </summary>
+        public static string DepotKind(string prefab)
+        {
+            if (string.IsNullOrEmpty(prefab)) return null;
+            foreach (var k in new[] { "Bus", "Tram", "Subway", "Train", "Taxi", "Ship", "Trolley" })
+                if (prefab.StartsWith(k + "Depot", StringComparison.Ordinal) || prefab.StartsWith(k + "Yard", StringComparison.Ordinal)) return k.ToLowerInvariant();
+            if (prefab.StartsWith("RailYard", StringComparison.Ordinal)) return "train";
+            return null;
+        }
+
+        /// <summary>"This city has no bus depot placed (1 in CS1): its bus lines get no vehicles; place it yourself …".</summary>
+        public static string DepotWarning(string kind, int planned)
+        {
+            return "This city has no " + kind + " depot placed (" + planned + " in CS1): its " + kind + " lines get no vehicles; place it yourself (see the list below)";
+        }
+
         /// <summary>Plan item families that count for SupplyWarnings (buildings/match/match.mjs families).</summary>
         public static bool IsPower(string family) { return family == "power"; }
         public static bool IsWater(string family) { return family == "waterPump"; }

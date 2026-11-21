@@ -507,3 +507,54 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
     - They carry bus stops placed by the transit step. The edge's composition picks the stop variant (`PrimaryStop`, plus a Car Bay Lane) only on the next load, which shifts lane indices, so lane connections written in session break.
     - Fix with worker-4 (`Transit.cs` marks the attached edge `Updated`). Acceptance now fails on any road that differs after a save and reload (`roads-reload` step).
 - **Not covered:** memory (to repeat with the fixed sampler), the lane repair step (#142, uncommitted), metro and tram vehicles.
+
+## 11. Release candidate 3 (buildings worker)
+
+`node tools/release/acceptance.mjs --skip-build --simulate 300 [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after `node tools/release/build.mjs --npm-ci` and `--check`.
+
+**Clean build:** from a `git archive` of **b71a160** in `%LOCALAPPDATA%\cs1-to-cs2\rc3\b71a160`, plus the machine's `local.props`.
+- **Artefacts:** product 0.3.0; exporter 1.2.2, **importer 0.3.4**, **web 0.9.3**, **buildings 0.3.3**. `build.mjs --check` passed.
+- **Flow:** the user's, the same as RC2: Install Road Builder configs → restart → new city on Corral Riches → Check → Prepare map → 20 s → Import → 300 s at speed 3. The release mod was installed for each city and the dev mod restored after each. CS2 was stopped before the lock was released.
+- **New checks:**
+  - `report-complete`: every step the mod registered, plus the enabled built-ins, has an entry in the import report;
+  - `heights-tunnels`: the heights dump finds every built road, and the CS1 tunnel count is met;
+  - `utility-stubs`: no outside-connection stub splits a junction, counted by real edge endpoints.
+- **Result:** all three **ok=true**, every step passed. The Skibidi run was repeated (`20261121-232522`) because the clean tree hadn't built the transit library, so the first run (`20261121-225501`, otherwise identical) skipped the vehicles count; see the findings.
+
+| | Skibidi 3 km (`20261121-232522`) | CacaoCity, left-hand (`20261121-230438`, `qa/cacao-v2.cs1x`) | Westfield (`20261121-231503`) |
+| --- | --- | --- | --- |
+| Check / Prepare map | all 37 road types; terrain 95 % exact | all 42 types; **"Traffic drives on the left, as in the CS1 city."** | all 16 types |
+| Roads | **2035 / 2035** (4.4 s) | **684 / 684** (2.4 s) | **648 / 648** (2.3 s) |
+| **Report complete** | all 7 registered steps (buildings, objects, districts, surfaces, utilities, **powerhook**, transit) and 8 built-ins present | the same | the same |
+| **Heights / tunnels** | 2035 segments, **0 missing** | 684, 0 missing | 648, 0 missing |
+| **Utility stubs** | 8 markers, **0 split** (1 not touching a road) | 8, 0 split | 10, 0 split |
+| Lane directions | **all 1949 the same** (353 one-way, 6 asymmetric) | **all 554 the same**; CS1 and CS2 left-hand | **all 647 the same** |
+| Lane connections | 363 at 70 of 95 junctions; 685/685 refs; turns **117/117** | 341 at 68 of 79; 727/729; turns **167/167** | 127 at 34 of 39; 299/301; turns **81/81** |
+| **Roads after reload** | **0 of 2035 differ** | 0 of 684 | 0 of 648 |
+| **Lane connections after reload** | 70 junctions, 0 loader failures, turns 117/117 | 68, 0, 167/167 | 34, 0, 81/81 |
+| Traffic / Traffic mod | 46 turn bans, 123 lights removed; 325 priority signs | 14 lights removed; 57 signs | 40 turn bans; 3 signs |
+| Zoning | 94.2 % | 91.1 % | 99.99 % |
+| Buildings | **78 / 108** (30 to place yourself, all lot overlaps) | **26 / 43**; warnings: no power plant placed (5 in CS1), 5 "connect a road" | **7 / 13**; 3 "place a transformer station" |
+| Trees / surfaces | 3478 / 4216 | 11 300 / 12 260; surfaces 44 / 44 | none |
+| Utility lines / power hookup | 76 / 76; powerhook done | 147 / 147; done | 106 / 106; done |
+| Transit lines | **9 / 9**, 145 / 145 stops | none in the city | none in the city |
+| Outside connections | 20 / 20 | 4 / 4 | 22 / 22 |
+| Homes supplied after 300 s (electricity / water / sewage) | 99.4 / 99.2 / 99.2 %; QA ok | 100 / 100 / 100 % (11 homes); 2 pumps `notEnoughSurfaceWater` | 100 / 100 / 100 %; 3 incinerators `highVoltageNotConnected` |
+| Vehicles after 300 s | **4 buses**, 9 routes, 16 depots; 0 metro, 0 train | – | – |
+
+**Against RC2 (§8):**
+- **Same or better:** roads, lane directions, lane connections (Skibidi 363 against 360, turn checks all correct), outside connections, surfaces and transit lines.
+- **New and passing:** roads and lane connections after reload (0 differences; RC2 didn't check this), utilities (~99 % of homes through the outside connections; RC2 had no utilities), report completeness, heights and tunnels, utility stubs.
+- **Buildings: fewer, by decision.** 78/108, 26/43 and 7/13, against 108/108, 43/43 and 13/13. RC2 still moved buildings to free land by default; #106 (user) keeps them at their CS1 spot. Every one not placed is listed as "place it yourself".
+
+**Findings:**
+1. **Skibidi's buses: 4 against RC2's 34.** The city's only Bus Depot overlaps a road at its CS1 spot, so under #106 it isn't placed. Because the CS1 city has a depot, the web tool adds no default one either, so the 9 bus lines have no depot to send buses from.
+   - **Fixed in the working tree:** the placer now warns when a depot type the plan has gets none placed: "This city has no bus depot placed (1 in CS1): its bus lines get no vehicles; …" (RulesTests 10/10).
+   - **Coordinator's call:** whether a CS1 depot should get the default depots' opt-out `nearby` fallback, since without it the lines run nothing.
+2. **CacaoCity's Water Tower became the surface pump** (WaterPumpingStation01, `notEnoughSurfaceWater`). CS1's Water Tower has an intake (`m_waterIntake` 3750) and `m_useGroundWater: true`, which matcher 1.2.0's tower rule didn't cover.
+   - **Fixed in the working tree:** matcher 1.2.1 (DECISIONS-buildings #43), so it becomes the groundwater pump.
+   - The other flagged pump, at CS2 (535, −941), is a CS1 shore intake on dry CS2 land (#42, open).
+3. **Westfield's 3 incinerators show `highVoltageNotConnected`.** Expected: transformers are opt-in (#150), and the report says "place a transformer station near it". Homes are supplied through the outside connection.
+4. **Acceptance in a clean tree didn't build the transit exec library**, so the first Skibidi run had no vehicles count. Fixed in the working tree: `build-exec-lib` builds it too.
+
+**Not covered:** trains and metros (known limit, #99; Skibidi's subway line is created with 0 vehicles). The CacaoCity city had only 11 homes after 300 s, so its percentages are on a small base.
