@@ -5,9 +5,11 @@
 | | Goal | Status |
 | --- | --- | --- |
 | M0 | Feasibility spikes | done ([spikes/M0-REPORT.md](../spikes/M0-REPORT.md)) |
-| **M1** | **Roads-first vertical slice**: Skibidi.02 → `.cs1x` → web tool (crop + road mapping) → CS2 importer builds the road network in a new CS2 city, all scripted | in progress (2026-11-21) |
-| M2 | Terrain and water (CS1 heightmap → CS2 map), zoning, TM:PE (lane arrows, priority signs), Node Controller, transit lines, the importer as a user-facing mod with an in-game button | |
-| M3 | Buildings and assets (asset mapping in the web tool), parks, services, props, decals for IMT node fills | |
+| **M1** | **Roads-first vertical slice**: Skibidi.02 → `.cs1x` → web tool (crop + road mapping) → CS2 importer builds the road network in a new CS2 city, all scripted | done (2026-11-21) |
+| M2 | Terrain and water (CS1 heightmap → CS2 map), zoning, TM:PE (lane arrows, priority signs), Node Controller, transit lines, the importer as a user-facing mod with an in-game button | done (2026-11-21) |
+| M3 | Buildings and assets (asset mapping in the web tool), parks, services, props, decals for IMT node fills | done (2026-11-21): buildings kept at their CS1 spot (#106), utilities, power hookup (#150) |
+
+| Release | Release-grade mods and website: RC3 passed on b71a160 ([QA.md](QA.md) §11); the web tool is hosted on GitHub Pages | polish in progress; publishing is the user's call |
 
 ## M1 scope
 
