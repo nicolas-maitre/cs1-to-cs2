@@ -231,3 +231,12 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 86. **"Remove imported"** (Claude). The import records what it created as the difference between a snapshot before and after, stored per city by kind, prefab and position (entity ids don't survive save/load). Removal uses the game's own deletion patterns. Verified after save/load: everything created was removed, back to exactly the prepared city.
 87. **Traffic mod lane connections and arrows: experimental, OFF by default** (Claude). They go through the Traffic mod's own data model by reflection: 429 connections on 90/94 junctions, but only 117 of 156 explicit lanes match CS1 exactly, and persistence after save/load isn't checked. U-turn rules aren't applied.
 88. **Web 0.5.1: automated UI quality** (Claude). UI smoke tests (landing, open a synthetic `.cs1x`, keyboard crop, What converts, package contents, French switch) and axe-core accessibility checks run in CI. The guide (EN + FR) follows importer 0.3.0: Browse… the zip, Prepare map, the new toggles, Cancel, Remove imported. The French guide quotes the mod's French labels, and both are checked against the mod's locale files.
+89. **Lane connections and arrows: ON by default for right-hand cities, OFF for left-hand ones (for now)** (Claude; this overrides the 95% bar in #87).
+    - Right-hand Skibidi matches 92–94% of CS1's lane sources: 117/117 at junctions, the rest continuous. The remainder are lane splits at nodes without a junction, which CS2 can't express.
+    - Everything written matches exactly, so the step never makes a junction worse. Connections persist through save/load.
+    - U-turn rules are written as lane connections, because the Traffic mod has no U-turn rule.
+90. **Traffic handedness is carried through the pipeline** (Claude).
+    - The exporter reads `manifest.traffic.leftHand` and the plan carries it as `plan.source.leftHandTraffic`.
+    - Prepare map sets the CS2 city's handedness while the map has no roads.
+    - Check warns when a loaded city drives on the other side.
+    - Left-hand cities still need a road-level check (one-way direction under CS2's left-hand flip) before lane connections are enabled for them.
