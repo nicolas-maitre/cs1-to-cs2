@@ -416,3 +416,68 @@ Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,1
 **Rail hunt stopped (coordinator #133).** In run 13 (`cs1conv-train6k-st3-yards2`), the opt-in interior SubwayYard02's 110 m link to the elevated metro line **was built**: the yard node has the link edge, and the line node has 3 edges (`.gamectl/tracklink/yardjoint-run13.json`). Metro Lines 1 and 3 have paths (27 and 78 elements). Even so, the yard's 2 trains stayed parked for 480 s and the lines show 0 vehicles.
 - **Open lead:** the depot doesn't dispatch to the lines. Possibly it can't pathfind from the yard to a line waypoint (lane direction), or the dispatch request needs something else.
 - **Status:** trains and metros remain a known limit for this release. Interior yards and bridges stay opt-in or default as recorded in DECISIONS-transit #12–14.
+
+## 10. Full city, all features (cs2-importer worker, docs/DECISIONS.md #143)
+
+**Setup:**
+- **Package:** Skibidi at the largest crop (`--auto-crop 14336`, centre 1250/1250), web 0.9.3 (HEAD f39eac3): 4741 segments (101 tunnels, 112 with Node Controller shifts), conform burn 3208 segments and walls burn 877 (none skipped), 253 buildings, 38,900 trees and 539 rocks, 16 transit lines, 928 TM:PE lane connections.
+- **Flow:** the mod-only user flow with every default step, importer 0.3.4 built from the same HEAD: new city on Sunshine Peninsula → Prepare map → Check → Import → 5 min simulation at speed 3 → save → reload.
+- **Script:** `stress.mjs` (cs2-importer worker's scratch tooling), `.gamectl/stress/full-rc3/`. A separate process pings the bridge every 250 ms, so a frame stall shows as a slow ping.
+
+| Step | Time | Worst stall (ping) | Result |
+| --- | --- | --- | --- |
+| Start CS2 | 57 s | 7.7 s (loading) | |
+| New city | 19 s | 4.5 s | |
+| Prepare map | 17 s | 1.8 s | 197 base roads and 5 buildings removed; terrain within 0 m at 95 % of 181 check points; 15 water sources |
+| Check | 4 s | 3.9 s | 4740 roads to build, all 77 road types available |
+| Import (all steps) | 70 s | 3.0 s | roads 8.1 s, traffic 2.2, Traffic mod 1.8, lanes 3.6, zoning 4.4, buildings 2.7, trees 2.5, surfaces 0.9, utilities 0.8 |
+| Simulation, 5 min at speed 3 | 300 s | 0.34 s | |
+| Save | 2.6 s | 1.5 s | |
+| Reload | 8.5 s | 2.7 s | Traffic mod: "couldn't load data from 16 of 233 intersections" |
+
+Memory wasn't captured (the sampler's parsing failed on the localised `tasklist` output; fixed for the next run). No crash, no exception, no step error.
+
+**Results:**
+- **Roads:**
+  - 4738 of 4740.
+  - Node 17400 not created: two "Train Track Elevated" pieces at ground level, the same class as the whole-Skibidi M2 run.
+  - 1 bridge without its elevated composition.
+- **Tunnels:** CS1's 101 tunnel segments all built as tunnels (29 deepened, #124), plus 13 slopes. CS1 ground roads: 0 tunnels, 1 elevated (a pedestrian pavement).
+- **Height error** (op `heights`):
+
+  | Kind | Segments | Median | 90th percentile | Over 2 m |
+  | --- | --- | --- | --- | --- |
+  | Ground | 4101 | 0.06 m | 0.58 m | 18 (worst 5.8 m) |
+  | Elevated | 440 | 0.11 m | 0.87 m | 15 |
+  | Tunnels | 101 | | | 21 |
+
+  - Tunnels: deepened on purpose (#58), up to 4.3 m below CS1.
+  - Elevated: the worst is a pair of "Train Track Elevated" pieces at elevation 0 whose shared node is 9 m above the natural terrain in CS1. With no height mode there, the M2 rule snaps it, a legacy residual.
+- **Other steps:**
+  - lane references 2529 of 2530;
+  - zoning 94.8 % of 122,119 cells;
+  - buildings 166 of 253 (87 to place yourself, #106);
+  - trees and props 38,335 of 39,439;
+  - surfaces 2 of 2;
+  - utilities 420 of 420 placed;
+  - transit 20 of 20 lines and 305 of 305 stops;
+  - outside connections 10 of 10 (6 road, 4 train).
+- **Lane connections** (op `lanes` check-only):
+
+  | | Lane refs | Explicit sources | Arms off | Turns wrong |
+  | --- | --- | --- | --- | --- |
+  | Before reload | 2462/2530 | 660/690 (95.7 %) | 0 of 700 | 2 of 496 |
+  | After reload | 2288/2530 (174 "lane count differs") | 591/632 (93.5 %) | 0 | 16 of 463 |
+
+  The loss after reload and the Traffic mod's 16 junctions that didn't load are #142 (worker-5). The run used committed code, without their uncommitted lane repair step.
+- **Utilities after 5 min** (`tools/qa`):
+  - electricity 96.7 %, water 99.1 %, sewage 99.1 % supplied;
+  - service buildings' electricity 88.2 % connected;
+  - 10 power facilities not connected (wind turbines and a small coal plant: low- or high-voltage not connected; buildings worker);
+  - production 280 MW against 294 MW consumption, the rest imported.
+- **Vehicles after 5 min:** 55 public transport vehicles (36 buses, 2 trains with 6 carriages, 10 prison vans, 1 plane) on 20 routes, from 12 depots. No metro or tram vehicles (#83).
+- **Segments lost after the import:** 21 plan segments that were built can't be resolved by later read-only ops (`heights`, `lanedirs`; the lane check's 67 `segment_or_node_not_found`). Only 2 failed in the import itself.
+  - **Cause** (op `inspect` in the saved city, `inspect-missing.json`): the utilities step's line-end snapping (buildings 0.3.3) **splits road junctions**. At 10 sampled junctions a Low-voltage Line or Combined Small Pipe node sits at the road node's exact position and has taken over one of the road edges. The junction becomes two nodes, so traffic can't pass, and junction data written before (lane connections) goes stale.
+  - Sent to the buildings worker with the repro, and to worker-5 for #142.
+  - Expected after the fix: one node per junction, and `heights` reporting only the import's 2 failures.
+- **Not covered:** memory (to repeat with the fixed sampler), the lane repair step (#142, uncommitted), metro and tram vehicles.
