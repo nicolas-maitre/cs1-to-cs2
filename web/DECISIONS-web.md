@@ -535,3 +535,13 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
       - Westfield: 64 + 42, 181 along roads.
     - **Off switch:** `--no-utilities` on the CLI. There's no UI toggle yet, because the section only lists lines and the importer decides.
     - **Docs:** the matrix now has two rows, along roads (yes, CS2 builds them) and away from roads (approx, placed by the importer).
+96. **Node Controller shifts become road ends off the node centre** (docs/DECISIONS.md #107, worker-5's research and module; web 0.9.0).
+    - **The finding:** CS2 road prefabs have no `GeometryFlags.StrictNodes`, so an edge keeps its course curve's own end points and can end off its node. That is CS2's per-end lateral offset, i.e. Node Controller's shift.
+    - **Plan:** shifted segments carry the shifted `bezier`, `offNode: true` and `ncShift: [start, end]`. Nodes stay at the CS1 centres. Schema §2 describes it.
+    - **Split of the work:** worker-5 wrote `m2/ncalign.ts` and its test (only new files, so we never edited the same files). I wired it into `buildPackage` right after the plan context and changed `nodecontroller.ts`: shift-only nodes are no longer "not converted", and the section becomes `partial` with a "segment ends shifted" line. I also updated the types (worker-5's `offNode` / `ncShift` fields kept), the docs and the version.
+    - **Consistency:** terrain conform and `utilities` read the shifted beziers, so the corridor follows the shifted road. Worker-4's builder still gives identical bytes (terrain.test.ts).
+    - **Crops (3 km):**
+      - Skibidi: 17 ends on 14 segments, up to 3.4 m;
+      - Cacao: 39 ends on 33, up to 10 m;
+      - Westfield: 18 ends on 17, up to 6 m.
+    - **Still to check:** worker-5 is confirming the in-game behaviour, and the importer side of `offNode` is theirs.

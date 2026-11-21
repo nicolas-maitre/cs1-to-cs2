@@ -72,7 +72,7 @@ Seulement pour les panneaux de priorité, connexions de voies, flèches de voie 
 
 ## Que deviennent les feux programmés et les réglages de Node Controller ?
 
-CS2 gère lui-même les phases des feux et construit lui-même les carrefours. Les feux programmés deviennent des feux ordinaires ; les réglages de Node Controller figurent dans le rapport.
+CS2 gère lui-même les phases des feux et construit lui-même les carrefours. Les feux programmés deviennent des feux ordinaires ; les décalages latéraux de Node Controller sont convertis (les routes se terminent à côté du centre du nœud et les voies s'alignent comme dans CS1) ; les autres réglages de Node Controller figurent dans le rapport.
 
 ## Bâtiments européens ou nord-américains ?
 

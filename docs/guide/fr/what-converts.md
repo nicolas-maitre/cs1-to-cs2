@@ -58,7 +58,8 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Types de nœud, décalages, marquages masqués | – | seulement dans le rapport | CS2 construit lui-même la géométrie des carrefours. |
+| Décalages latéraux des extrémités de segment (voies alignées aux carrefours et aux réductions de voies) | Extrémités de route à côté du centre du nœud, comme dans CS1 | converti | Pas sur les nœuds en forme libre, sans équivalent CS2. |
+| Types de nœud, décalages longitudinaux, pentes, torsions, marquages masqués | – | seulement dans le rapport | CS2 construit lui-même la géométrie des carrefours. |
 
 ## Transports
 

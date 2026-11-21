@@ -5,7 +5,7 @@
 import type { Lang } from './i18n/index.ts';
 import { DOCS_FR } from './docs.fr.ts';
 
-export const APP_VERSION = '0.8.0';
+export const APP_VERSION = '0.9.0';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }
@@ -169,7 +169,7 @@ export const DOCS_EN: Docs = {
     { q: 'A building is missing, or ended up somewhere else (my hospital moved). Why?', a: ['CS2 buildings often need more room than their CS1 counterparts. When one doesn\'t fit at its CS1 spot, the importer slides it a little or tries a smaller CS2 alternative. If it still doesn\'t fit, it is **not moved** elsewhere: the import report lists it as "place it yourself" with its CS1 position, and you place it by hand. A building only goes somewhere else if you set its type to look for free land nearby (up to 400 m) or anywhere in the square in the Assets tab.'] },
     { q: 'My metro or train line has no vehicles.', a: ['CS2 lines get their vehicles from a depot of their type, and CS1 metro and train lines don\'t need one. Rail and subway yards are never placed inside your city: by default the importer puts a compact yard at the edge of the square, where the line\'s track leaves it, and links it. A line whose track stays inside the square gets none; the import report names it, and you place a yard yourself. Under Overview → Options you can choose "I\'ll place it myself" for metro or train. Bus and tram lines get a default depot near their first stop.'] },
     { q: 'Do I need the Traffic mod?', a: ['Only for TM:PE priority signs, lane connections, lane arrows and U-turn rules. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.'] },
-    { q: 'What happens to timed traffic lights and Node Controller tweaks?', a: ['CS2 runs its own light phases and builds junctions itself. Timed lights become plain traffic lights; Node Controller settings are listed in the report.'] },
+    { q: 'What happens to timed traffic lights and Node Controller tweaks?', a: ['CS2 runs its own light phases and builds junctions itself. Timed lights become plain traffic lights; Node Controller shifts are converted (the road ends sit off the node centre, so lanes line up as in CS1); the other Node Controller settings are listed in the report.'] },
     { q: 'European or North American buildings?', a: ['Choose the zone theme under Overview → Options. It sets which CS2 residential and commercial zones the converted zones use, and which tree variants are preferred.'] },
     { q: 'Does the exporter change my CS1 save?', a: ['No. It only reads the loaded city and writes the `.cs1x` file.'] },
     { q: 'Why is the package so large?', a: ['Most of it is the terrain: two 4096 × 4096 heightmaps, the size CS2 uses, 64 MB unpacked and about 22 MB in the zip. Everything the CS2 mod needs is in the package, so nothing else has to run on your computer.'] },
@@ -197,7 +197,8 @@ export const DOCS_EN: Docs = {
     { area: 'Traffic (TM:PE)', cs1: 'Priority signs', cs2: 'Traffic mod', status: 'yes', notes: 'Needs the Traffic mod in CS2.' },
     { area: 'Traffic (TM:PE)', cs1: 'Lane arrows, lane connections, U-turn rules', cs2: 'Traffic mod lane connections and U-turn settings', status: 'approx', notes: 'Applied exactly at junctions (Lane connections (Traffic mod), on by default), in right- and left-hand cities; lane splits where a road continues without a junction stay as CS2 builds them.' },
     { area: 'Traffic (TM:PE)', cs1: 'Timed traffic lights, turn on red, blocked junctions, parking rules', cs2: '–', status: 'report', notes: 'Timed lights become plain traffic lights.' },
-    { area: 'Node Controller', cs1: 'Node types, offsets, hidden markings', cs2: '–', status: 'report', notes: 'CS2 builds junction geometry itself.' },
+    { area: 'Node Controller', cs1: 'Segment-end shifts (lanes lined up across junctions and lane drops)', cs2: 'Road ends off the node centre, as in CS1', status: 'yes', notes: 'Not on free-form nodes, which CS2 has no equivalent for.' },
+    { area: 'Node Controller', cs1: 'Node types, offsets, slopes, twists, hidden markings', cs2: '–', status: 'report', notes: 'CS2 builds junction geometry itself.' },
     { area: 'Transit', cs1: 'Bus and tram lines', cs2: 'CS2 lines with colour, name, number and stops', status: 'approx', notes: 'Trolleybus, tourist and intercity buses become bus lines.' },
     { area: 'Transit', cs1: 'Train, metro, ship and plane lines', cs2: 'CS2 lines at the placed stations', status: 'approx', notes: 'Need their stations from the buildings step. Metro and train yards go at the crop edge where the track leaves it (or you place them); never inside the city.' },
     { area: 'Buildings', cs1: 'Service buildings, stations, depots, parks, landmarks', cs2: 'Closest CS2 building (same service, then capacity and size)', status: 'approx', notes: 'Check or change each type in the Assets tab. A building that doesn\'t fit at its spot is not moved by default: it is listed for you to place.' },

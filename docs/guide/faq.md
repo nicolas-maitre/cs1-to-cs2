@@ -72,7 +72,7 @@ Only for TM:PE priority signs, lane connections, lane arrows and U-turn rules. S
 
 ## What happens to timed traffic lights and Node Controller tweaks?
 
-CS2 runs its own light phases and builds junctions itself. Timed lights become plain traffic lights; Node Controller settings are listed in the report.
+CS2 runs its own light phases and builds junctions itself. Timed lights become plain traffic lights; Node Controller shifts are converted (the road ends sit off the node centre, so lanes line up as in CS1); the other Node Controller settings are listed in the report.
 
 ## European or North American buildings?
 

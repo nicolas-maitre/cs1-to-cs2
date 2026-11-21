@@ -58,7 +58,8 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Node types, offsets, hidden markings | – | listed in the report only | CS2 builds junction geometry itself. |
+| Segment-end shifts (lanes lined up across junctions and lane drops) | Road ends off the node centre, as in CS1 | converts | Not on free-form nodes, which CS2 has no equivalent for. |
+| Node types, offsets, slopes, twists, hidden markings | – | listed in the report only | CS2 builds junction geometry itself. |
 
 ## Transit
 

@@ -31,6 +31,7 @@ import { addDefaultDepots } from '../../../buildings/lib/plan.mjs';
 import { buildObjects, buildSurfaces, SURFACE_MAP } from './m3/objects.ts';
 import { matchVanilla } from './vanilla.ts';
 import { buildUtilities } from './m3/utilities.ts';
+import { alignNcShifts } from './m2/ncalign.ts';
 import type { Cs2RoadCatalogue, VanillaMatch } from './vanilla.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
@@ -367,11 +368,14 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     medianLanes,
     t: translator(opts.lang ?? 'en'), lang: opts.lang ?? 'en',
   };
+  // Node Controller shifts (#107): segment ends off the node centre, as in CS1 (m2/ncalign.ts, worker-5)
+  const ncAlign = alignNcShifts(planSegments, ctx);
+  items.push(...ncAlign.items);
   const zoning = buildZoning(ctx, opts.zoning ?? DEFAULT_ZONING);
   const water = buildWater(ctx, opts.water !== false);
   const transit = buildTransit(ctx, opts.transit !== false);
   const traffic = buildTraffic(ctx, opts.traffic !== false);
-  const nc = buildNodeController(ctx);
+  const nc = buildNodeController(ctx, ncAlign);
   const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, fallbacks: opts.assetFallbacks, fallback: opts.assetFallback, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const districts = buildDistricts(ctx, opts.districts !== false);
   // CS2 lines get vehicles only from a depot of their type. Bus and tram: a default depot in the city

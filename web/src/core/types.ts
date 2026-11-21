@@ -296,6 +296,11 @@ export interface PlanSegment {
   cs1Info?: string;
   /** CS1 NetInfo m_halfWidth (m, incl. sidewalks): the corridor a conform road burns into the terrain. */
   halfWidth?: number;
+  /** true when the bezier's ends are deliberately off the node centres (Node Controller shift, #107): the importer keeps
+   *  them instead of snapping them to the nodes. */
+  offNode?: boolean;
+  /** the Node Controller shifts applied at [start, end] (m, + = left looking from the node into the segment). */
+  ncShift?: [number, number];
 }
 
 export interface Plan {

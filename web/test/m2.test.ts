@@ -255,7 +255,10 @@ describe('Node Controller', () => {
     });
     const r = buildNodeController(ctxOf(c));
     expect(r.summary).toMatchObject({ status: 'report-only' });
-    expect(r.items.map(i => i.count)).toEqual([1, 1, 2]);
+    expect(r.items.map(i => i.count)).toEqual([1, 1, 1]); // node 2 has only a shift: converted by ncalign.ts (#107), not reported here
+    const applied = buildNodeController(ctxOf(c), { segments: 1, ends: 1, freeForm: 0, clamped: 0, maxShift: 1.5, sample: [1] });
+    expect(applied.summary.status).toBe('partial');
+    expect(applied.summary.details[0]).toMatch(/1 segment end shifted with Node Controller/);
     expect(buildNodeController(ctxOf(cross())).summary.status).toBe('absent');
   });
 });

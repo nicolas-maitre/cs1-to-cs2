@@ -413,6 +413,13 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   - `crop` is a square in CS1 coordinates (no rotation), at most 14 336 m (the CS2 playable area).
   - CS2 position = CS1 position + (`dx`, `dz`), so the crop centre lands at the CS2 map origin. `bounds` is the crop in CS2 coordinates.
 - **Height** (`heightMode: "terrain-relative"`): the importer puts each node at CS2 terrain height + `heightAboveTerrain`. The bezier `y` values are informational only.
+- **Node Controller shifts** (web 0.9.0, docs/DECISIONS.md #107, `web/src/core/m2/ncalign.ts`): a segment whose CS1 ends were shifted sideways with Node Controller carries `offNode: true`, and its `bezier` is the shifted curve.
+  - **Geometry:** each shifted end is moved by its shift to the left of the direction from the node into the segment, and both end directions turn by `asin((s0 + s1) / L)`, as Node Controller Renewal does. `y` is unchanged, the points are rounded to 3 decimals, and the rule applies to every kind.
+  - **`ncShift`:** `[start, end]` in metres, in plan start/end order, + = left looking from the node into the segment.
+  - **Selection:** only ends with |shift| > 5 cm on nodes that aren't free-form.
+  - **Importer:** it keeps an `offNode` segment's bezier end points instead of snapping them to the node (CS2 road prefabs have no `StrictNodes`, so an edge may end off its node); nodes stay at the CS1 centres. An importer that doesn't know `offNode` snaps the ends, which is the pre-0.9.0 result.
+  - Terrain conform and `utilities` read the shifted beziers.
+  - Node Controller offsets, slopes, twists and `deltaHeight` have no CS2 counterpart and stay report-only.
 - **Elevation:** `elevationStart` / `elevationEnd` is the height above terrain at each end, passed to CS2 as the course elevation. It's > 0 for elevated roads and bridges and < 0 for tunnels; ground segments are 0, values under 5 cm are 0.
 - **`kind`:** `ground`, `elevated`, `bridge`, `slope` or `tunnel`.
 - **Orientation (`reversed`):** a CS1 segment with the Invert flag has its lanes mirrored. The plan builds every course from `start` to `end`, so for such a segment it swaps `start`/`end`, reverses the `bezier`, swaps the elevations and sets `"reversed": true`. Building start → end then gives the right lane order and one-way direction. Lane offsets in `traffic` and stop sides in `transit` are in this plan frame.
@@ -610,7 +617,7 @@ Added to the M2 `water` section when the `.cs1x` has `water.json`:
 - **Not in `traffic`:**
   - TM:PE speed limits become RB variants (`prefabs[*].speedKmh`; CS2 has one speed per road, the segment's most common custom speed is used, then the NetInfo's custom default);
   - bus-only vehicle restrictions become RB bus lanes (`lanesFrom: "TM:PE"`).
-- **Report only:** timed traffic lights (the junction keeps plain lights), turn on red, entering blocked junctions, lane changing, parking restrictions, other vehicle restrictions, and all Node Controller settings.
+- **Report only:** timed traffic lights (the junction keeps plain lights), turn on red, entering blocked junctions, lane changing, parking restrictions, other vehicle restrictions, and all Node Controller settings except segment-end shifts (see `segments[].offNode`).
 
 ### `buildings` (M3)
 
