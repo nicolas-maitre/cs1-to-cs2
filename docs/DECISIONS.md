@@ -319,3 +319,10 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 
      The crash in "exact" heights (#66) gets a time-boxed second look.
 111. **The ground snaps to the road, not the road to the ground** (user, 2026-11-21; refines #110 and supersedes the snapping in #44). When the package is built, every ground-level road's CS1 vertical profile is burned into the converted heightmap: the road's height across its width, blended out to the natural terrain with side slopes, giving embankments and cuts made of ground like CS1. The importer then places ground roads at their real CS1 heights. Elevated roads, bridges and tunnels don't modify the terrain. Worker-3 leads the design; worker-2 implements it in the web terrain step, mirrored in `terrain/convert.mjs` by worker-4.
+112. **The road-height behaviour is configurable per road type** (user, 2026-11-21; extends #111). The web tool's mapping table offers three modes, carried in the plan per prefab and honoured by both the heightmap builder and the importer:
+
+     | Mode | What happens |
+     | --- | --- |
+     | Ground follows the road (default for every ground-level road) | The terrain is shaped to the road's CS1 profile. |
+     | Road follows the ground | The road sits on the natural terrain, and the terrain is left alone. |
+     | CS1 height with walls | The road keeps its CS1 height and the terrain is left alone, so CS2 builds retaining walls or quays. |
