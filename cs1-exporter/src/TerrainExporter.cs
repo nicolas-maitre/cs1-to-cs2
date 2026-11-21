@@ -168,6 +168,9 @@ namespace Cs1Exporter
             else _report.Info("terrain", msg);
         }
 
+        /// <summary>Drops the heightmap bytes once they are in the zip (the grid parameters stay for water.json).</summary>
+        public void R16Release() { R16 = null; }
+
         public void WriteJson(JsonWriter w)
         {
             w.BeginObject();

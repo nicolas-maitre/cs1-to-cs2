@@ -26,6 +26,7 @@ namespace Cs1Exporter
         public void WriteBuildings(JsonWriter w)
         {
             var bm = Singleton<BuildingManager>.instance;
+            var dm = Singleton<DistrictManager>.instance;
             var buf = bm.m_buildings.m_buffer;
             int skipped = 0;
             w.BeginObject();
@@ -37,9 +38,12 @@ namespace Cs1Exporter
                 if ((b.m_flags & Building.Flags.Created) == 0 || (b.m_flags & Building.Flags.Deleted) != 0) continue;
                 BuildingInfo info; string name = null, ai = null, service = null, subService = null, classLevel = null, flags, customName = null;
                 bool growable = false;
+                int district = 0, park = 0;
                 try
                 {
                     info = b.Info;
+                    district = dm.GetDistrict(b.m_position);
+                    park = dm.GetPark(b.m_position);
                     flags = b.m_flags.ToString();
                     if (info != null)
                     {
@@ -86,6 +90,9 @@ namespace Cs1Exporter
                 w.Prop("parent", (int)b.m_parentBuilding);
                 w.Prop("subBuilding", (int)b.m_subBuilding);
                 w.Prop("netNode", (int)b.m_netNode);
+                w.Prop("accessSegment", (int)b.m_accessSegment);
+                w.Prop("district", district);
+                w.Prop("park", park);
                 w.Prop("flags", flags);
                 if (customName != null) w.Prop("customName", customName);
                 w.EndObject();

@@ -12,9 +12,23 @@ namespace Cs1Exporter
         public const BindingFlags Inst = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         public const BindingFlags Stat = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
 
+        /// <summary>
+        /// Test hook (ExportOptions.SimulateMissing): namespaces treated as if their mod were not installed, so the
+        /// real not-found paths of the reflection readers run. Set for one export and cleared afterwards.
+        /// </summary>
+        public static readonly List<string> HiddenNamespaces = new List<string>();
+
+        public static bool IsHidden(string fullName)
+        {
+            if (fullName == null) return false;
+            foreach (var ns in HiddenNamespaces) if (fullName.StartsWith(ns, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
         /// <summary>First loaded type with this full name (any assembly), or null.</summary>
         public static Type FindType(string fullName)
         {
+            if (IsHidden(fullName)) return null;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 Type t;

@@ -34,6 +34,8 @@ These rules apply to every file below:
 | `nodecontroller.json` | M2 | Node Controller node and segment-end settings (absent without Node Controller) |
 | `buildings.json` | M3 data, exported since M2 | every building |
 | `props.json`, `trees.json` | M3 data, exported since M2 | free-standing props and trees |
+| `districts.json` + `districts.u8` + `parks.u8` | M3 | districts and park / industry / campus areas as cell grids, names, policies |
+| `assets.json` | M3 | catalogue of every building, prop, tree and network prefab in use |
 
 Readers must still check `manifest.sections` before reading an entry: a section can be `"failed"` or `"absent"` in any file.
 
@@ -68,6 +70,9 @@ Readers must still check `manifest.sections` before reading an entry: a section 
 
 - **`mods[]`:** `name` is the assembly name. Each entry also has `title` (the name in Content Manager) and, for workshop mods, `workshopId` as a string.
 - **`detectedMods`:** the versions of the mods the converter cares about, or `null` when not enabled.
+- **`exporter`** (since 1.2): `version` is the release version (`1.2.0`), `build` the assembly build.
+- **`excludedSections`** (since 1.2): optional sections the user switched off in the mod options. They are `"absent"` in `sections`.
+- **`test`** appears only in test exports (`simulateMissing` / `simulateFailure`, see `cs1-exporter/README.md`). Never use such a file for a real conversion.
 - **`tiles.unlocked`:** `[col, row]` pairs in a 9 × 9 grid of 1920 m tiles. Col 0 is minimum x and row 0 is minimum z, so tile (4,4) is the centre tile.
 
 Each section has one of these statuses:
@@ -269,9 +274,13 @@ Everything TM:PE saves in the savegame: only what the user customised, never def
   "buildings": [ { "id": 422, "info": "L3 3x2 Detached03", "workshopId": null, "position": [x,y,z], "angle": 179.1,
                    "service": "Residential", "subService": "ResidentialLow", "classLevel": "Level3", "level": 3,
                    "ai": "ResidentialBuildingAI", "growable": true, "width": 3, "length": 4, "size": [20.7, 10.3, 14.9],
-                   "parent": 0, "subBuilding": 0, "netNode": 0, "flags": "Created, Completed, Active", "customName": "…" } ] }
+                   "parent": 0, "subBuilding": 0, "netNode": 0, "accessSegment": 1234, "district": 3, "park": 0,
+                   "flags": "Created, Completed, Active", "customName": "…" } ] }
 ```
 
+- **`accessSegment`** (since exporter 1.2): the segment the building connects to (its road access), 0 if none.
+- **`district` / `park`** (since 1.2): the district and park-area ids at the building's position (`districts.json`), 0 if none.
+- **Service-building specifics** (capacity, radius, workers, vehicles, …) are per prefab: see `assets.json` → `buildings[].aiFields`.
 - **`growable`** is true for zoned (`PrivateBuildingAI`) buildings; everything else is ploppable.
 - **`level`** is 1-based (CS1 `m_level + 1`).
 - **`width` × `length`** are in 8 m cells. `size` is the prefab's bounding size in metres.
@@ -289,6 +298,60 @@ Everything TM:PE saves in the savegame: only what the user customised, never def
 - **Which instances:** only free-standing props and trees (`PropManager` / `TreeManager`). Props and trees that are part of buildings or networks come with their prefabs.
 - **Layout:** compact rows, with `infoIndex` pointing into `infos`.
 - **`fixedHeight`** is 1 when the player set the height explicitly (Move It), so `y` must be kept.
+
+### `districts.json` + `districts.u8` + `parks.u8` (M3)
+
+```json
+{ "grid": { "resolution": 512, "cellSize": 19.2, "size": 9830.4, "districtFile": "districts.u8", "parkFile": "parks.u8",
+            "rowOrder": "uint8 id per cell, row 0 = minimum z (south), column 0 = minimum x (west); 0 = none" },
+  "city": { "policies": ["SmokeDetectors", "…"] },
+  "districts": [ { "id": 3, "name": "Old Town", "nameLocation": [x,y,z], "cells": 812, "area": 299335.7, "policies": ["HighriseBan"] } ],
+  "parks": [ { "id": 1, "name": "Ore Industry Area", "type": "Ore", "kind": "industry", "level": "Level2", "mainGate": 4711,
+               "cells": 400, "area": 147456, "policies": ["…"], "flags": "Created" } ] }
+```
+
+- **Rasters:** `districts.u8` and `parks.u8` each hold `resolution × resolution` bytes, one per cell.
+  - Each byte is the id of the district (or park area) that owns the cell; 0 means none.
+  - CS1 blends up to four ids per cell; the raster keeps the one with the highest weight.
+  - The exporter checks the rasters against the game's own `SampleDistrict` / `SamplePark` on every export (report item).
+- **Cell centre** of column `c`, row `r`: `x = −size/2 + (c + 0.5) × cellSize`, `z = −size/2 + (r + 0.5) × cellSize`.
+  - Vanilla CS1 uses 512 × 19.2 m = 9830.4 m, which covers the central 25 tiles. A mod that enlarges the grid shows up as a larger `resolution`.
+- **`city.policies`** are the city-wide policies (CS1 district 0). Each district's `policies` are its own.
+  - Names are CS1 `DistrictPolicies.Policies` values, e.g. `HighriseBan`, `SmokeDetectors`, `HeavyTrafficBan`, `OldTown`, `Leisure`, `Tourist`, `Organic`, `Hightech`, `SelfSufficient`.
+- **`parks`** are all CS1 "park" areas.
+  - `kind` is `park`, `industry`, `campus`, `airport`, `pedestrianZone` or `other`.
+  - `type` is the CS1 `ParkType`: `Generic`, `AmusementPark`, `Zoo`, `NatureReserve`, `Industry`, `Farming`, `Forestry`, `Ore`, `Oil`, `GenericCampus`, `TradeSchool`, `LiberalArts`, `University`, `Airport` or `PedestrianZone`.
+  - `level` is `Level1` … `Level5`. `mainGate` is the main building's id in `buildings.json`.
+- **`cells` / `area`** count the raster cells (and m²) that belong to the district or area.
+
+### `assets.json` (M3)
+
+A catalogue of every prefab the city uses. It's the input for matching CS1 assets to CS2 equivalents.
+
+```json
+{ "countUnit": "instances in the city (buildings include sub-buildings; networks count segments)",
+  "buildings": [ { "name": "L3 3x2 Detached03", "kind": "building", "workshopId": null, "custom": false, "title": "…", "count": 312,
+                   "service": "Residential", "subService": "ResidentialLow", "zone": "ResidentialLow", "level": "Level3",
+                   "ai": "ResidentialBuildingAI", "growable": true, "footprint": [3, 2], "size": [20.7, 10.3, 14.9], "height": 10.3,
+                   "placementMode": "Roadside", "subBuildings": 0, "tags": ["growable", "vanilla", "lowDensity"],
+                   "aiFields": { "m_constructionCost": 0, "…": 0 } } ],
+  "props":    [ { "name": "…", "kind": "prop", "workshopId": null, "custom": false, "title": "…", "count": 12, "size": [x,y,z], "height": 2.1, "tags": ["prop", "vanilla"] } ],
+  "trees":    [ { "name": "…", "kind": "tree", …, "tags": ["tree", "vanilla"] } ],
+  "networks": [ { "name": "Basic Road", "kind": "network", …, "service": "Road", "subService": "None", "ai": "RoadAI", "width": 16,
+                  "tags": ["network", "vanilla", "road"] } ] }
+```
+
+- **`count`:** instances in this city, from the same instances as `buildings.json`, `props.json` and `trees.json`; network segments for networks. Entries are sorted by count, highest first.
+- **`title`:** the name shown in game (for workshop assets usually the asset's own name). `custom` is true for custom content.
+- **`zone`:** the zone a growable belongs to (`ResidentialLow`, `ResidentialHigh`, `CommercialLow`, `CommercialHigh`, `Industrial`, `Office`); `null` for ploppables.
+- **`footprint`:** `[width, length]` in 8 m cells. `size` / `height` are the prefab's bounding size in metres.
+- **`tags`:** a small, fixed vocabulary for matching. Several apply at once.
+  - always one of `growable` / `ploppable` and one of `workshop` / `vanilla`;
+  - `service` (any non-growable with a service);
+  - `park`, `station`, `depot`, `landmark`, `unique` (CS1 Monument service), `campus`, `industries` (Industries DLC buildings), `intersection`, `decoration`;
+  - `subBuilding` (used as a sub-building), `eco`, `highDensity`, `lowDensity`;
+  - for networks: `road`, `highway`, `train`, `metro`, `tram`, `path`, `utility`, `transportLine`.
+- **`aiFields`:** every primitive public field of the building's AI (CS1 keeps service-building specifics there), keyed by CS1 field name. Examples: `m_patientCapacity`, `m_studentCount`, `m_jailCapacity`, `m_fireDepartmentAccumulation`, `m_policeDepartmentRadius`, `m_workPlaceCount0..3`, `m_noiseAccumulation`, `m_constructionCost`, `m_maintenanceCost`.
 
 ---
 

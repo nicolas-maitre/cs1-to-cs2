@@ -1,0 +1,39 @@
+[h1]CS1 → CS2 Exporter[/h1]
+
+Export your Cities: Skylines city to a single [b].cs1x[/b] file, so it can be rebuilt in [b]Cities: Skylines II[/b] with the CS1 → CS2 converter.
+
+The mod only [b]reads[/b] your city. It never saves or changes it.
+
+[h2]How to use[/h2]
+[olist]
+[*]Load your city.
+[*]Open [b]Options → Mod Settings → CS1 → CS2 Exporter[/b] and press [b]Export city[/b].
+[*]After a few seconds a dialog shows where the file was written (by default [i]%LOCALAPPDATA%\Colossal Order\Cities_Skylines\Cs1Exporter[/i]).
+[*]Open the CS1 → CS2 web tool and drop the file on it to plan the conversion.
+[/olist]
+The simulation is paused while exporting and resumed afterwards.
+
+[h2]What's exported[/h2]
+[list]
+[*]Road, rail, metro and path networks with exact curves, elevations, bridges and tunnels
+[*]Network types with their lanes, variants and decorations
+[*]Terrain heightmap, sea level, water sources and water depth
+[*]Zoning, districts, parks, industry areas and campuses (with names and policies)
+[*]Public transport lines with their stops
+[*]Buildings, props and trees, plus a catalogue of every asset in use
+[*]Intersection Marking Tool fills, TM:PE settings (lane arrows, lane connections, speed limits, restrictions, priority signs, timed traffic lights) and Node Controller settings
+[/list]
+Every part is optional except the networks and terrain. You can switch parts off in the options.
+
+[h2]Compatibility[/h2]
+[list]
+[*]Works with or without Intersection Marking Tool, TM:PE, Node Controller Renewal and 81 Tiles 2. Their data is read when they're there and skipped when they're not.
+[*]No other mod is required.
+[*]If one part of the export fails, the rest is still written. The file includes a report that says what went wrong.
+[/list]
+
+[h2]Privacy[/h2]
+The file contains only data about your city (map, networks, buildings, traffic-mod settings) and the list of enabled mods. Nothing is uploaded anywhere; you decide where the file goes.
+
+[h2]Source and format[/h2]
+The .cs1x format is a zip of JSON files and is documented with the converter.

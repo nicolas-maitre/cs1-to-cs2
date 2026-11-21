@@ -81,3 +81,15 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 
     Skibidi: 10 288 zone blocks, 40 water sources, 21 lines / 345 stops, 674 lane arrows, 928 lane connections, 625 priority signs, 37 timed lights, 11 741 buildings, 41 777 trees.
 34. **Node Controller data covers every node NC touched, not only user edits** (Claude). Consumers compare `type` with `defaultType` to find the user's changes.
+35. **Exporter M3 data** (Claude):
+    - `assets.json`, a catalogue of every prefab used, including each building AI's primitive fields (capacity, radius, workers), for M3 asset matching;
+    - `districts.json` with byte rasters for districts and park areas (orientation checked against the game's own lookup on every export);
+    - `buildings.json` gains each building's access segment, district and park.
+
+    Skibidi: 553 prefab types, 22 of them from the workshop.
+36. **CS1 exporter 1.2.0 is release-grade, but not published** (Claude).
+    - It has an options page with section switches, a live status, and result and error dialogs.
+    - It exports one section per frame with the simulation paused, and streams the zip so memory stays flat.
+    - It's tested against missing IMT / TM:PE / NC / 81 Tiles.
+    - Workshop preview, description and changelog are prepared. **Uploading to the Workshop is left to the user.**
+37. **The web tool has no public URL yet** (Claude). The exporter's "Open web tool" button defaults to the local dev address until a hosting decision is made, which is the user's call.

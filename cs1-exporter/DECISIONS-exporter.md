@@ -159,3 +159,91 @@ All taken by Claude while the user was asleep; review them. The new sections are
 - **Transit station lookup is approximate:** nearest building of the right service within 64 m. That's fine for metro and train; for unusual multi-station hubs it could pick a neighbour.
 - **The M1 open issue about the AutoSave overwrite is fixed** by decision 14.
 - **Water is now exported**, which resolves the M1 open issue.
+
+---
+
+# M3 / release (2026-11-21, 05:25–06:00)
+
+All taken by Claude while the user was asleep; review them. Exporter version **1.2.0**.
+
+## Decisions
+
+23. **Districts as byte rasters, not polygons.**
+    - **What:** `districts.u8` and `parks.u8` hold one id per cell, row 0 = minimum z, as for the terrain. For each cell the exporter keeps the district with the highest blend weight (CS1 blends up to four).
+    - **Why:** cheap, exact and lossless; a reader can vectorise them if it wants polygons.
+    - **Grid size:** the resolution comes from the array length. On Skibidi, 81 Tiles 2 enlarges the grid from 512² to **900² × 19.2 m = 17 280 m**. The export handles that without special code.
+    - **Checked in game:** I painted a temporary asymmetric L-shaped district and a park area into the loaded city's in-memory grids with a scratch exec probe, exported, and removed them again (0 non-empty cells left). The city was never saved: autosave was blocked and quit doesn't save.
+      - The raster matched the painted cells exactly (480 cells, columns 300–329, rows 600–639).
+      - The game's exact cell lookup (`GetDistrict` / `GetPark(Vector3)`) agreed at 400/400 and 240/240 cell centres.
+      - That lookup is now the built-in check on every export. `SampleDistrict` blends neighbouring cells and disagreed on area edges, so it isn't used.
+    - **Policies:** all `DistrictPolicies.Policies` values for which `IsPolicySet` is true, by name. District 0 gives the city-wide policies.
+
+24. **`assets.json` is a catalogue per prefab, built from the live instances.**
+    - **Fields:** count, title, workshop id, category, zone, footprint, size and height, and a small fixed tag vocabulary.
+    - **Building AI settings:** every primitive public field of the building's AI, as `aiFields`. CS1 keeps service-building specifics there (capacities, radii, workers, vehicles, costs), so this covers "capacity or radius where cheap" generically, without a per-AI list that would go stale.
+    - **Networks:** the networks in the catalogue count segments.
+
+25. **Buildings get `accessSegment`** (CS1 `Building.m_accessSegment`, the road the building is connected to) **and `district` / `park`** from the game's own position lookup.
+
+26. **The export streams each section straight into its zip entry.**
+    - **Before:** each section was a full byte array (about 27 MB for Skibidi, more for big cities).
+    - **How:** the zip writer deflates as the JSON is written, counts the CRC and size, then seeks back and patches the local header.
+    - **Failed sections:** a section that fails half-way is truncated off the file (`EndEntry(keep: false)`), so the archive never holds partial JSON. The M1 spec's "may be partial" no longer happens for single-entry sections.
+    - **Empty entries are stored:** a strict inflater (Node's) rejects a deflate stream with no block.
+
+27. **The UI export runs one section per frame, with the simulation paused.**
+    - **Status:** the status line shows "Exporting… n/15: section".
+    - **Pausing:** the simulation is paused for the export (and two settle frames), then restored to its previous state. Reading while the simulation thread writes could see half-updated objects.
+    - **exec path:** `Exporter.Run` drains the same routine in one call without pausing. gamectl-loaded cities are paused anyway.
+    - **Fatal problems** (no city, unwritable folder) show an error dialog and leave no `.tmp` behind.
+
+28. **Settings live in the mod's own `Cs1Exporter.cgs`** (ColossalFramework `SettingsFile`): export folder, web tool address, and one switch per optional section. No other game setting is touched, and the user's mod enablement isn't changed.
+    - **The folder field wins:** what the field shows is what *Export city* uses and saves.
+
+29. **The web tool address is a setting, defaulting to `http://localhost:5178`** (the web tool's dev server). No hosted version exists yet; when one does, only the default needs to change. The result dialog names the address as the next step, and *Open web tool* opens it on request only.
+
+30. **The missing-mod test hook hides types at the lookup itself.**
+    - **What:** `simulateMissing` adds namespaces to `Refl.HiddenNamespaces`. `Refl.FindType` and IMT's assembly scan treat those types as absent, so the readers' real "not installed" code runs, not a shortcut.
+    - **Checked:**
+      - With IMT, TM:PE, Node Controller and 81 Tiles "missing", all three sections came out `absent` through their normal messages (IMT's own "NodeMarkingManager not found"), and the export was otherwise complete.
+      - The next normal export read all three again.
+      - `simulateFailure` on zones, districts and assets gave `failed` sections, removed from the zip, with every other section intact.
+    - **Never in real files:** test exports carry a `test` block in the manifest.
+
+31. **Versioning:**
+    - **Release version:** `ModInfo.Version` (1.2.0) is shown in the mod name and written as `manifest.exporter.version`.
+    - **Build:** the assembly version stays `1.0.*` (CS1 hot reload needs a new one per build) and is written as `exporter.build`.
+    - **Changelog numbering:** M1 = 1.0, M2 = 1.1, M3 = 1.2.
+
+32. **Workshop packaging, not published.**
+    - **Preview image:** `workshop/PreviewImage.png`, 644 × 360, generated by `workshop/make-preview.ps1` with System.Drawing (road-grid motif, title, feature line). The build copies it next to the DLL, where CS1's uploader looks for it.
+    - **Texts:** `workshop/description.txt` (Steam BBCode) and `CHANGELOG.md`.
+    - **Publishing** is the user's call.
+
+## Results (Skibidi.02, 2026-11-21 05:53)
+
+- **Final sample** (`%LOCALAPPDATA%\cs1-to-cs2\samples\skibidi.cs1x`):
+  - 5.5 MB, 5.0 s, all 14 sections `ok`, report 0 errors / 0 warnings;
+  - `inspect-cs1x.mjs` 162/162 checks;
+  - the web tool's `cs1conv inspect` reads it;
+  - a scan of all its JSON finds no user name or local path.
+- **districts:** 0 districts and 0 park areas in Skibidi (none were ever drawn); grid 900². The raster logic was proven with the temporary test district (decision 23).
+- **assets:** 553 prefab types in use:
+  - 423 building, 8 prop, 4 tree and 118 network types; 22 of them from the workshop;
+  - building tags: growable 335, ploppable 88, service 88, park 20, station 14, landmark 3, depot 3, subBuilding 2.
+- **buildings:** 10 549 of 11 741 have a road connection (`accessSegment`).
+- **UI**, driven through the real Options panel (opened with `OptionsMainPanel.SelectMod`, button clicked with `SimulateClick` from a scratch probe), screenshots checked:
+  - **Options page:** title with the version, Export button, status line, folder and web tool fields, the ten section switches and the About text.
+  - **While exporting:** status "Exporting… 7/15: districts", Export button disabled.
+  - **Result dialog:** size, time, path, key counts, parts exported, next step.
+  - **Error dialog** (folder on a missing drive): a red icon, "Can't create the export folder Q:\no-such-drive\exports …", what to do; no file and no `.tmp` written.
+  - **Restored afterwards:** the export folder setting was reset to the default, and the UI test exports were deleted from the user's export folder.
+- **Game:** CS1 closed, `cs1.lock` released. Skibidi.02 is untouched (Steam Cloud file still 04:06:05). AutoSave.crp is unchanged since 05:19 (the guard held through this session and the e2e run).
+
+## Open issues (M3)
+
+- **Skibidi has no districts or park areas**, so the real-data district path is only covered by the synthetic test district. A city with real districts would be a good extra check, including how 81 Tiles 2 blends cells near district edges.
+- **The building `district` uses the game's `GetDistrict`**, which reads the cell's first slot. For a cell where two districts blend, it can differ from the raster's highest-weight id; the difference is cosmetic at district borders.
+- **The result dialog uses CS1's ExceptionPanel**, which always shows a warning triangle for non-errors. The game has no neutral message box without extra UI code.
+- **There's no public web tool address yet.** The default is the local dev server.
+- **`assets.json` titles** for workshop assets are the in-game titles. Steam Workshop item names (which can differ) would need the Steam API and aren't fetched.

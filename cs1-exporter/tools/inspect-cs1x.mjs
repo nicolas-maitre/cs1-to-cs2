@@ -165,7 +165,8 @@ check('report.json present', !!report && Array.isArray(report.items));
 
 const sectionFiles = { network: ['network.json'], netinfos: ['netinfos.json'], imt: ['imt.json'], terrain: ['terrain.json', 'terrain.r16'],
   zones: ['zones.json'], water: ['water.json', 'water.r16'], transit: ['transit.json'], tmpe: ['tmpe.json'], nodecontroller: ['nodecontroller.json'],
-  buildings: ['buildings.json'], props: ['props.json'], trees: ['trees.json'] };
+  buildings: ['buildings.json'], props: ['props.json'], trees: ['trees.json'],
+  districts: ['districts.json', 'districts.u8', 'parks.u8'], assets: ['assets.json'] };
 for (const [s, files] of Object.entries(sectionFiles))
   if (sections[s] === 'ok') for (const f of files) check(`section ${s} ok → ${f} present`, entries.has(f));
 
@@ -419,6 +420,53 @@ for (const [name, key] of [['props.json', 'props'], ['trees.json', 'trees']]) {
   summary[key] = { total: d[key].length, types: d.infos.length };
 }
 
+// ---------------------------------------------------------------- M3 sections
+
+const districts = sections.districts === 'ok' ? json('districts.json') : undefined;
+if (districts) {
+  const g = districts.grid;
+  const dr = entries.get(g.districtFile ?? 'districts.u8')?.data;
+  const pr = entries.get(g.parkFile ?? 'parks.u8')?.data;
+  check('districts: rasters are resolution²', dr && pr && dr.length === g.resolution ** 2 && pr.length === g.resolution ** 2, `${dr?.length} / ${pr?.length}`);
+  if (dr && pr) {
+    const dIds = new Set(districts.districts.map((d) => d.id));
+    const pIds = new Set(districts.parks.map((p) => p.id));
+    const cellsD = {}, cellsP = {};
+    let unknownD = 0, unknownP = 0;
+    for (let i = 0; i < dr.length; i++) {
+      if (dr[i]) { cellsD[dr[i]] = (cellsD[dr[i]] ?? 0) + 1; if (!dIds.has(dr[i])) unknownD++; }
+      if (pr[i]) { cellsP[pr[i]] = (cellsP[pr[i]] ?? 0) + 1; if (!pIds.has(pr[i])) unknownP++; }
+    }
+    check('districts: raster ids are listed districts / parks', unknownD === 0 && unknownP === 0, `${unknownD} / ${unknownP} cells with unknown ids`);
+    check('districts: cell counts match the rasters',
+      districts.districts.every((d) => (cellsD[d.id] ?? 0) === d.cells) && districts.parks.every((p) => (cellsP[p.id] ?? 0) === p.cells));
+  }
+  const kinds = {};
+  for (const p of districts.parks) kinds[p.kind] = (kinds[p.kind] ?? 0) + 1;
+  summary.districts = { districts: districts.districts.length, parks: districts.parks.length, parkKinds: kinds,
+    cityPolicies: districts.city?.policies?.length ?? 0, grid: `${g.resolution}² × ${g.cellSize} m` };
+}
+
+const assets = sections.assets === 'ok' ? json('assets.json') : undefined;
+if (assets) {
+  const kinds = ['buildings', 'props', 'trees', 'networks'];
+  const bad = kinds.flatMap((k) => assets[k]).filter((a) => !a.name || !(a.count > 0) || !Array.isArray(a.tags)).length;
+  check('assets: entries have name, count > 0 and tags', bad === 0, `${bad} bad`);
+  if (buildings) {
+    const total = assets.buildings.reduce((n, a) => n + a.count, 0);
+    check('assets: building counts add up to buildings.json', total === buildings.buildings.length, `${total} vs ${buildings.buildings.length}`);
+  }
+  const tags = {};
+  for (const a of assets.buildings) for (const t of a.tags) tags[t] = (tags[t] ?? 0) + 1;
+  summary.assets = { buildings: assets.buildings.length, props: assets.props.length, trees: assets.trees.length, networks: assets.networks.length,
+    workshop: kinds.flatMap((k) => assets[k]).filter((a) => a.workshopId).length, buildingTags: tags };
+}
+if (buildings && network) {
+  const badAccess = buildings.buildings.filter((b) => b.accessSegment && !segById.has(b.accessSegment)).length;
+  check('buildings: accessSegment ids exist in the network', badAccess === 0, `${badAccess} missing`);
+  summary.buildings.withRoadAccess = buildings.buildings.filter((b) => b.accessSegment).length;
+}
+
 // expectations
 const actual = {
   nodes: summary.network?.nodes, segments: summary.network?.segments, imt: summary.imt?.fillers, netinfos: summary.netinfos?.total,
@@ -460,6 +508,9 @@ if (asJson) {
   if (summary.tmpe) console.log(`  tmpe ${summary.tmpe.version}: ${JSON.stringify(summary.tmpe.counts)}`);
   if (summary.nodecontroller) console.log(`  nodecontroller ${summary.nodecontroller.version}: ${summary.nodecontroller.nodes} nodes, ${summary.nodecontroller.segmentEnds} segment ends ${JSON.stringify(summary.nodecontroller.types)}`);
   if (summary.buildings) console.log(`  buildings: ${summary.buildings.total} (${summary.buildings.growable} growable, ${summary.buildings.workshop} workshop) ${JSON.stringify(summary.buildings.byService)}`);
+  if (summary.districts) console.log('  districts: ' + summary.districts.districts + ' districts, ' + summary.districts.parks + ' areas ' + JSON.stringify(summary.districts.parkKinds) + ', ' + summary.districts.cityPolicies + ' city policies, grid ' + summary.districts.grid);
+  if (summary.assets) console.log('  assets: ' + summary.assets.buildings + ' building, ' + summary.assets.props + ' prop, ' + summary.assets.trees + ' tree, ' + summary.assets.networks + ' network prefabs (' + summary.assets.workshop + ' workshop); building tags ' + JSON.stringify(summary.assets.buildingTags));
+  if (summary.buildings?.withRoadAccess !== undefined) console.log('  buildings with a road connection: ' + summary.buildings.withRoadAccess);
   if (summary.props) console.log(`  props: ${summary.props.total} (${summary.props.types} types)`);
   if (summary.trees) console.log(`  trees: ${summary.trees.total} (${summary.trees.types} types)`);
   console.log(`  report: ${summary.report.errors} errors, ${summary.report.warnings} warnings, ${summary.report.info} info`);

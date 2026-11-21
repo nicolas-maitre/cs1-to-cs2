@@ -38,13 +38,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="tools/**" />
+    <Compile Remove="tools/**;workshop/**" />
     <None Remove="tools/**" />
   </ItemGroup>
 
   <Target Name="DeployToCS1" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <MakeDir Directories="$(CS1ModsDir)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(CS1ModsDir)" />
+    <Copy SourceFiles="$(TargetPath);$(MSBuildThisFileDirectory)workshop/PreviewImage.png" DestinationFolder="$(CS1ModsDir)" />
     <Message Importance="high" Text="Deployed $(TargetFileName) to $(CS1ModsDir)" />
   </Target>
 </Project>

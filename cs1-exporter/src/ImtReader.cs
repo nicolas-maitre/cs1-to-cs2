@@ -34,6 +34,7 @@ namespace Cs1Exporter
                 foreach (var t in types)
                 {
                     if (t == null) continue;
+                    if (Refl.IsHidden(t.FullName)) continue;
                     if (t.FullName == "IMT.Manager.NodeMarkingManager") nodeMgr = t;
                     else if (t.FullName == "IMT.Manager.SegmentMarkingManager") segMgr = t;
                 }

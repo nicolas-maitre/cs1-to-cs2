@@ -1,20 +1,76 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using ColossalFramework;
 using ColossalFramework.IO;
 
 namespace Cs1Exporter
 {
+    public static class ModInfo
+    {
+        /// <summary>Release version shown in the mod name and written to manifest.exporter.version.</summary>
+        public const string Version = "1.2.0";
+        public const string Name = "CS1 → CS2 Exporter";
+    }
+
+    /// <summary>What to export. Core sections (network, netinfos, imt, terrain) are always written.</summary>
+    public sealed class ExportOptions
+    {
+        public static readonly string[] Optional =
+            { "zones", "water", "districts", "transit", "tmpe", "nodecontroller", "buildings", "assets", "props", "trees" };
+
+        public readonly HashSet<string> Excluded = new HashSet<string>();
+        /// <summary>Test hook: treat these mods as not installed (imt, tmpe, nodecontroller, eightyOneTiles).</summary>
+        public readonly HashSet<string> SimulateMissing = new HashSet<string>();
+        /// <summary>Test hook: make these sections throw, to exercise the failure path.</summary>
+        public readonly HashSet<string> SimulateFailure = new HashSet<string>();
+        /// <summary>Pause the simulation while exporting (UI path); the exec path runs in a single frame and doesn't.</summary>
+        public bool PauseSimulation;
+
+        public bool Includes(string section) { return !Excluded.Contains(section); }
+
+        public static ExportOptions FromArgs(Dictionary<string, object> args)
+        {
+            var o = new ExportOptions();
+            if (args == null) return o;
+            Fill(o.Excluded, args, "exclude");
+            Fill(o.SimulateMissing, args, "simulateMissing");
+            Fill(o.SimulateFailure, args, "simulateFailure");
+            return o;
+        }
+
+        private static void Fill(HashSet<string> set, Dictionary<string, object> args, string key)
+        {
+            object v;
+            if (!args.TryGetValue(key, out v) || v == null) return;
+            var list = v as IList;
+            if (list != null) { foreach (var x in list) if (x != null) set.Add(x.ToString()); }
+            else foreach (var x in v.ToString().Split(',')) if (x.Trim().Length > 0) set.Add(x.Trim());
+        }
+    }
+
+    /// <summary>Progress of a running export, for the UI.</summary>
+    public sealed class ExportProgress
+    {
+        public int Step, Total;
+        public string Label = "";
+        public Exporter.Result Result;
+    }
+
     /// <summary>
-    /// Writes a .cs1x (schema/README.md §1). Every section renders into its own buffer inside a try/catch, so a
-    /// failure becomes a report item plus a "failed" section and never aborts the export or crashes the game.
+    /// Writes a .cs1x (schema/README.md §1).
+    ///  - Every section streams its JSON straight into its zip entry (no whole-file strings in memory) inside a
+    ///    try/catch: a failure drops the half-written entry, becomes a report item and a "failed" section, and never
+    ///    aborts the export or crashes the game.
+    ///  - ExportRoutine yields between sections so the UI can show progress; Export drains it in one go.
     ///
-    /// Entry points:
-    ///  - the Options → Mod Settings button (Mod.cs);
-    ///  - Exporter.Run(args) for tools/gamectl:  gamectl cs1 exec Cs1Exporter.dll --type Cs1Exporter.Exporter --args '{"path":"C:\\...\\x.cs1x"}'
+    /// Entry points: the Options panel (Mod.cs) and Exporter.Run(args) for tools/gamectl:
+    ///   gamectl cs1 exec Cs1Exporter.dll --type Cs1Exporter.Exporter --args '{"path":"%LOCALAPPDATA%/…/x.cs1x"}'
+    /// Optional args: exclude, simulateMissing, simulateFailure (arrays of names).
     /// </summary>
     public static class Exporter
     {
@@ -38,24 +94,30 @@ namespace Cs1Exporter
                 var sb = new StringBuilder();
                 sb.AppendFormat(CultureInfo.InvariantCulture, "{0} nodes, {1} segments, {2} NetInfos, {3} IMT fillers; {4:F1} MB in {5:F1} s",
                     Nodes, Segments, NetInfos, ImtFillers < 0 ? 0 : ImtFillers, Bytes / 1048576.0, Seconds);
+                foreach (var kv in Counts) sb.Append(", ").Append(kv.Key).Append(' ').Append(kv.Value);
                 sb.Append("\nSections:");
                 foreach (var kv in Sections) sb.Append(' ').Append(kv.Key).Append('=').Append(kv.Value);
                 sb.AppendFormat("\nReport: {0} errors, {1} warnings, {2} info", Report.Count("error"), Report.Count("warning"), Report.Count("info"));
                 return sb.ToString();
             }
+
+            public int Failed
+            {
+                get { int n = 0; foreach (var v in Sections.Values) if (v == "failed") n++; return n; }
+            }
         }
 
-        /// <summary>gamectl exec entry point. args: { path?: absolute .cs1x path }. Returns a JSON-serialisable summary.</summary>
+        /// <summary>gamectl exec entry point. args: { path?, exclude?, simulateMissing?, simulateFailure? }.</summary>
         public static object Run(Dictionary<string, object> args)
         {
             object p = null;
             if (args != null) args.TryGetValue("path", out p);
             var path = p as string;
-            if (string.IsNullOrEmpty(path)) path = DefaultPath();
+            if (string.IsNullOrEmpty(path)) path = DefaultPath(DefaultOutputDir);
             else path = Environment.ExpandEnvironmentVariables(path); // %LOCALAPPDATA%/... works from any shell
             if (!GameInfo.CityLoaded()) throw new InvalidOperationException("no city is loaded");
 
-            var r = Export(path);
+            var r = Export(path, ExportOptions.FromArgs(args));
             var report = new List<object>();
             foreach (var i in r.Report.Items)
                 report.Add(new Dictionary<string, object> { { "level", i.Level }, { "section", i.Section }, { "message", i.Message } });
@@ -78,213 +140,350 @@ namespace Cs1Exporter
             };
         }
 
-        public static string DefaultPath()
+        public static string DefaultPath(string dir)
         {
             var city = GameInfo.CityName();
             if (string.IsNullOrEmpty(city)) city = "city";
             var safe = new StringBuilder();
             foreach (var ch in city) safe.Append(Array.IndexOf(Path.GetInvalidFileNameChars(), ch) >= 0 ? '_' : ch);
-            return Path.Combine(DefaultOutputDir, safe.ToString().Trim() + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".cs1x");
+            return Path.Combine(dir, safe.ToString().Trim() + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".cs1x");
         }
 
-        public static Result Export(string path)
+        /// <summary>Runs the whole export in one call (exec path).</summary>
+        public static Result Export(string path, ExportOptions options = null)
         {
-            var sw = Stopwatch.StartNew();
-            var report = new Report();
-            var result = new Result { Path = path, Report = report };
-            var sections = result.Sections;
-            var entries = new List<KeyValuePair<string, byte[]>>();
-
-            // Order matters: network fills the "used NetInfos" set that netinfos.json needs.
-            var net = new NetworkExporter(report);
-            Section(report, sections, "network", () =>
-            {
-                entries.Add(Json("network.json", net.WriteNetwork));
-                return "ok";
-            });
-            result.Nodes = net.NodeCount;
-            result.Segments = net.SegmentCount;
-
-            Section(report, sections, "netinfos", () =>
-            {
-                entries.Add(Json("netinfos.json", net.WriteNetInfos));
-                return "ok";
-            });
-            result.NetInfos = net.NetInfoCount;
-
-            Section(report, sections, "imt", () =>
-            {
-                int count = -1;
-                var bytes = Json("imt.json", w => count = ImtReader.WriteFillers(w, report));
-                result.ImtFillers = count;
-                if (count < 0) return "absent";
-                entries.Add(bytes);
-                return "ok";
-            });
-
-            var terrain = new TerrainExporter(report);
-            Section(report, sections, "terrain", () =>
-            {
-                terrain.Capture();
-                try { terrain.VerifyAgainstNodes(); }
-                catch (Exception e) { report.Warn("terrain", "node height check failed: " + Report.Describe(e)); }
-                entries.Add(Json("terrain.json", terrain.WriteJson));
-                entries.Add(new KeyValuePair<string, byte[]>("terrain.r16", terrain.R16));
-                return "ok";
-            });
-
-            // ---- M2 sections. Each is isolated like the ones above.
-            var zones = new ZonesExporter(report);
-            Section(report, sections, "zones", () =>
-            {
-                entries.Add(Json("zones.json", zones.Write));
-                result.Counts["zoneBlocks"] = zones.Blocks;
-                result.Counts["zonedCells"] = zones.ZonedCells;
-                return "ok";
-            });
-
-            var water = new WaterExporter(report);
-            Section(report, sections, "water", () =>
-            {
-                entries.Add(Json("water.json", w => water.Write(w, terrain.R16 != null ? terrain : null)));
-                entries.Add(new KeyValuePair<string, byte[]>("water.r16", water.R16));
-                result.Counts["waterSources"] = water.Sources;
-                return "ok";
-            });
-
-            LaneMap lanes = null;
-            Section(report, sections, "transit", () =>
-            {
-                lanes = lanes ?? new LaneMap();
-                var transit = new TransitExporter(report);
-                entries.Add(Json("transit.json", w => transit.Write(w, lanes)));
-                result.Counts["transitLines"] = transit.Lines;
-                result.Counts["transitStops"] = transit.Stops;
-                return "ok";
-            });
-
-            var tmpe = new TmpeExporter(report);
-            Section(report, sections, "tmpe", () =>
-            {
-                if (!tmpe.Available()) { report.Info("tmpe", "TM:PE is not loaded"); return "absent"; }
-                entries.Add(Json("tmpe.json", tmpe.Write));
-                foreach (var kv in tmpe.Counts) result.Counts["tmpe." + kv.Key] = kv.Value;
-                return "ok";
-            });
-
-            var nc = new NodeControllerExporter(report);
-            Section(report, sections, "nodecontroller", () =>
-            {
-                if (!nc.Available()) { report.Info("nodecontroller", "Node Controller is not loaded"); return "absent"; }
-                entries.Add(Json("nodecontroller.json", nc.Write));
-                result.Counts["ncNodes"] = nc.Nodes;
-                return "ok";
-            });
-
-            // M3 data, exported now so it's there.
-            var bx = new BuildingsExporter(report);
-            Section(report, sections, "buildings", () =>
-            {
-                entries.Add(Json("buildings.json", bx.WriteBuildings));
-                result.Counts["buildings"] = bx.Buildings;
-                return "ok";
-            });
-            Section(report, sections, "props", () =>
-            {
-                entries.Add(Json("props.json", bx.WriteProps));
-                result.Counts["props"] = bx.Props;
-                return "ok";
-            });
-            Section(report, sections, "trees", () =>
-            {
-                entries.Add(Json("trees.json", bx.WriteTrees));
-                result.Counts["trees"] = bx.Trees;
-                return "ok";
-            });
-
-            List<GameInfo.ModEntry> mods = null;
-            GameInfo.Known known = null;
-            try
-            {
-                mods = GameInfo.EnabledMods(report);
-                known = GameInfo.Detect(mods);
-            }
-            catch (Exception e)
-            {
-                report.Error("mods", "mod detection failed: " + Report.Describe(e));
-            }
-            if (known != null)
-            {
-                if (known.EightyOneTiles != null) report.Info("manifest", "81 Tiles " + known.EightyOneTiles + " is enabled");
-                if (known.Imt != null && result.ImtFillers < 0) report.Warn("imt", "IMT " + known.Imt + " is enabled but its fillers could not be read");
-                if (known.Tmpe != null && sections["tmpe"] == "absent") report.Warn("tmpe", "TM:PE " + known.Tmpe + " is enabled but its managers were not found");
-                if (known.NodeController != null && sections["nodecontroller"] == "absent") report.Warn("nodecontroller", "Node Controller " + known.NodeController + " is enabled but its manager was not found");
-            }
-
-            // manifest.json and report.json are always written; they never depend on the sections above succeeding.
-            byte[] manifest;
-            try
-            {
-                manifest = Json("manifest.json", w => WriteManifest(w, sections, mods, known, report)).Value;
-            }
-            catch (Exception e)
-            {
-                report.Error("manifest", "manifest failed, writing a minimal one: " + Report.Describe(e));
-                manifest = Json("manifest.json", w => WriteManifest(w, sections, null, null, report)).Value;
-            }
-
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
-            var tmp = path + ".tmp";
-            using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16))
-            using (var zip = new ZipWriter(fs))
-            {
-                zip.Add("manifest.json", manifest);
-                foreach (var e in entries) zip.Add(e.Key, e.Value);
-                if (zip.DeflateUnavailable) report.Warn("zip", "deflate failed, entries are stored uncompressed: " + zip.DeflateError);
-                result.Seconds = sw.Elapsed.TotalSeconds;
-                report.Info("zip", string.Format(CultureInfo.InvariantCulture, "export took {0:F1} s", result.Seconds));
-                zip.Add("report.json", Json("report.json", report.Write).Value);
-                zip.Finish();
-            }
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(tmp, path);
-            result.Bytes = new FileInfo(path).Length;
-            UnityEngine.Debug.Log("[Cs1Exporter] wrote " + path + ": " + result.Summary());
-            return result;
+            var progress = new ExportProgress();
+            var routine = ExportRoutine(path, options ?? new ExportOptions(), progress);
+            while (routine.MoveNext()) { }
+            return progress.Result;
         }
 
-        private static void Section(Report report, Dictionary<string, string> sections, string name, Func<string> body)
+        /// <summary>
+        /// The export as steps; the caller advances it once per frame (UI) or in a loop (exec). Throws only for
+        /// problems that make an export impossible (no city, unwritable folder); section problems are reported.
+        /// </summary>
+        public static IEnumerator ExportRoutine(string path, ExportOptions opt, ExportProgress progress)
         {
+            var ctx = new Ctx(path, opt, progress);
+            bool resumeSimulation = false;
             try
             {
-                sections[name] = body();
+                if (opt.PauseSimulation && !Singleton<SimulationManager>.instance.SimulationPaused)
+                {
+                    // Reading while the simulation thread writes could see half-updated objects; pause it and give it
+                    // two frames to finish its current step. The previous state is restored at the end.
+                    Singleton<SimulationManager>.instance.SimulationPaused = true;
+                    resumeSimulation = true;
+                    progress.Label = "pausing the simulation";
+                    yield return null;
+                    yield return null;
+                }
+                ctx.Open();
+                foreach (var step in ctx.Steps())
+                {
+                    progress.Step++;
+                    progress.Label = step;
+                    yield return null;
+                }
+                ctx.Close();
+                progress.Result = ctx.Result;
             }
-            catch (Exception e)
+            finally
+            {
+                ctx.Abort();
+                if (resumeSimulation) Singleton<SimulationManager>.instance.SimulationPaused = false;
+            }
+        }
+
+        // ------------------------------------------------------------------ one export
+
+        private sealed class Ctx
+        {
+            private readonly string _path, _tmp;
+            private readonly ExportOptions _opt;
+            private readonly ExportProgress _progress;
+            private readonly Stopwatch _sw = Stopwatch.StartNew();
+            private readonly Report _report = new Report();
+            public readonly Result Result;
+            private FileStream _fs;
+            private ZipWriter _zip;
+            private bool _closed;
+            private GameInfo.Known _known;
+            private List<GameInfo.ModEntry> _mods;
+
+            public Ctx(string path, ExportOptions opt, ExportProgress progress)
+            {
+                _path = Path.GetFullPath(path);
+                _tmp = _path + ".tmp";
+                _opt = opt;
+                _progress = progress;
+                Result = new Result { Path = _path, Report = _report };
+            }
+
+            public void Open()
+            {
+                if (!GameInfo.CityLoaded()) throw new InvalidOperationException("No city is loaded. Load a city, then export.");
+                var dir = Path.GetDirectoryName(_path);
+                try { Directory.CreateDirectory(dir); }
+                catch (Exception e) { throw new IOException("Can't create the export folder " + dir + ": " + e.Message, e); }
+                try { _fs = new FileStream(_tmp, FileMode.Create, FileAccess.ReadWrite, FileShare.None, 1 << 16); }
+                catch (Exception e) { throw new IOException("Can't write to " + dir + ": " + e.Message, e); }
+                _zip = new ZipWriter(_fs);
+                if (!_zip.UseDeflate) _report.Warn("zip", "deflate unavailable, entries are stored uncompressed: " + _zip.DeflateError);
+                Refl.HiddenNamespaces.Clear();
+                foreach (var s in _opt.SimulateMissing)
+                {
+                    _report.Warn("test", "simulating that mod '" + s + "' is not installed");
+                    if (s == "imt") Refl.HiddenNamespaces.Add("IMT.");
+                    if (s == "tmpe") { Refl.HiddenNamespaces.Add("TrafficManager."); Refl.HiddenNamespaces.Add("TMPE."); }
+                    if (s == "nodecontroller") Refl.HiddenNamespaces.Add("NodeController.");
+                }
+                foreach (var s in _opt.SimulateFailure) _report.Warn("test", "simulating a failure in section '" + s + "'");
+                try
+                {
+                    _mods = GameInfo.EnabledMods(_report);
+                    _known = GameInfo.Detect(_mods);
+                    if (_opt.SimulateMissing.Contains("imt")) _known.Imt = null;
+                    if (_opt.SimulateMissing.Contains("tmpe")) _known.Tmpe = null;
+                    if (_opt.SimulateMissing.Contains("nodecontroller")) _known.NodeController = null;
+                    if (_opt.SimulateMissing.Contains("eightyOneTiles")) _known.EightyOneTiles = null;
+                }
+                catch (Exception e) { _report.Error("mods", "mod detection failed: " + Report.Describe(e)); }
+                _progress.Total = 15;
+            }
+
+            /// <summary>Each yielded string is the label of the section just written.</summary>
+            public IEnumerable<string> Steps()
+            {
+                var net = new NetworkExporter(_report);
+                Json("network", "network.json", w => { net.WriteNetwork(w); return "ok"; });
+                Result.Nodes = net.NodeCount;
+                Result.Segments = net.SegmentCount;
+                yield return "road network";
+
+                Json("netinfos", "netinfos.json", w => { net.WriteNetInfos(w); return "ok"; });
+                Result.NetInfos = net.NetInfoCount;
+                yield return "network types";
+
+                Json("imt", "imt.json", w =>
+                {
+                    int n = ImtReader.WriteFillers(w, _report);
+                    Result.ImtFillers = n;
+                    return n < 0 ? "absent" : "ok";
+                });
+                yield return "IMT markings";
+
+                var terrain = new TerrainExporter(_report);
+                Multi("terrain", () =>
+                {
+                    terrain.Capture();
+                    try { terrain.VerifyAgainstNodes(); }
+                    catch (Exception e) { _report.Warn("terrain", "node height check failed: " + Report.Describe(e)); }
+                    WriteJson("terrain.json", terrain.WriteJson);
+                    _zip.Add("terrain.r16", terrain.R16);
+                    terrain.R16Release();
+                });
+                yield return "terrain";
+
+                var zones = new ZonesExporter(_report);
+                Json("zones", "zones.json", w => { zones.Write(w); Count("zoneBlocks", zones.Blocks); Count("zonedCells", zones.ZonedCells); return "ok"; });
+                yield return "zoning";
+
+                var water = new WaterExporter(_report);
+                Multi("water", () =>
+                {
+                    WriteJson("water.json", w => water.Write(w, terrain.Resolution > 0 ? terrain : null));
+                    _zip.Add("water.r16", water.R16);
+                    water.R16 = null;
+                    Count("waterSources", water.Sources);
+                });
+                yield return "water";
+
+                var districts = new DistrictsExporter(_report);
+                Multi("districts", () =>
+                {
+                    districts.Capture();
+                    WriteJson("districts.json", districts.WriteJson);
+                    _zip.Add("districts.u8", districts.DistrictRaster);
+                    _zip.Add("parks.u8", districts.ParkRaster);
+                    Count("districts", districts.Districts);
+                    Count("parkAreas", districts.Parks);
+                });
+                yield return "districts";
+
+                LaneMap lanes = null;
+                Json("transit", "transit.json", w =>
+                {
+                    lanes = lanes ?? new LaneMap();
+                    var t = new TransitExporter(_report);
+                    t.Write(w, lanes);
+                    Count("transitLines", t.Lines);
+                    Count("transitStops", t.Stops);
+                    return "ok";
+                });
+                yield return "transit lines";
+
+                var tmpe = new TmpeExporter(_report);
+                Json("tmpe", "tmpe.json", w =>
+                {
+                    if (!tmpe.Available()) { _report.Info("tmpe", "TM:PE is not loaded"); return "absent"; }
+                    tmpe.Write(w);
+                    foreach (var kv in tmpe.Counts) Count("tmpe." + kv.Key, kv.Value);
+                    return "ok";
+                });
+                yield return "TM:PE";
+
+                var nc = new NodeControllerExporter(_report);
+                Json("nodecontroller", "nodecontroller.json", w =>
+                {
+                    if (!nc.Available()) { _report.Info("nodecontroller", "Node Controller is not loaded"); return "absent"; }
+                    nc.Write(w);
+                    Count("ncNodes", nc.Nodes);
+                    return "ok";
+                });
+                yield return "Node Controller";
+
+                var bx = new BuildingsExporter(_report);
+                Json("buildings", "buildings.json", w => { bx.WriteBuildings(w); Count("buildings", bx.Buildings); return "ok"; });
+                yield return "buildings";
+
+                Json("props", "props.json", w => { bx.WriteProps(w); Count("props", bx.Props); return "ok"; });
+                Json("trees", "trees.json", w => { bx.WriteTrees(w); Count("trees", bx.Trees); return "ok"; });
+                yield return "props and trees";
+
+                var assets = new AssetsExporter(_report);
+                Json("assets", "assets.json", w => { assets.Write(w); Count("assetTypes", assets.BuildingTypes + assets.PropTypes + assets.TreeTypes + assets.NetworkTypes); return "ok"; });
+                yield return "asset catalogue";
+
+                if (_known != null)
+                {
+                    if (_known.EightyOneTiles != null) _report.Info("manifest", "81 Tiles " + _known.EightyOneTiles + " is enabled");
+                    if (_known.Imt != null && Result.ImtFillers < 0) _report.Warn("imt", "IMT " + _known.Imt + " is enabled but its fillers could not be read");
+                    if (_known.Tmpe != null && Result.Sections["tmpe"] == "absent" && _opt.Includes("tmpe")) _report.Warn("tmpe", "TM:PE " + _known.Tmpe + " is enabled but its managers were not found");
+                    if (_known.NodeController != null && Result.Sections["nodecontroller"] == "absent" && _opt.Includes("nodecontroller")) _report.Warn("nodecontroller", "Node Controller " + _known.NodeController + " is enabled but its manager was not found");
+                }
+                yield return "finishing";
+            }
+
+            private void Count(string key, int n) { Result.Counts[key] = n; }
+
+            private bool Skip(string section)
+            {
+                if (Array.IndexOf(ExportOptions.Optional, section) >= 0 && !_opt.Includes(section))
+                {
+                    Result.Sections[section] = "absent";
+                    _report.Info(section, "not exported (turned off in the options)");
+                    return true;
+                }
+                return false;
+            }
+
+            private void Fail(string section, Exception e)
             {
                 UnityEngine.Debug.LogException(e);
-                report.Error(name, "section failed: " + Report.Describe(e));
-                sections[name] = "failed";
+                _report.Error(section, "section failed: " + Report.Describe(e));
+                Result.Sections[section] = "failed";
+            }
+
+            /// <summary>A one-entry JSON section, streamed into the zip. The body returns "ok" or "absent".</summary>
+            private void Json(string section, string file, Func<JsonWriter, string> body)
+            {
+                if (Skip(section)) return;
+                bool open = false;
+                try
+                {
+                    if (_opt.SimulateFailure.Contains(section)) throw new InvalidOperationException("simulated failure (test)");
+                    var s = _zip.BeginEntry(file);
+                    open = true;
+                    var tw = new StreamWriter(s, new UTF8Encoding(false), 1 << 16);
+                    var w = new JsonWriter(tw);
+                    string status = body(w);
+                    w.Dispose(); // flush
+                    _zip.EndEntry(status == "ok");
+                    open = false;
+                    Result.Sections[section] = status;
+                }
+                catch (Exception e)
+                {
+                    if (open) { try { _zip.EndEntry(false); } catch { } }
+                    Fail(section, e);
+                }
+            }
+
+            /// <summary>A section with several entries; entries written before a failure stay (status "failed").</summary>
+            private void Multi(string section, Action body)
+            {
+                if (Skip(section)) return;
+                try
+                {
+                    if (_opt.SimulateFailure.Contains(section)) throw new InvalidOperationException("simulated failure (test)");
+                    body();
+                    Result.Sections[section] = "ok";
+                }
+                catch (Exception e)
+                {
+                    try { _zip.EndEntry(false); } catch { }
+                    Fail(section, e);
+                }
+            }
+
+            private void WriteJson(string file, Action<JsonWriter> write)
+            {
+                var s = _zip.BeginEntry(file);
+                var tw = new StreamWriter(s, new UTF8Encoding(false), 1 << 16);
+                var w = new JsonWriter(tw);
+                write(w);
+                w.Dispose();
+                _zip.EndEntry(true);
+            }
+
+            /// <summary>manifest.json and report.json are always written; then the temp file replaces the target.</summary>
+            public void Close()
+            {
+                try
+                {
+                    WriteJson("manifest.json", w => WriteManifest(w, Result.Sections, _mods, _known, _report, _opt));
+                }
+                catch (Exception e)
+                {
+                    try { _zip.EndEntry(false); } catch { }
+                    _report.Error("manifest", "manifest failed, writing a minimal one: " + Report.Describe(e));
+                    WriteJson("manifest.json", w => WriteManifest(w, Result.Sections, null, null, _report, _opt));
+                }
+                Result.Seconds = _sw.Elapsed.TotalSeconds;
+                _report.Info("zip", string.Format(CultureInfo.InvariantCulture, "export took {0:F1} s", Result.Seconds));
+                WriteJson("report.json", _report.Write);
+                _zip.Finish();
+                _fs.Close();
+                _fs = null;
+                if (File.Exists(_path)) File.Delete(_path);
+                File.Move(_tmp, _path);
+                _closed = true;
+                Result.Bytes = new FileInfo(_path).Length;
+                UnityEngine.Debug.Log("[Cs1Exporter] wrote " + _path + ": " + Result.Summary());
+            }
+
+            /// <summary>Cleans up after a fatal error or a cancelled routine: no half-written .tmp is left behind.</summary>
+            public void Abort()
+            {
+                Refl.HiddenNamespaces.Clear();
+                if (_closed) return;
+                try { if (_fs != null) _fs.Close(); } catch { }
+                _fs = null;
+                try { if (File.Exists(_tmp)) File.Delete(_tmp); } catch { }
             }
         }
 
-        private static KeyValuePair<string, byte[]> Json(string name, Action<JsonWriter> write)
-        {
-            var ms = new MemoryStream(1 << 16);
-            var tw = new StreamWriter(ms, new UTF8Encoding(false), 1 << 16);
-            var w = new JsonWriter(tw);
-            write(w);
-            w.Dispose(); // flushes
-            return new KeyValuePair<string, byte[]>(name, ms.ToArray());
-        }
-
-        private static void WriteManifest(JsonWriter w, Dictionary<string, string> sections, List<GameInfo.ModEntry> mods, GameInfo.Known known, Report report)
+        private static void WriteManifest(JsonWriter w, Dictionary<string, string> sections, List<GameInfo.ModEntry> mods,
+            GameInfo.Known known, Report report, ExportOptions opt)
         {
             w.BeginObject();
             w.Prop("format", FormatName);
             w.Prop("formatVersion", FormatVersion);
             w.Name("exporter").BeginObject();
             w.Prop("name", "Cs1Exporter");
-            w.Prop("version", typeof(Exporter).Assembly.GetName().Version.ToString());
+            w.Prop("version", ModInfo.Version);
+            w.Prop("build", typeof(Exporter).Assembly.GetName().Version.ToString());
             w.EndObject();
             w.Prop("exportedAt", DateTime.Now.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
             w.Name("city").BeginObject();
@@ -334,6 +533,21 @@ namespace Cs1Exporter
             catch (Exception e)
             {
                 report.Warn("manifest", "unlocked tiles not exported: " + Report.Describe(e));
+            }
+
+            w.Name("excludedSections").BeginArray();
+            foreach (var s in ExportOptions.Optional) if (!opt.Includes(s)) w.Value(s);
+            w.EndArray();
+            if (opt.SimulateMissing.Count > 0 || opt.SimulateFailure.Count > 0)
+            {
+                w.Name("test").BeginObject();
+                w.Name("simulateMissing").BeginArray();
+                foreach (var s in opt.SimulateMissing) w.Value(s);
+                w.EndArray();
+                w.Name("simulateFailure").BeginArray();
+                foreach (var s in opt.SimulateFailure) w.Value(s);
+                w.EndArray();
+                w.EndObject();
             }
 
             w.Name("sections").BeginObject();
