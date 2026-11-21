@@ -488,7 +488,7 @@ Added to the M2 `water` section when the `.cs1x` has `water.json`:
   - Order (terrain worker): `water.set { seaLevel, clear: true, sources }` in phase `tool` (the `cs1` field is ignored), then `water.reset { mode: "sea" }`.
   - Without `apply`, `terrain/apply.mjs --sea-level auto` sets `terrain.seaLevelDry` and resets the water to it.
   - `sources` = `convertWater()`: CS1 natural sources inside the playable area (50 m margin); `height` is the water height above the source's ground.
-  - Plus `regionSources()`: CS1 rivers and lakes above the sea that would otherwise stay dry. These are inflow sources at the playable edge and lake sources for enclosed water without a source; `cs1.kind` says which.
+  - Plus `regionSources()`: CS1 rivers and lakes above the sea that would otherwise stay dry. These are inflow sources at the playable edge, lake sources for enclosed water without a source, `lake-boost` sources for big lakes that have one, and up to 8 `<kind>-spread` sources (radius 40 m) spread over long regions so rivers fill along their length; `cs1.kind` says which. The web tool's port matches `terrain/lib/water.mjs` (tested).
   - Coordinates are plan coordinates, like the nodes.
 - **`checkpoints`:** up to 100 wet and 100 dry points of the CS1 depth grid inside the playable area (`depthCheckpoints()`), for an optional wet/dry check after the water has settled (`terrain/mapprep.mjs water-check`).
 
@@ -577,6 +577,7 @@ Added to the M2 `water` section when the `.cs1x` has `water.json`:
   - `alternatives` are the next-best prefabs, tried in order when the first doesn't fit; empty when the user chose the prefab.
   - `district` is a `plan.districts.items[].cs1Id`.
   - `type` is always `BuildingPrefab`.
+  - **Default depots:** CS2 lines get their vehicles only from a depot of their type, and CS1 metro and train lines need none. For each bus, tram, metro or train line type in `transit` without a depot of that type among the items, the plan adds one item from `buildings/lib/plan.mjs` `addDefaultDepots`: `id` < 0, `cs1Info: null`, `cs1Lot: null`, `default: true`, `reason`, `fallback: "nearby"`, at the line's first stop (a station for rail), and `needsTrackLink: true` for rail yards, whose track must be connected to the line by hand. `buildings.defaultDepots` lists them and `stats.defaultDepots` counts them.
   - `fallback` says what the placer does when the building doesn't fit at its CS1 spot, after slides and alternatives (`buildings/README.md` §5):
     - `nearby`: free land along an imported road within the run's `nearbyRadius` (150 m), then `wideRadius` (400 m);
     - `anywhere`: the same, then any free connectable spot along an imported road in the crop, closest to the CS1 spot first;

@@ -41,7 +41,7 @@ const round = (v, n = 2) => Math.round(v * 10 ** n) / 10 ** n + 0; // + 0 turns 
  * @param {{network: object, buildings: object, assets: object, manifest?: object}} cs1 – parsed .cs1x sections
  * @param {object} catalogue – cs2-catalogue.json
  * @param {object} roadPlan  – cs1conv-plan.json (crop, transform, segments)
- * @param {{theme?: string, minScore?: number, fallback?: 'nearby'|'skip', fallbackByType?: Object<string, 'nearby'|'skip'>}} [opts]
+ * @param {{theme?: string, minScore?: number, fallback?: 'nearby'|'anywhere'|'skip', fallbackByType?: Object<string, 'nearby'|'anywhere'|'skip'>}} [opts]
  */
 export function buildBuildingsPlan(cs1, catalogue, roadPlan, opts = {}) {
   if (!cs1.buildings || !cs1.assets || !cs1.network) throw new Error('the .cs1x needs ok buildings, assets and network sections (exporter 1.2+)');
@@ -106,7 +106,7 @@ export function buildBuildingsPlan(cs1, catalogue, roadPlan, opts = {}) {
     it.facing = [round(f[0], 4), round(f[1], 4)];
   }
 
-  return {
+  const out = {
     format: 'cs1conv-buildings', formatVersion: 1,
     generator: { name: 'cs1conv-buildings', version: PLAN_BUILDER_VERSION, matcher: MATCHER_VERSION },
     catalogue: { game: catalogue.game?.version ?? null, prefabs: catalogue.prefabs?.length ?? 0 },
@@ -120,4 +120,62 @@ export function buildBuildingsPlan(cs1, catalogue, roadPlan, opts = {}) {
     }).sort((a, b) => b.count - a.count),
     notPlaced: match.results.filter((r) => r.decision !== 'place').map((r) => ({ cs1: r.cs1, decision: r.decision, reason: r.reason, count: r.count })),
   };
+  if (opts.defaultDepots !== false && roadPlan.transit) addDefaultDepots(out, roadPlan.transit, catalogue);
+  return out;
+}
+
+// ------------------------------------------------------------------ default depots for transit lines
+
+/**
+ * CS2 lines get their vehicles only from a depot of their own type; CS1 metro and train lines don't need one (the
+ * stations spawn the trains), so a converted city often has lines but no depot. CS1 line type → CS2 depot prefab.
+ * Rail yards dispatch only over track connected to the line, so they are placed next to a station and reported.
+ */
+export const DEPOT_FOR_LINE = {
+  Bus: { prefab: 'BusDepot01', match: /^BusDepot/, rail: false },
+  Tram: { prefab: 'TramDepot01', match: /^TramDepot/, rail: false },
+  Metro: { prefab: 'SubwayYard01', match: /^SubwayYard/, rail: true, alternatives: ['SubwayYard02'] },
+  Train: { prefab: 'RailYard01', match: /^RailYard/, rail: true, alternatives: ['RailYard02'] },
+};
+
+/**
+ * Adds one default depot item to a buildings section (in place) for every transport type that has lines in
+ * plan.transit but no depot of that type among the items. Pure; the web tool can call it on its own buildings section.
+ * The item sits on the first stop of the first such line (a station for rail) with fallback "nearby", so the placer
+ * puts it on the closest free roadside spot. Returns the list of added depots.
+ * @param {{items: object[], stats?: object}} buildings
+ * @param {{lines: {name: string, cs1Type: string, stops: {x: number, z: number, cs1Building?: number}[]}[]}} transit
+ * @param {object} [catalogue] – for the CS2 lot size (optional)
+ */
+export function addDefaultDepots(buildings, transit, catalogue) {
+  const added = [];
+  const byType = new Map();
+  for (const l of transit?.lines ?? []) {
+    if (!DEPOT_FOR_LINE[l.cs1Type] || !(l.stops?.length)) continue;
+    if (!byType.has(l.cs1Type)) byType.set(l.cs1Type, []);
+    byType.get(l.cs1Type).push(l);
+  }
+  let nextId = -1;
+  for (const [type, lines] of byType) {
+    const d = DEPOT_FOR_LINE[type];
+    if (buildings.items.some((it) => d.match.test(it.prefab ?? ''))) continue;
+    const first = lines[0];
+    const stop = (d.rail && first.stops.find((s) => s.cs1Building)) || first.stops[0];
+    const names = lines.map((l) => l.name);
+    const cat = catalogue?.prefabs?.find((p) => p.name === d.prefab);
+    const item = {
+      id: nextId--, cs1Info: null, type: 'BuildingPrefab', prefab: d.prefab, score: null, family: 'depot',
+      x: round(stop.x), z: round(stop.z), cs1Lot: null, lot: cat?.size ?? null,
+      accessSegment: 0, front: null, facing: [1, 0], alternatives: d.alternatives ?? [], fallback: 'nearby',
+      default: true,
+      reason: `no CS1 ${type.toLowerCase()} depot; CS2 needs one for ${names.join(', ')}`
+        + (d.rail ? '. Connect its track to the line by hand: CS2 yards only dispatch over connected track' : ''),
+      ...(d.rail ? { needsTrackLink: true } : {}),
+    };
+    buildings.items.push(item);
+    added.push({ type, prefab: d.prefab, lines: names, needsTrackLink: !!d.rail, at: [item.x, item.z] });
+  }
+  if (buildings.stats) buildings.stats.defaultDepots = added.length;
+  if (added.length) buildings.defaultDepots = added;
+  return added;
 }

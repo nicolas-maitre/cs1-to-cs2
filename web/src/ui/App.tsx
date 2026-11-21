@@ -27,6 +27,8 @@ import { ReportPanel } from './ReportPanel.tsx';
 import { buildScene } from './scene.ts';
 import type { SegInfo } from './scene.ts';
 import { usePackage } from './usePackage.ts';
+import { LangSwitch, useI18n } from './i18n.tsx';
+import type { MessageKey, T } from '../core/i18n/index.ts';
 import type { Source } from './usePackage.ts';
 
 const DEFAULT_SIZE = 3000;
@@ -44,20 +46,26 @@ function savePrefs(p: ReturnType<typeof loadPrefs>) {
 }
 
 type Tab = 'overview' | 'mapping' | 'rb' | 'assets' | 'report';
-const TABS: { id: Tab; label: (p: BuiltPackage) => string }[] = [
-  { id: 'overview', label: () => 'Overview' },
-  { id: 'mapping', label: p => `Mapping (${p.mapping.filter(r => r.segmentsInCrop).length})` },
-  { id: 'rb', label: p => `Road types (${p.rbVariants.length})` },
-  { id: 'assets', label: p => `Assets (${p.plan.buildings?.items.length ?? 0})` },
-  { id: 'report', label: p => `Report (${p.report.items.length})` },
+const TABS: { id: Tab; label: (p: BuiltPackage, t: T) => string }[] = [
+  { id: 'overview', label: (_p, t) => t('app.tab.overview') },
+  { id: 'mapping', label: (p, t) => t('app.tab.mapping', { n: p.mapping.filter(r => r.segmentsInCrop).length }) },
+  { id: 'rb', label: (p, t) => t('app.tab.rb', { n: p.rbVariants.length }) },
+  { id: 'assets', label: (p, t) => t('app.tab.assets', { n: p.plan.buildings?.items.length ?? 0 }) },
+  { id: 'report', label: (p, t) => t('app.tab.report', { n: p.report.items.length }) },
 ];
 
-function toLoadError(e: unknown, name: string): LoadError {
-  if (e instanceof ReadError) return { title: `Can't open ${name}`, message: e.message, hint: e.hint };
-  return { title: `Can't open ${name}`, message: e instanceof Error ? e.message : String(e), hint: 'If this is a .cs1x from the exporter, export the city again and retry.' };
+function toLoadError(e: unknown, name: string, t: T): LoadError {
+  const title = t('app.cantOpen', { name });
+  if (e instanceof ReadError) {
+    return e.i18n
+      ? { title, message: t(e.i18n.msg as MessageKey, e.i18n.vars), hint: t(e.i18n.hint as MessageKey) }
+      : { title, message: e.message, hint: e.hint };
+  }
+  return { title, message: e instanceof Error ? e.message : String(e), hint: t('app.cantOpenHint') };
 }
 
 export function App() {
+  const { t, tk, n, lang } = useI18n();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<LoadError | null>(null);
@@ -79,7 +87,7 @@ export function App() {
   useEffect(() => {
     fetch('./cs2-catalogue.json')
       .then(r => (r.ok ? r.json() : null))
-      .then(c => { if (c && Array.isArray(c.prefabs)) { setCatalogue(c); setCatalogueSource('bundled with this site'); } })
+      .then(c => { if (c && Array.isArray(c.prefabs)) { setCatalogue(c); setCatalogueSource(null); } })
       .catch(() => { /* no bundled catalogue */ });
   }, []);
   const loadCatalogueFile = useCallback(async (file: File) => {
@@ -90,9 +98,9 @@ export function App() {
       setCatalogueSource(file.name);
       setError(null);
     } catch (e) {
-      setError({ title: `Can't use ${file.name} as a CS2 catalogue`, message: e instanceof Error ? e.message : String(e), hint: 'Use the cs2-catalogue.json written by node buildings/run.mjs catalogue.' });
+      setError({ title: t('app.badCatalogue', { name: file.name }), message: e instanceof Error ? e.message : String(e), hint: t('app.badCatalogueHint') });
     }
-  }, []);
+  }, [t]);
   const [tab, setTab] = useState<Tab>('overview');
   const [help, setHelp] = useState<null | 'guide' | 'converts' | 'faq' | 'about'>(null);
   const [showSkipped, setShowSkipped] = useState(false);
@@ -116,26 +124,26 @@ export function App() {
 
   const open = useCallback(async (file: File) => {
     if (/catalogue.*\.json$/i.test(file.name)) { await loadCatalogueFile(file); return; }
-    setBusy(`Reading ${file.name}…`);
+    setBusy(t('app.reading', { name: file.name }));
     setError(null);
     try {
       const buf = await file.arrayBuffer();
       const city = await readCityFile(new Uint8Array(buf));
-      if (!city.segments.length) throw new ReadError('not-cs1x', 'This export has no road network.', 'Load the city in CS1 before exporting, and check that the network section did not fail.');
+      if (!city.segments.length) throw new ReadError('not-cs1x', 'This export has no road network.', 'Load the city in CS1 before exporting, and check that the network section did not fail.', { msg: 'app.noNetwork', hint: 'app.noNetworkHint' });
       accept({ city, bytes: buf, fileName: file.name, size: buf.byteLength });
     } catch (e) {
-      setError(toLoadError(e, file.name));
+      setError(toLoadError(e, file.name, t));
     } finally {
       setBusy(null);
     }
-  }, [accept, loadCatalogueFile]);
+  }, [accept, loadCatalogueFile, t]);
 
   // ?open=<url> (dev server serves local samples at /samples/) and ?synthetic=<n> (performance check).
   useEffect(() => {
     const q = new URLSearchParams(location.search);
     const syn = Number(q.get('synthetic'));
     if (syn > 1) {
-      setBusy('Generating a synthetic city…');
+      setBusy(t('app.generating'));
       setTimeout(() => {
         const n = Math.min(180, Math.round(syn));
         const city = syntheticCity(n);
@@ -146,19 +154,20 @@ export function App() {
     }
     const src = q.get('open');
     if (!src) return;
-    setBusy(`Fetching ${src}…`);
+    setBusy(t('app.fetching', { src }));
     fetch(src)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob(); })
       .then(b => open(new File([b], src.split('/').pop() || 'city.cs1x')))
-      .catch(e => { setError({ title: `Can't fetch ${src}`, message: e instanceof Error ? e.message : String(e) }); setBusy(null); });
+      .catch(e => { setError({ title: t('app.cantFetch', { src }), message: e instanceof Error ? e.message : String(e) }); setBusy(null); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, accept]);
 
   const scene = useMemo(() => (loaded ? buildScene(loaded.city) : null), [loaded]);
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
   const opts: BuildOptions | null = useMemo(() => (loaded ? {
     crop: committed, overrides, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
-    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, assetOverrides, assetFallbacks,
-  } : null), [loaded, committed, overrides, conv, assetOverrides, assetFallbacks]);
+    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, assetOverrides, assetFallbacks, lang,
+  } : null), [loaded, committed, overrides, conv, assetOverrides, assetFallbacks, lang]);
   const { pkg, busy: building, ms, error: buildError, zip: buildZip } = usePackage(loaded, opts, catalogue);
   const [zipping, setZipping] = useState(false);
   const stats = useMemo(() => (pkg ? mappingStats(pkg.mapping) : null), [pkg]);
@@ -178,15 +187,16 @@ export function App() {
   const describe = useCallback((s: SegInfo) => {
     const row = pkg?.mapping.find(r => r.netInfo === s.base);
     const ps = pkg?.plan.segments.find(p => p.id === s.seg.id);
-    const t = row?.target;
-    const target = !t ? '' : t.mode === 'rb' ? `→ Road Builder ${row?.rb ? `${row.rb.cs1Width} → ${row.rb.rbWidth} m` : ''}` : t.mode === 'vanilla' ? `→ ${t.name}` : `→ skipped: ${t.reason}`;
+    const tg = row?.target;
+    const target = !tg ? '' : tg.mode === 'rb' ? t('app.tip.rb', { widths: row?.rb ? `${n(row.rb.cs1Width, 1)} → ${n(row.rb.rbWidth, 1)} m` : '' }) : tg.mode === 'vanilla' ? t('app.tip.vanilla', { name: tg.name }) : t('app.tip.skipped', { reason: tg.reason });
+    const kind = s.seg.elevationKind ?? 'ground';
     return [
       s.seg.info,
-      `segment ${s.seg.id} · ${s.seg.elevationKind ?? 'ground'} · ${s.seg.length?.toFixed(0)} m${s.seg.inverted ? ' · inverted' : ''}`,
+      t('app.tip.segment', { id: String(s.seg.id), kind: tk(`elev.${kind}`, kind), length: Math.round(s.seg.length ?? 0) }) + (s.seg.inverted ? ` · ${t('app.tip.inverted')}` : ''),
       target,
-      ps ? `in the plan as ${ps.prefab}${pkg?.plan.prefabs[ps.prefab]?.imt ? ` (IMT ${pkg.plan.prefabs[ps.prefab].imt})` : ''}` : 'not in the plan',
+      ps ? t('app.tip.inPlan', { prefab: ps.prefab }) + (pkg?.plan.prefabs[ps.prefab]?.imt ? ` (IMT ${pkg.plan.prefabs[ps.prefab].imt})` : '') : t('app.tip.notInPlan'),
     ].filter(Boolean);
-  }, [pkg]);
+  }, [pkg, t, tk, n]);
 
   const baseName = (loaded?.city.manifest.city?.saveName ?? loaded?.fileName ?? 'city').replace(/[^\w.-]+/g, '_');
   const rbZipName = `${baseName}-roadbuilder.zip`;
@@ -208,7 +218,7 @@ export function App() {
     // The full package (with the 4096² terrain) is built and zipped in the worker: a few seconds for a large crop.
     setZipping(true);
     try { save(await buildZip(), `${baseName}-cs1conv-package.zip`); }
-    catch (e) { setError({ title: 'Could not build the package', message: e instanceof Error ? e.message : String(e) }); }
+    catch (e) { setError({ title: t('app.zipFailed'), message: e instanceof Error ? e.message : String(e) }); }
     finally { setZipping(false); }
   };
 
@@ -232,102 +242,103 @@ export function App() {
 
   return (
     <div className={`app ${dragOver ? 'drag' : ''}`} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={onDrop}>
-      <a href="#main" className="skip">Skip to content</a>
+      <a href="#main" className="skip">{t('app.skip')}</a>
       <header>
-        <div className="brand"><b>cs1conv</b><span>Cities: Skylines → Cities: Skylines II</span></div>
+        <div className="brand"><b>cs1conv</b><span>{t('app.tagline')}</span></div>
         {loaded && (
           <div className="file" title={loaded.fileName}>
-            <b>{loaded.city.manifest.city?.name}</b> <span className="muted">{loaded.city.manifest.city?.saveName} · {loaded.size ? fmtBytes(loaded.size) : 'generated'}{loaded.city.source === 'm0-dump' ? ' · M0 dump' : ''}</span>
+            <b>{loaded.city.manifest.city?.name}</b> <span className="muted">{loaded.city.manifest.city?.saveName} · {loaded.size ? fmtBytes(loaded.size, n) : t('app.generated')}{loaded.city.source === 'm0-dump' ? ` · ${t('app.m0dump')}` : ''}</span>
           </div>
         )}
         <div className="spacer" />
-        <button onClick={() => setHelp('guide')} aria-haspopup="dialog">Help</button>
-        {loaded && <button onClick={pick}>Open another file…</button>}
+        <LangSwitch />
+        <button onClick={() => setHelp('guide')} aria-haspopup="dialog">{t('app.help')}</button>
+        {loaded && <button onClick={pick}>{t('app.openAnother')}</button>}
         <input ref={fileInput} type="file" accept=".cs1x,.json,.zip" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
         <input ref={catalogueInput} type="file" accept=".json" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void loadCatalogueFile(f); e.target.value = ''; }} />
       </header>
       {loaded && error && (
         <div className="error-bar" role="alert">
           <b>{error.title}.</b> {error.message} {error.hint && <span className="muted">{error.hint}</span>}
-          <button onClick={() => setError(null)} aria-label="Dismiss">✕</button>
+          <button onClick={() => setError(null)} aria-label={t('app.dismiss')}>✕</button>
         </div>
       )}
       {!loaded ? (
         <main id="main" className="landing-wrap"><Landing busy={busy} error={error} onPick={pick} onHelp={s => setHelp(s)} /></main>
       ) : (
         <main id="main" className="work">
-          <section className="left" aria-label="Map and crop">
+          <section className="left" aria-label={t('app.mapAndCrop')}>
             {scene && <MapView ref={map} scene={scene} crop={crop} onCrop={onCrop} showSkipped={showSkipped} showTerrain={showTerrain} showZones={showZones && conv.zoning.enabled} showTransit={showTransit && conv.transit} showBuildings={showBuildings} showDistricts={showDistricts} describe={describe} />}
             <div className="mapbar">
               <fieldset>
-                <legend className="sr-only">Crop square (CS1 metres)</legend>
-                <label>Centre X <input type="number" value={crop.centerX} step={50} onChange={e => onCrop({ ...crop, centerX: +e.target.value }, true)} /></label>
-                <label>Z <input type="number" value={crop.centerZ} step={50} onChange={e => onCrop({ ...crop, centerZ: +e.target.value }, true)} /></label>
-                <label>Size <input type="number" value={crop.size} step={250} min={100} max={CS2_MAX_CROP} onChange={e => onCrop({ ...crop, size: +e.target.value }, true)} /> m</label>
-                <button onClick={() => { const { roadSegments: _r, ...a } = autoCrop(loaded.city, crop.size); onCrop(a, true); map.current?.fitCrop(); }} title="Move the crop to the square with the most roads">Auto</button>
-                <button onClick={() => { onCrop({ ...crop, size: CS2_MAX_CROP }, true); }} title="Largest crop CS2 can hold">Max</button>
+                <legend className="sr-only">{t('app.cropLegend')}</legend>
+                <label>{t('app.centreX')} <input type="number" value={crop.centerX} step={50} onChange={e => onCrop({ ...crop, centerX: +e.target.value }, true)} /></label>
+                <label>{t('app.centreZ')} <input type="number" value={crop.centerZ} step={50} onChange={e => onCrop({ ...crop, centerZ: +e.target.value }, true)} /></label>
+                <label>{t('app.size')} <input type="number" value={crop.size} step={250} min={100} max={CS2_MAX_CROP} onChange={e => onCrop({ ...crop, size: +e.target.value }, true)} /> m</label>
+                <button onClick={() => { const { roadSegments: _r, ...a } = autoCrop(loaded.city, crop.size); onCrop(a, true); map.current?.fitCrop(); }} title={t('app.autoTitle')}>{t('app.auto')}</button>
+                <button onClick={() => { onCrop({ ...crop, size: CS2_MAX_CROP }, true); }} title={t('app.maxTitle')}>{t('app.max')}</button>
               </fieldset>
-              <label className="check"><input type="checkbox" checked={showTerrain} onChange={e => setShowTerrain(e.target.checked)} disabled={!loaded.city.terrain} /> Terrain</label>
-              {!!loaded.city.zones && <label className="check"><input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> Zones</label>}
-              {!!loaded.city.transit?.lines.length && <label className="check"><input type="checkbox" checked={showTransit} onChange={e => setShowTransit(e.target.checked)} /> Transit</label>}
-              {!!loaded.city.buildings && <label className="check"><input type="checkbox" checked={showBuildings} onChange={e => setShowBuildings(e.target.checked)} /> Buildings</label>}
-              {!!loaded.city.districts?.districts.length && <label className="check"><input type="checkbox" checked={showDistricts} onChange={e => setShowDistricts(e.target.checked)} /> Districts</label>}
-              <label className="check"><input type="checkbox" checked={showSkipped} onChange={e => setShowSkipped(e.target.checked)} /> Skipped networks</label>
-              <span className="muted hint-keys">Drag the square to move it, corners to resize. Keyboard: focus the map, arrows move, +/− resize.</span>
-              {cv.warnings.map(w => <span key={w} className="warn">{w}</span>)}
+              <label className="check"><input type="checkbox" checked={showTerrain} onChange={e => setShowTerrain(e.target.checked)} disabled={!loaded.city.terrain} /> {t('app.layer.terrain')}</label>
+              {!!loaded.city.zones && <label className="check"><input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> {t('app.layer.zones')}</label>}
+              {!!loaded.city.transit?.lines.length && <label className="check"><input type="checkbox" checked={showTransit} onChange={e => setShowTransit(e.target.checked)} /> {t('app.layer.transit')}</label>}
+              {!!loaded.city.buildings && <label className="check"><input type="checkbox" checked={showBuildings} onChange={e => setShowBuildings(e.target.checked)} /> {t('app.layer.buildings')}</label>}
+              {!!loaded.city.districts?.districts.length && <label className="check"><input type="checkbox" checked={showDistricts} onChange={e => setShowDistricts(e.target.checked)} /> {t('app.layer.districts')}</label>}
+              <label className="check"><input type="checkbox" checked={showSkipped} onChange={e => setShowSkipped(e.target.checked)} /> {t('app.layer.skipped')}</label>
+              <span className="muted hint-keys">{t('app.hintKeys')}</span>
+              {cv.beyondMap !== undefined && <span className="warn">{t('app.cropBeyond', { h: cv.beyondMap })}</span>}
             </div>
           </section>
-          <section className="right" aria-label="Package">
-            <div className="sr-only" aria-live="polite">{pkg ? `Plan updated: ${pkg.plan.stats.segments} segments, ${pkg.plan.stats.rbConfigs} road types, ${pkg.plan.stats.skipped} skipped.` : ''}</div>
+          <section className="right" aria-label={t('app.package')}>
+            <div className="sr-only" aria-live="polite">{pkg ? t('app.planUpdated', { segments: pkg.plan.stats.segments, roadTypes: pkg.plan.stats.rbConfigs, skipped: pkg.plan.stats.skipped }) : ''}</div>
             {check && check.failed.length > 0 && (
               <div className="error-card" role="alert">
-                <b>Part of this export failed: {check.failed.join(', ')}.</b>
-                <p>Everything else converts normally. Export the city again; the File check in Overview has the exporter's message.</p>
+                <b>{t('app.exportFailed', { sections: check.failed.map(id => tk(`sec.${check.sections.find(s => s.label === id)?.id ?? id}`, id)).join(', ') })}</b>
+                <p>{t('app.exportFailedHint')}</p>
               </div>
             )}
-            {!pkg ? <p className="busy-inline"><span className="spinner" aria-hidden="true" />{buildError ?? 'Building the package…'}</p> : stats && (
+            {!pkg ? <p className="busy-inline"><span className="spinner" aria-hidden="true" />{buildError ?? t('app.building')}</p> : stats && (
               <>
                 <div className={`stats ${building ? 'stale' : ''}`} aria-busy={building}>
-                  <Stat n={pkg.plan.stats.segments} label="segments" />
-                  <Stat n={pkg.plan.stats.nodes} label="nodes" />
-                  <Stat n={pkg.plan.stats.rbConfigs} label="road types" />
-                  <Stat n={pkg.plan.stats.skipped} label="skipped" />
+                  <Stat n={n(pkg.plan.stats.segments)} label={t('app.stat.segments')} />
+                  <Stat n={n(pkg.plan.stats.nodes)} label={t('app.stat.nodes')} />
+                  <Stat n={n(pkg.plan.stats.rbConfigs)} label={t('app.stat.roadTypes')} />
+                  <Stat n={n(pkg.plan.stats.skipped)} label={t('app.stat.skipped')} />
                   <div className="stat wide">
-                    <div>NetInfos in crop: <b>{stats.netInfos.inCrop}</b>{building && <span className="spinner small" aria-label="updating" />}</div>
-                    <div className="muted">Road Builder {stats.rb.inCrop} · vanilla {stats.vanilla.inCrop} · not placeable {stats.skippedNotPlaceable.inCrop} · unmapped {stats.skippedUnmapped.inCrop}</div>
+                    <div>{t('app.netInfosInCrop')} <b>{stats.netInfos.inCrop}</b>{building && <span className="spinner small" aria-label={t('app.updating')} />}</div>
+                    <div className="muted">{t('app.netInfoBreakdown', { rb: stats.rb.inCrop, vanilla: stats.vanilla.inCrop, notPlaceable: stats.skippedNotPlaceable.inCrop, unmapped: stats.skippedUnmapped.inCrop })}</div>
                   </div>
                 </div>
                 <div className="downloads">
-                  <button className="primary" disabled={!!pkg.errors.length || !pkg.plan.segments.length || zipping} aria-busy={zipping} onClick={() => void download('package')}>{zipping ? <><span className="spinner small" aria-hidden="true" /> Building the package…</> : 'Download package (.zip)'}</button>
-                  <button disabled={!pkg.rbConfigs.length} onClick={() => void download('rb')}>Road Builder configs only</button>
-                  {zipping && <span className="muted small" role="status">Adding the terrain (two 4096² heightmaps) and compressing…</span>}
+                  <button className="primary" disabled={!!pkg.errors.length || !pkg.plan.segments.length || zipping} aria-busy={zipping} onClick={() => void download('package')}>{zipping ? <><span className="spinner small" aria-hidden="true" /> {t('app.building')}</> : t('app.download')}</button>
+                  <button disabled={!pkg.rbConfigs.length} onClick={() => void download('rb')}>{t('app.downloadRb')}</button>
+                  {zipping && <span className="muted small" role="status">{t('app.zipping')}</span>}
                   {pkg.errors.map(e => <span key={e} className="warn" role="alert">{e}</span>)}
-                  {!pkg.plan.segments.length && !pkg.errors.length && <span className="warn">The crop holds no roads. Move it over the city or press Auto.</span>}
+                  {!pkg.plan.segments.length && !pkg.errors.length && <span className="warn">{t('app.noRoads')}</span>}
                 </div>
-                <div role="tablist" aria-label="Package details" className="tabs" onKeyDown={onTabKey}>
-                  {TABS.map(t => (
-                    <button key={t.id} role="tab" id={`tab-${t.id}`} aria-selected={tab === t.id} aria-controls={`panel-${t.id}`} tabIndex={tab === t.id ? 0 : -1}
-                      className={tab === t.id ? 'on' : ''} ref={el => { tabRefs.current[t.id] = el; }} onClick={() => setTab(t.id)}>{t.label(pkg)}</button>
+                <div role="tablist" aria-label={t('app.packageDetails')} className="tabs" onKeyDown={onTabKey}>
+                  {TABS.map(tb => (
+                    <button key={tb.id} role="tab" id={`tab-${tb.id}`} aria-selected={tab === tb.id} aria-controls={`panel-${tb.id}`} tabIndex={tab === tb.id ? 0 : -1}
+                      className={tab === tb.id ? 'on' : ''} ref={el => { tabRefs.current[tb.id] = el; }} onClick={() => setTab(tb.id)}>{tb.label(pkg, t)}</button>
                   ))}
                 </div>
                 <div className="panel" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0}>
                   {tab === 'overview' && (
                     <div className="overview">
-                      <h3>What converts</h3>
+                      <h3>{t('app.h.converts')}</h3>
                       <ConversionPanel summary={pkg.summary} />
-                      <h3>Terrain of the crop</h3>
+                      <h3>{t('app.h.terrain')}</h3>
                       <TerrainPreview city={loaded.city} crop={committed} seaLevel={pkg.plan.water?.apply?.seaLevel ?? pkg.plan.water?.seaLevel ?? null} />
-                      <h3>Options</h3>
+                      <h3>{t('app.h.options')}</h3>
                       <ConversionOptions value={conv} onChange={setConv} city={loaded.city} />
-                      <h3>Install</h3>
+                      <h3>{t('app.h.install')}</h3>
                       <InstallHelp zipName={rbZipName} requires={pkg.plan.requires} />
-                      {check && <><h3>File check</h3><FileCheck {...check} /></>}
-                      <p className="small muted">Package built in {ms.toFixed(0)} ms{loaded.synthetic ? ' (synthetic city)' : ''}.</p>
+                      {check && <><h3>{t('app.h.fileCheck')}</h3><FileCheck {...check} /></>}
+                      <p className="small muted">{t(loaded.synthetic ? 'app.builtInSynthetic' : 'app.builtIn', { ms: Math.round(ms) })}</p>
                     </div>
                   )}
                   {tab === 'mapping' && <MappingTable rows={pkg.mapping} overrides={overrides} onOverride={(name, o) => setOverrides(prev => { const n = { ...prev }; if (o.mode === 'auto') delete n[name]; else n[name] = o; return n; })} />}
                   {tab === 'rb' && <RbList pkg={pkg} />}
-                  {tab === 'assets' && <AssetsTable matches={pkg.assetMatches ?? []} overrides={assetOverrides} catalogue={catalogue} catalogueSource={catalogueSource} hasBuildings={!!loaded.city.buildings && !!loaded.city.assets}
+                  {tab === 'assets' && <AssetsTable matches={pkg.assetMatches ?? []} overrides={assetOverrides} catalogue={catalogue} catalogueSource={catalogueSource ?? t('app.catalogueBundled')} hasBuildings={!!loaded.city.buildings && !!loaded.city.assets}
                     onLoadCatalogue={() => catalogueInput.current?.click()}
                     onOverride={(cs1, v) => setAssetOverrides(prev => { const n = { ...prev }; if (v) n[cs1] = v; else delete n[cs1]; return n; })}
                     fallbacks={assetFallbacks}
@@ -345,22 +356,23 @@ export function App() {
   );
 }
 
-const fmtBytes = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`);
+const fmtBytes = (b: number, n: (v: number, d?: number) => string) => (b >= 1e6 ? `${n(b / 1e6, 1)} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`);
 
-function Stat({ n, label }: { n: number; label: string }) {
-  return <div className="stat"><b>{n.toLocaleString('en')}</b><span>{label}</span></div>;
+function Stat({ n, label }: { n: string; label: string }) {
+  return <div className="stat"><b>{n}</b><span>{label}</span></div>;
 }
 
 function RbList({ pkg }: { pkg: BuiltPackage }) {
+  const { t, tk, n } = useI18n();
   return (
     <div className="rblist">
       {[...pkg.rbVariants].sort((a, b) => b.segments - a.segments).map(v => (
         <details key={v.id}>
           <summary>
             <b>{v.title}</b>{v.imtOverrides && <span className="tag imt">IMT {v.imtOverrides}</span>}
-            <span className="tag">{v.category}</span>
-            <span className={Math.abs(v.diff) >= 0.5 ? 'tag loss' : 'tag'}>{v.cs1Width} → {v.rbWidth} m</span>
-            <span className="muted small">{v.segments} seg</span>
+            <span className="tag">{tk(`net.${v.category.toLowerCase()}`, v.category)}</span>
+            <span className={Math.abs(v.diff) >= 0.5 ? 'tag loss' : 'tag'}>{n(v.cs1Width, 1)} → {n(v.rbWidth, 1)} m</span>
+            <span className="muted small">{t('rb.segments', { n: v.segments })}</span>
           </summary>
           <div className="lanes">{v.rbLanes.map((l, i) => <code key={i}>{l}</code>)}</div>
           {v.notes.length > 0 && <ul>{v.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}

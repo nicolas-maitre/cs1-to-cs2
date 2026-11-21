@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { cs1Heights, sampleCs1 } from '../core/terrain/heightmap.ts';
 import type { Crop, Cs1City } from '../core/types.ts';
+import { useI18n } from './i18n.tsx';
 
 const N = 256;
 
 /** Hillshade of the crop as CS2 will get it (north up), with CS1 water (depth grid, else below sea level) in blue. */
 export function TerrainPreview({ city, crop, seaLevel }: { city: Cs1City; crop: Crop; seaLevel: number | null }) {
+  const { t, n } = useI18n();
   const canvas = useRef<HTMLCanvasElement>(null);
-  const t = city.terrain;
-  const heights = useMemo(() => (t ? cs1Heights(t) : null), [t]);
+  const terrain = city.terrain;
+  const heights = useMemo(() => (terrain ? cs1Heights(terrain) : null), [terrain]);
   const stats = useMemo(() => {
-    if (!t || !heights) return null;
-    const meta = { resolution: t.resolution, size: t.size, heightScale: t.heightScale };
+    if (!terrain || !heights) return null;
+    const meta = { resolution: terrain.resolution, size: terrain.size, heightScale: terrain.heightScale };
     const w = city.water, d = w?.depth, g = w?.depthGrid;
     const h = new Float32Array(N * N), wet = new Uint8Array(N * N);
     let min = Infinity, max = -Infinity;
@@ -29,7 +31,7 @@ export function TerrainPreview({ city, crop, seaLevel }: { city: Cs1City; crop: 
       } else if (seaLevel != null && v < seaLevel) wet[r * N + c] = 1;
     }
     return { h, wet, min, max, cell };
-  }, [t, heights, city.water, crop, seaLevel]);
+  }, [terrain, heights, city.water, crop, seaLevel]);
 
   useEffect(() => {
     const cv = canvas.current;
@@ -51,14 +53,19 @@ export function TerrainPreview({ city, crop, seaLevel }: { city: Cs1City; crop: 
     ctx.putImageData(img, 0, 0);
   }, [stats]);
 
-  if (!t || !stats) return <p className="muted small">No terrain in this export: the roads follow the CS2 map's own ground.</p>;
+  if (!terrain || !stats) return <p className="muted small">{t('tp.none')}</p>;
+  const lo = Math.round(stats.min), hi = Math.round(stats.max);
+  const sea = seaLevel != null ? n(Math.round(seaLevel * 10) / 10, 1) : null;
+  const caption = [
+    t('tp.square', { km: n(crop.size / 1000, 2) }),
+    hi - lo < 1 ? t('tp.flat', { h: lo }) : t('tp.ground', { min: lo, max: hi }),
+    ...(sea != null ? [t('tp.sea', { sea })] : []),
+    ...(stats.wet.some(v => v) ? [t('tp.water')] : []),
+  ].join(' · ');
   return (
     <figure className="terrain-preview">
-      <canvas ref={canvas} width={N} height={N} role="img" aria-label={`Terrain of the crop, ${Math.round(stats.min)} to ${Math.round(stats.max)} m, north up${seaLevel != null ? `, sea level ${seaLevel.toFixed(1)} m` : ''}`} />
-      <figcaption className="small muted">
-        {(crop.size / 1000).toFixed(2)} km square, north up · ground {Math.round(stats.min)}–{Math.round(stats.max)} m
-        {seaLevel != null ? ` · sea level ${seaLevel.toFixed(1)} m` : ''}{stats.wet.some(v => v) ? ' · water in blue' : ''}
-      </figcaption>
+      <canvas ref={canvas} width={N} height={N} role="img" aria-label={t('tp.aria', { min: lo, max: hi }) + (sea != null ? t('tp.ariaSea', { sea }) : '')} />
+      <figcaption className="small muted">{caption}</figcaption>
     </figure>
   );
 }

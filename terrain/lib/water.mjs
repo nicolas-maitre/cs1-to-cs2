@@ -63,12 +63,14 @@ function round2(v) { return Math.round(v * 100) / 100; }
  *   - touching the playable edge band (`edge` m): a source at its deepest cell in the band (river inflow);
  *   - otherwise, if no existing source lies in it: a source at its deepest cell (lake);
  *   - a lake that has a source but at least `boostCells` cells (500 × 256 m² ≈ 0.13 km²) also gets one at its deepest
- *     cell ("lake-boost"), so it fills in minutes instead of hours.
+ *     cell ("lake-boost"), so it fills in minutes instead of hours;
+ *   - big regions also get up to `maxSpread` more sources ("<kind>-spread", radius 40 m) spread over them by
+ *     farthest-point sampling, one per `spreadCells` cells, so long rivers fill along their whole length.
  * height = CS1 water depth there; radius grows with the region (20–80 m).
  * terrain: {meta, heights: Float32Array} (CS1 grid, loadCs1xTerrain); existing: converted sources [{x,z}] (CS2 coords).
  */
 export function regionSources(depthMeta, raw, terrain, plan, seaLevel, existing = [], opts = {}) {
-  const { minCells = 4, edge = 300, margin = 50, minDepth = 1, seaTolerance = 4, boostCells = 500 } = opts;
+  const { minCells = 4, edge = 300, margin = 50, minDepth = 1, seaTolerance = 4, boostCells = 500, spreadCells = 1500, maxSpread = 8 } = opts;
   const res = depthMeta.resolution, size = depthMeta.size, sp = size / (res - 1), sc = depthMeta.heightScale;
   const { dx, dz } = plan.transform;
   const half = CS2.size / 2 - margin;
@@ -120,7 +122,24 @@ export function regionSources(depthMeta, raw, terrain, plan, seaLevel, existing 
     const best = pick.reduce((p, i) => depth[i] > depth[p] ? i : p, pick[0]);
     const [x, z] = pos(best);
     out.push({ x: round2(x), z: round2(z), height: round2(depth[best]), radius: Math.round(radius), polluted: 0, cs1: { kind, cells: cells.length } });
-    regions.push({ cells: cells.length, kind });
+    // long regions (rivers, chains of lakes) fill from one point far too slowly: spread more sources over the region
+    // by farthest-point sampling, one per `spreadCells` cells, at most `maxSpread` (full-city Skibidi: a 3.5 km river)
+    const extra = Math.min(maxSpread, Math.floor(cells.length / spreadCells));
+    if (extra > 0) {
+      const chosen = [best];
+      const dmin = new Float64Array(cells.length).fill(Infinity);
+      const upd = c => { const [cx, cz] = pos(c); for (let k = 0; k < cells.length; k++) { const [px, pz] = pos(cells[k]); const d = (px - cx) ** 2 + (pz - cz) ** 2; if (d < dmin[k]) dmin[k] = d; } };
+      upd(best);
+      for (let n = 0; n < extra; n++) {
+        let far = 0;
+        for (let k = 1; k < cells.length; k++) if (dmin[k] > dmin[far]) far = k;
+        if (Math.sqrt(dmin[far]) < 400) break; // already within 400 m of a source everywhere
+        const c = cells[far]; chosen.push(c); upd(c);
+        const [sx, sz] = pos(c);
+        out.push({ x: round2(sx), z: round2(sz), height: round2(depth[c]), radius: 40, polluted: 0, cs1: { kind: kind + '-spread', cells: cells.length } });
+      }
+    }
+    regions.push({ cells: cells.length, kind, sources: 1 + Math.max(0, extra) });
   }
   return { sources: out, regions };
 }

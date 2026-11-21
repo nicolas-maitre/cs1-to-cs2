@@ -1,67 +1,68 @@
 import { useState } from 'react';
 import type { ZoningOptions } from '../core/m2/zoning.ts';
-import type { Cs1City } from '../core/types.ts';
-
-export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean }
-
-/** M2 options: which extra sections to convert and how zones map. */
-export function ConversionOptions({ value, onChange, city }: { value: ConvOptions; onChange: (v: ConvOptions) => void; city: Cs1City }) {
-  const z = value.zoning;
-  const setZ = (p: Partial<ZoningOptions>) => onChange({ ...value, zoning: { ...z, ...p } });
-  return (
-    <div className="options">
-      <fieldset className="opt-group" disabled={!city.zones}>
-        <legend><label className="check"><input type="checkbox" checked={z.enabled} onChange={e => setZ({ enabled: e.target.checked })} /> Zoning</label></legend>
-        <label>Building theme
-          <select value={z.theme} onChange={e => setZ({ theme: e.target.value as ZoningOptions['theme'] })} disabled={!z.enabled}>
-            <option value="NA">North American</option>
-            <option value="EU">European</option>
-          </select>
-        </label>
-        <label>CS1 high-density residential →
-          <select value={z.residentialHigh} onChange={e => setZ({ residentialHigh: e.target.value as ZoningOptions['residentialHigh'] })} disabled={!z.enabled}>
-            <option value="High">Residential High</option>
-            <option value="Medium">Residential Medium</option>
-            <option value="Mixed">Residential Mixed</option>
-          </select>
-        </label>
-        <label>CS1 office →
-          <select value={z.office} onChange={e => setZ({ office: e.target.value as ZoningOptions['office'] })} disabled={!z.enabled}>
-            <option value="High">Office High</option>
-            <option value="Low">Office Low</option>
-          </select>
-        </label>
-      </fieldset>
-      <label className="check"><input type="checkbox" checked={value.traffic} onChange={e => onChange({ ...value, traffic: e.target.checked })} /> Traffic rules: TM:PE, speed limits, traffic lights</label>
-      <label className="check"><input type="checkbox" checked={value.transit} disabled={!city.transit} onChange={e => onChange({ ...value, transit: e.target.checked })} /> Transit lines</label>
-      <label className="check"><input type="checkbox" checked={value.water} disabled={!city.water} onChange={e => onChange({ ...value, water: e.target.checked })} /> Water: sea level and sources</label>
-      <label className="check"><input type="checkbox" checked={value.buildings} disabled={!city.buildings} onChange={e => onChange({ ...value, buildings: e.target.checked })} /> Buildings: services, parks, landmarks (see the Assets tab)</label>
-      <label className="check"><input type="checkbox" checked={value.districts} disabled={!city.districts} onChange={e => onChange({ ...value, districts: e.target.checked })} /> Districts and policies</label>
-      <label className="check"><input type="checkbox" checked={value.objects} disabled={!city.trees && !city.props} onChange={e => onChange({ ...value, objects: e.target.checked })} /> Trees and rocks</label>
-      <label className="check"><input type="checkbox" checked={value.surfaces} disabled={!city.imtFillers.some(f => f.markingType === 'Node')} onChange={e => onChange({ ...value, surfaces: e.target.checked })} /> IMT junction surfaces</label>
-    </div>
-  );
-}
 import { RB_FOLDER } from '../core/readme.ts';
 import type { ConvCategory } from '../core/summary.ts';
 import type { SectionCheck } from '../core/summary.ts';
+import type { Cs1City } from '../core/types.ts';
+import { useI18n } from './i18n.tsx';
+import { Rich } from './Rich.tsx';
 
-const STATUS: Record<string, { label: string; cls: string }> = {
-  converted: { label: 'Converts', cls: 'ok' },
-  partial: { label: 'Converts, approximated', cls: 'partial' },
-  'report-only': { label: 'Report only', cls: 'report' },
-  'not-converted': { label: 'Not converted', cls: 'no' },
-  absent: { label: 'Not in this file', cls: 'absent' },
-};
+export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean }
+
+/** Which sections to convert and how zones map. */
+export function ConversionOptions({ value, onChange, city }: { value: ConvOptions; onChange: (v: ConvOptions) => void; city: Cs1City }) {
+  const { t } = useI18n();
+  const z = value.zoning;
+  const setZ = (p: Partial<ZoningOptions>) => onChange({ ...value, zoning: { ...z, ...p } });
+  const check = (key: keyof Omit<ConvOptions, 'zoning'>, label: string, disabled = false) => (
+    <label className="check"><input type="checkbox" checked={value[key]} disabled={disabled} onChange={e => onChange({ ...value, [key]: e.target.checked })} /> {label}</label>
+  );
+  return (
+    <div className="options">
+      <fieldset className="opt-group" disabled={!city.zones}>
+        <legend><label className="check"><input type="checkbox" checked={z.enabled} onChange={e => setZ({ enabled: e.target.checked })} /> {t('opt.zoning')}</label></legend>
+        <label>{t('opt.theme')}
+          <select value={z.theme} onChange={e => setZ({ theme: e.target.value as ZoningOptions['theme'] })} disabled={!z.enabled}>
+            <option value="NA">{t('opt.themeNA')}</option>
+            <option value="EU">{t('opt.themeEU')}</option>
+          </select>
+        </label>
+        <label>{t('opt.resHigh')}
+          <select value={z.residentialHigh} onChange={e => setZ({ residentialHigh: e.target.value as ZoningOptions['residentialHigh'] })} disabled={!z.enabled}>
+            <option value="High">{t('opt.resHigh.High')}</option>
+            <option value="Medium">{t('opt.resHigh.Medium')}</option>
+            <option value="Mixed">{t('opt.resHigh.Mixed')}</option>
+          </select>
+        </label>
+        <label>{t('opt.office')}
+          <select value={z.office} onChange={e => setZ({ office: e.target.value as ZoningOptions['office'] })} disabled={!z.enabled}>
+            <option value="High">{t('opt.office.High')}</option>
+            <option value="Low">{t('opt.office.Low')}</option>
+          </select>
+        </label>
+      </fieldset>
+      {check('traffic', t('opt.traffic'))}
+      {check('transit', t('opt.transit'), !city.transit)}
+      {check('water', t('opt.water'), !city.water)}
+      {check('buildings', t('opt.buildings'), !city.buildings)}
+      {check('districts', t('opt.districts'), !city.districts)}
+      {check('objects', t('opt.objects'), !city.trees && !city.props)}
+      {check('surfaces', t('opt.surfaces'), !city.imtFillers.some(f => f.markingType === 'Node'))}
+    </div>
+  );
+}
+
+const STATUS_CLS: Record<string, string> = { converted: 'ok', partial: 'partial', 'report-only': 'report', 'not-converted': 'no', none: 'absent', absent: 'absent' };
 
 export function ConversionPanel({ summary }: { summary: ConvCategory[] }) {
+  const { t, tk } = useI18n();
   return (
-    <ul className="conv" aria-label="What converts, per category">
+    <ul className="conv" aria-label={t('conv.aria')}>
       {summary.map(c => (
         <li key={c.id}>
           <details>
             <summary>
-              <span className={`status ${STATUS[c.status]?.cls ?? ''}`}>{STATUS[c.status]?.label ?? c.status}</span>
+              <span className={`status ${STATUS_CLS[c.status] ?? ''}`}>{tk(`status.${c.status}`, c.status)}</span>
               <b>{c.label}</b>
               <span className="muted"> – {c.summary}</span>
             </summary>
@@ -74,22 +75,24 @@ export function ConversionPanel({ summary }: { summary: ConvCategory[] }) {
 }
 
 export function FileCheck({ sections, warnings }: { sections: SectionCheck[]; failed: string[]; warnings: string[] }) {
+  const { t, tk } = useI18n();
+  const label = (s: SectionCheck) => tk(`sec.${s.id}`, s.label);
   const shown = sections.filter(s => s.status !== 'absent' || s.messages.length);
-  const absent = sections.filter(s => s.status === 'absent').map(s => s.label);
+  const absent = sections.filter(s => s.status === 'absent').map(label);
   return (
     <div className="filecheck">
       <ul className="sections">
         {shown.map(s => (
           <li key={s.id}>
-            <span className={`status ${s.status === 'ok' ? 'ok' : s.status === 'failed' ? 'no' : 'partial'}`}>{s.status}</span> {s.label}
+            <span className={`status ${s.status === 'ok' ? 'ok' : s.status === 'failed' ? 'no' : 'partial'}`}>{tk(`fc.${s.status}`, s.status)}</span> {label(s)}
             {s.messages.map((m, i) => <div key={i} className="small muted">{m}</div>)}
           </li>
         ))}
       </ul>
-      {absent.length > 0 && <p className="small muted">Not in this export: {absent.join(', ')}.</p>}
+      {absent.length > 0 && <p className="small muted">{t('fc.notInExport', { list: absent.join(', ') })}</p>}
       {warnings.length > 0 && (
         <details>
-          <summary>{warnings.length} exporter warning(s)</summary>
+          <summary>{t('fc.warnings', { n: warnings.length })}</summary>
           <ul className="small">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
         </details>
       )}
@@ -98,27 +101,31 @@ export function FileCheck({ sections, warnings }: { sections: SectionCheck[]; fa
 }
 
 export function InstallHelp({ zipName, requires = [] }: { zipName: string; requires?: string[] }) {
+  const { t } = useI18n();
   const ps = `Expand-Archive -Path "$env:USERPROFILE\\Downloads\\${zipName}" -DestinationPath "$env:USERPROFILE\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\ModsData\\RoadBuilder" -Force`;
   return (
     <div className="install">
       <ol>
-        <li>Close Cities: Skylines II. Road Builder reads its road types only when the game starts.</li>
+        <li><Rich text={t('install.unzip')} /></li>
+        <li>{t('install.close')}</li>
         <li>
-          Open this folder (paste it into the Explorer address bar, or press <kbd>Win</kbd>+<kbd>R</kbd>):
-          <CopyBox text={RB_FOLDER} label="Road Builder folder path" />
+          {t('install.folder')}
+          <CopyBox text={RB_FOLDER} label={t('copy.rbFolder')} />
         </li>
-        <li>Copy the files from the package's <code>roadbuilder</code> folder into it. Existing <code>*-cs1conv.json</code> files are replaced; your own roads are not touched.</li>
+        <li><Rich text={t('install.copy')} /></li>
         <li>
-          Or download <b>Road Builder configs only</b> and run this in PowerShell:
-          <CopyBox text={ps} label="PowerShell command" />
+          <Rich text={t('install.ps')} />
+          <CopyBox text={ps} label={t('copy.ps')} />
         </li>
-        <li>Start CS2 with Road Builder{requires.includes('Traffic') ? <> and <b>Traffic</b> (this plan has lane connections and priority signs)</> : null} enabled, start a new city, and import <code>cs1conv-plan.json</code>.</li>
+        <li><Rich text={t(requires.includes('Traffic') ? 'install.startTraffic' : 'install.start')} /></li>
       </ol>
+      <p className="small muted">{t('install.importerCopies')}</p>
     </div>
   );
 }
 
 function CopyBox({ text, label }: { text: string; label: string }) {
+  const { t } = useI18n();
   const [done, setDone] = useState(false);
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }
@@ -127,7 +134,7 @@ function CopyBox({ text, label }: { text: string; label: string }) {
   return (
     <div className="copybox">
       <code tabIndex={0} aria-label={label}>{text}</code>
-      <button onClick={copy} aria-label={`Copy ${label}`}>{done ? 'Copied' : 'Copy'}</button>
+      <button onClick={copy} aria-label={t('copy.aria', { label })}>{done ? t('copy.copied') : t('copy.copy')}</button>
     </div>
   );
 }

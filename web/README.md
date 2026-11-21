@@ -6,7 +6,9 @@ Reads a `.cs1x` export of a Cities: Skylines city (or the M0 network dump). You 
 - converts zoning, TM:PE rules, transit lines, water, districts, trees and rocks, and IMT junction surfaces;
 - writes the import package (`schema/README.md` §2).
 
-The same TypeScript core runs in the browser and as a Node CLI. Everything runs client-side: nothing is uploaded. The user guide lives in [`docs/guide/`](../docs/guide/user-guide.md) and in the app's Help page, both generated from `src/core/docs.ts`.
+The same TypeScript core runs in the browser and as a Node CLI. Everything runs client-side: nothing is uploaded. The user guide lives in [`docs/guide/`](../docs/guide/user-guide.md) (French: [`docs/guide/fr/`](../docs/guide/fr/user-guide.md)) and in the app's Help page, all generated from `src/core/docs.ts` and `docs.fr.ts`.
+
+The app is in English and French: it follows the browser's language, and a menu in the header switches it (remembered locally). The "What converts" list and the package `README.txt` come in the chosen language; `report.json` and the Report tab's messages stay in English.
 
 ```
 src/core/          pure TS, no DOM (Node ≥ 24 runs it directly through type stripping)
@@ -23,10 +25,12 @@ src/core/          pure TS, no DOM (Node ≥ 24 runs it directly through type st
                      water.set sources, outside connections (byte-identical to the Node scripts, tested)
   zip.ts             the downloadable package zip (deflated terrain), built in the Web Worker
   summary.ts         what converts per category; .cs1x section check
-  docs.ts            user guide, FAQ, conversion matrix, privacy text (app Help + docs/guide)
+  docs.ts, docs.fr.ts  user guide, FAQ, conversion matrix, privacy text in English and French (app Help + docs/guide)
+  i18n/              en.ts / fr.ts messages (UI, What converts, README.txt) and a small ICU-like formatter (plurals, numbers)
   readme.ts          the package README.txt
   synthetic.ts       synthetic n × n city with districts, for performance checks
-src/ui/            React + canvas UI (map, landing, panels, Assets, Help); packageWorker.ts builds packages off the main thread
+src/ui/            React + canvas UI (map, landing, panels, Assets, Help); packageWorker.ts builds packages off the main thread;
+                   i18n.tsx is the language provider and switch
 cli/cs1conv.ts
 scripts/           gen-docs.mjs (docs/guide), notices.mjs (third-party notices), slim-catalogue.mjs (bundled CS2 catalogue)
 public/            cs2-catalogue.json (slim CS2 building catalogue), THIRD-PARTY-NOTICES.txt
@@ -41,13 +45,13 @@ npm test                  # vitest
 npm run typecheck
 npm run dev               # UI on http://localhost:5178 (drop a .cs1x on the page)
 npm run build             # static site in dist/ (relative paths: host it from any folder)
-npm run docs              # regenerate docs/guide/*.md from src/core/docs.ts
+npm run docs              # regenerate docs/guide/*.md and docs/guide/fr/*.md from src/core/docs.ts and docs.fr.ts
 npm run notices           # regenerate public/THIRD-PARTY-NOTICES.txt
 npm run slim-catalogue    # refresh public/cs2-catalogue.json from %LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json
 ```
 
 Dev server only:
-- `http://localhost:5178/?open=/samples/skibidi.cs1x` opens a file from `%LOCALAPPDATA%\cs1-to-cs2\samples\`.
+- `http://localhost:5178/?open=/samples/skibidi.cs1x` opens a file from `%LOCALAPPDATA%\cs1-to-cs2\samples\`, and `?open=/qa/cacao.cs1x` one from `…\qa\`.
 - `?synthetic=150` generates a 150 × 150 street grid with two districts, for performance checks. This one also works in the build.
 
 CLI (from the repo root):
@@ -57,7 +61,7 @@ node web/cli/cs1conv.ts inspect <file.cs1x> [--json]
 node web/cli/cs1conv.ts plan <file.cs1x> --crop <cx>,<cz>,<size> --out <dir> [--overrides map.json] [--install-rb] [--keep-other-rb]
 node web/cli/cs1conv.ts plan <file.cs1x> --auto-crop 3000 --out <dir> [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low]
      [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--no-zoning] [--no-traffic] [--no-transit] [--no-water] [--no-buildings] [--no-districts]
-     [--no-objects] [--no-surfaces] [--no-terrain] [--no-world]
+     [--no-objects] [--no-surfaces] [--no-terrain] [--no-world] [--lang en|fr]
 node web/cli/cs1conv.ts install-rb <package dir>
 ```
 
@@ -66,6 +70,7 @@ node web/cli/cs1conv.ts install-rb <package dir>
 - **`--overrides`** (road types) is a JSON object keyed by ground NetInfo name. Values are `{"mode":"vanilla","type":"RoadPrefab","name":"Large Road"}`, `{"mode":"rb"}`, `{"mode":"skip"}` or `{"mode":"auto"}`.
 - **`--asset-overrides`** (buildings) is a JSON object keyed by CS1 building type name, with a CS2 building prefab name or `"skip"` as value.
 - **`--fallback`** sets what the importer does for every building type that doesn't fit at its CS1 spot: `nearby` (free land within 400 m), `anywhere` (anywhere along the imported roads in the crop) or `skip`. Without it, lots over 400 CS2 cells get `anywhere` and the rest `nearby`. **`--fallback-by-type`** is a JSON object keyed by CS1 building type name with one of those values.
+- **`--lang fr`** writes the "What converts" lines and `README.txt` in French (report.json stays English).
 - **`--catalogue`:** the CS2 building catalogue. It defaults to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json` when that exists (`node buildings/run.mjs catalogue` writes it). Without a catalogue, buildings aren't matched and the plan has no `buildings` section.
 
 ## Package

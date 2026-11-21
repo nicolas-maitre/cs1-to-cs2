@@ -58,12 +58,17 @@ export function depthCheckpoints(depthMeta: DepthMeta, raw: Uint16Array, plan: {
 }
 
 /**
- * Extra sources so CS1 rivers and lakes above sea level fill in CS2: wet regions above the sea (8-connected) touching
- * the playable edge band get an inflow source at their deepest band cell; enclosed ones without a source get a lake
- * source at their deepest cell. heights: the CS1 terrain grid in metres (same lattice as the depth grid).
+ * Extra sources so CS1 rivers and lakes above sea level fill in CS2 (port of terrain/lib/water.mjs regionSources).
+ * Wet regions above the sea (8-connected), per region of at least `minCells`:
+ *   - touching the playable edge band: an inflow source at their deepest band cell;
+ *   - enclosed without a source: a lake source at their deepest cell;
+ *   - enclosed with a source but at least `boostCells` cells: one more at the deepest cell ("lake-boost");
+ *   - big regions: up to `maxSpread` more ("<kind>-spread", radius 40 m) by farthest-point sampling, one per
+ *     `spreadCells` cells, so long rivers fill along their whole length.
+ * heights: the CS1 terrain grid in metres (same lattice as the depth grid).
  */
-export function regionSources(depthMeta: DepthMeta, raw: Uint16Array, heights: Float32Array, plan: { transform: Transform }, seaLevel: number, existing: { x: number; z: number }[] = [], opts: { minCells?: number; edge?: number; margin?: number; minDepth?: number; seaTolerance?: number } = {}) {
-  const { minCells = 4, edge = 300, margin = 50, minDepth = 1, seaTolerance = 4 } = opts;
+export function regionSources(depthMeta: DepthMeta, raw: Uint16Array, heights: Float32Array, plan: { transform: Transform }, seaLevel: number, existing: { x: number; z: number }[] = [], opts: { minCells?: number; edge?: number; margin?: number; minDepth?: number; seaTolerance?: number; boostCells?: number; spreadCells?: number; maxSpread?: number } = {}) {
+  const { minCells = 4, edge = 300, margin = 50, minDepth = 1, seaTolerance = 4, boostCells = 500, spreadCells = 1500, maxSpread = 8 } = opts;
   const res = depthMeta.resolution, size = depthMeta.size, sp = size / (res - 1), sc = depthMeta.heightScale;
   const { dx, dz } = plan.transform;
   const half = CS2_TERRAIN.size / 2 - margin;
@@ -79,7 +84,7 @@ export function regionSources(depthMeta: DepthMeta, raw: Uint16Array, heights: F
     wet[i] = 1; depth[i] = d;
   }
   const seen = new Uint8Array(res * res);
-  const out: Cs2WaterSource[] = [], regions: { cells: number; kind: string }[] = [];
+  const out: Cs2WaterSource[] = [], regions: { cells: number; kind: string; sources?: number }[] = [];
   const stack: number[] = [];
   for (let s = 0; s < wet.length; s++) {
     if (!wet[s] || seen[s]) continue;
@@ -104,13 +109,32 @@ export function regionSources(depthMeta: DepthMeta, raw: Uint16Array, heights: F
     if (band.length) { kind = 'inflow'; pick = band; }
     else {
       const [minX, minZ, maxX, maxZ] = cells.reduce((m, i) => { const [x, z] = pos(i); return [Math.min(m[0], x), Math.min(m[1], z), Math.max(m[2], x), Math.max(m[3], z)]; }, [Infinity, Infinity, -Infinity, -Infinity]);
-      if (existing.some(e => e.x >= minX - sp && e.x <= maxX + sp && e.z >= minZ - sp && e.z <= maxZ + sp)) { regions.push({ cells: cells.length, kind: 'has-source' }); continue; }
-      kind = 'lake'; pick = cells;
+      if (existing.some(e => e.x >= minX - sp && e.x <= maxX + sp && e.z >= minZ - sp && e.z <= maxZ + sp)) {
+        // a big lake with one small CS1 source fills very slowly in CS2: add a source at its deepest cell too
+        if (cells.length < boostCells) { regions.push({ cells: cells.length, kind: 'has-source' }); continue; }
+        kind = 'lake-boost';
+      } else kind = 'lake';
+      pick = cells;
     }
     const best = pick.reduce((p, i) => (depth[i] > depth[p] ? i : p), pick[0]);
     const [x, z] = pos(best);
     out.push({ x: round2(x), z: round2(z), height: round2(depth[best]), radius: Math.round(radius), polluted: 0, cs1: { kind, cells: cells.length } });
-    regions.push({ cells: cells.length, kind });
+    // long regions (rivers, chains of lakes) fill from one point far too slowly: spread more sources over them
+    const extra = Math.min(maxSpread, Math.floor(cells.length / spreadCells));
+    if (extra > 0) {
+      const dmin = new Float64Array(cells.length).fill(Infinity);
+      const upd = (c: number) => { const [cx, cz] = pos(c); for (let k = 0; k < cells.length; k++) { const [px, pz] = pos(cells[k]); const d = (px - cx) ** 2 + (pz - cz) ** 2; if (d < dmin[k]) dmin[k] = d; } };
+      upd(best);
+      for (let n = 0; n < extra; n++) {
+        let far = 0;
+        for (let k = 1; k < cells.length; k++) if (dmin[k] > dmin[far]) far = k;
+        if (Math.sqrt(dmin[far]) < 400) break; // already within 400 m of a source everywhere
+        const c = cells[far]; upd(c);
+        const [sx, sz] = pos(c);
+        out.push({ x: round2(sx), z: round2(sz), height: round2(depth[c]), radius: 40, polluted: 0, cs1: { kind: kind + '-spread', cells: cells.length } });
+      }
+    }
+    regions.push({ cells: cells.length, kind, sources: 1 + Math.max(0, extra) });
   }
   return { sources: out, regions };
 }

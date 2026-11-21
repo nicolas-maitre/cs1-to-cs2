@@ -31,7 +31,7 @@ function usage(msg?: string): never {
   node web/cli/cs1conv.ts inspect <file.cs1x|dump.json> [--json]
   node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb] [--keep-other-rb]
        [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
-       [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>]
+       [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--lang en|fr]
        [--no-buildings] [--no-districts] [--no-objects] [--no-surfaces] [--no-terrain] [--no-world]
   node web/cli/cs1conv.ts install-rb <package dir> [--keep-other-rb]`);
   process.exit(2);
@@ -165,10 +165,12 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
   if (!['High', 'Medium', 'Mixed'].includes(resHigh)) usage('--residential-high must be High, Medium or Mixed');
   const office = typeof flags.office === 'string' ? flags.office : DEFAULT_ZONING.office;
   if (!['High', 'Low'].includes(office)) usage('--office must be High or Low');
+  const lang = typeof flags.lang === 'string' ? flags.lang : 'en';
+  if (lang !== 'en' && lang !== 'fr') usage('--lang must be en or fr');
   const fallback = typeof flags.fallback === 'string' ? flags.fallback : undefined;
   if (fallback && !['nearby', 'anywhere', 'skip'].includes(fallback)) usage('--fallback must be nearby, anywhere or skip');
   const pkg = buildPackage(city, {
-    crop, overrides,
+    crop, overrides, lang,
     zoning: { enabled: !flags['no-zoning'], theme, residentialHigh: resHigh as ZoningOptions['residentialHigh'], office: office as ZoningOptions['office'] },
     traffic: !flags['no-traffic'], transit: !flags['no-transit'], water: !flags['no-water'],
     buildings: !flags['no-buildings'], districts: !flags['no-districts'], objects: !flags['no-objects'], surfaces: !flags['no-surfaces'], catalogue: loadCatalogue(flags),

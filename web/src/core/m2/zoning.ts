@@ -47,10 +47,10 @@ export function cellCentre(px: number, pz: number, angle: number, c: number, r: 
 export function buildZoning(ctx: PlanContext, o: ZoningOptions): SectionResult<PlanZoning> {
   const z = ctx.city.zones;
   const items: PackageReportItem[] = [];
-  const label = 'Zoning';
-  if (!z) return { items, summary: { id: 'zoning', label, status: 'absent', summary: 'no zoning in this export', details: [] } };
-  if (!z.blocks.some(b => /[^-0]/.test(b.zones))) return { items, summary: { id: 'zoning', label, status: 'absent', summary: 'the city has no zoned areas', details: [] } };
-  if (!o.enabled) return { items, summary: { id: 'zoning', label, status: 'not-converted', summary: 'switched off in the options', details: [] } };
+  const t = ctx.t, label = t('cat.zoning');
+  if (!z) return { items, summary: { id: 'zoning', label, status: 'absent', summary: t('sum.zoning.absent'), details: [] } };
+  if (!z.blocks.some(b => /[^-0]/.test(b.zones))) return { items, summary: { id: 'zoning', label, status: 'none', summary: t('sum.zoning.none'), details: [] } };
+  if (!o.enabled) return { items, summary: { id: 'zoning', label, status: 'not-converted', summary: t('sum.off'), details: [] } };
   const cols = z.columns || 4;
   const prefabs: string[] = [];
   const prefabIdx = new Map<string, number>();
@@ -85,12 +85,12 @@ export function buildZoning(ctx: PlanContext, o: ZoningOptions): SectionResult<P
     section: { theme: o.theme, cellSize: z.cellSize || 8, prefabs, cells, stats: { cells: cells.length, blocks: blocksUsed, outsideCrop: outside, roadNotInPlan: noRoad } },
     items,
     summary: {
-      id: 'zoning', label, status: cells.length ? 'converted' : 'not-converted',
-      summary: cells.length ? `${plural(cells.length, 'zoned cell')} as ${o.theme} zones` : 'no zoned cells in the crop',
+      id: 'zoning', label, status: cells.length ? 'converted' : 'none',
+      summary: cells.length ? t('sum.zoning', { n: cells.length, theme: o.theme }) : t('sum.zoning.noneInCrop'),
       details: [
         ...breakdown,
-        'CS2 creates zone blocks along the imported roads; the importer paints the cell under each CS1 cell centre.',
-        'District specialisations are not exported, so specialised cells get the generic zone.',
+        t('sum.zoning.d1'),
+        t('sum.zoning.d2'),
       ],
     },
   };

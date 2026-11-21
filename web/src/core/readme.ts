@@ -1,66 +1,67 @@
-// README.txt written into every package zip / folder: what each file is and where it goes.
+// README.txt written into every package zip / folder: what each file is and where it goes, in the package's language.
 
+import { translator } from './i18n/index.ts';
 import type { BuiltPackage } from './plan.ts';
 import type { ConvCategory } from './summary.ts';
 
 export const RB_FOLDER = '%USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\ModsData\\RoadBuilder';
 
-const STATUS_LABEL: Record<string, string> = {
-  converted: 'converted', partial: 'converted with approximations', 'report-only': 'listed in report.json only', 'not-converted': 'not converted', absent: 'not in this export',
-};
-
 /** Plain-text README (CRLF line endings so Notepad shows it properly). */
 export function packageReadme(pkg: BuiltPackage, summary: ConvCategory[] = []): string {
+  const t = translator(pkg.lang ?? 'en');
   const p = pkg.plan;
   const rb = pkg.rbConfigs.length;
   const warn = pkg.report.items.filter(i => i.level === 'warning').length;
+  const file = (name: string, text: string) => `  ${name.padEnd(20)}${text}`;
   const lines = [
-    `CS1 -> CS2 import package for "${p.source.city}" (${p.source.saveName})`,
-    `Made by ${p.generator?.name ?? 'cs1conv'} ${p.generator?.version ?? ''} on ${p.generator?.generatedAt ?? ''}`.trim(),
+    t('readme.title', { city: p.source.city, save: p.source.saveName }),
+    t('readme.madeBy', { generator: `${p.generator?.name ?? 'cs1conv'} ${p.generator?.version ?? ''}`.trim(), date: p.generator?.generatedAt ?? '' }).trim(),
     '',
-    `Crop: ${p.crop.size} m square centred on CS1 (${p.crop.centerX}, ${p.crop.centerZ}); it lands on the centre of the CS2 map.`,
-    `Contents: ${p.stats.segments} road/track/path segments, ${p.stats.nodes} nodes, ${rb} Road Builder road types.`,
+    t('readme.crop', { size: String(p.crop.size), x: String(p.crop.centerX), z: String(p.crop.centerZ) }),
+    t('readme.contents', { segments: p.stats.segments, nodes: p.stats.nodes, rb }),
     '',
-    'FILES',
-    '  cs1conv-plan.json   The city plan, already in CS2 coordinates. The CS2 importer reads it.',
-    '  report.json         Everything that was dropped or approximated, item by item.',
-    `  roadbuilder\\        ${rb} generated Road Builder road types (*-cs1conv.json).`,
-    ...(p.terrain ? ['  terrain\\            The CS1 terrain for CS2: heightmap.r16 (playable area), worldmap.r16 (the land around it), terrain.json.'] : []),
-    '  README.txt          This file.',
+    t('readme.files'),
+    file('cs1conv-plan.json', t('readme.file.plan')),
+    file('report.json', t('readme.file.report')),
+    file('roadbuilder\\', t('readme.file.rb', { n: rb })),
+    ...(p.terrain ? [file('terrain\\', t('readme.file.terrain'))] : []),
+    file('README.txt', t('readme.file.readme')),
     '',
-    'HOW TO USE',
-    '  1. Close Cities: Skylines II (Road Builder only reads its roads when the game starts).',
-    '  2. Copy every file from the roadbuilder folder into:',
+    t('readme.how'),
+    `  1. ${t('readme.how0')}`,
+    `  2. ${t('readme.how1')}`,
+    `     ${t('readme.how2')}`,
     `       ${RB_FOLDER}`,
-    '     (paste that path into the Windows Explorer address bar, or Win+R). Create the folder if it does not exist.',
-    '     Files ending in -cs1conv.json with the same name are replaced; nothing else there is touched.',
-    '     PowerShell, from the folder holding this README:',
+    `     ${t('readme.how2b')}`,
+    `     ${t('readme.how2c')}`,
+    `     ${t('readme.how2d')}`,
     `       Copy-Item .\\roadbuilder\\*-cs1conv.json "$env:USERPROFILE\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\ModsData\\RoadBuilder\\" -Force`,
-    `  3. Start CS2 with these mods enabled: ${(p.requires?.length ? p.requires : ['RoadBuilder']).map(m => (m === 'RoadBuilder' ? 'Road Builder' : m)).join(', ')}.`,
-    '  4. Start a new city (a flat map works best), then run the CS2 importer on cs1conv-plan.json.',
-    '  5. Read report.json (or the web tool\'s Report tab) for what needs manual work.',
+    `  3. ${t('readme.how3', { mods: ['RoadBuilder', 'CS1 → CS2 Importer', ...(p.requires ?? []).filter(m => m !== 'RoadBuilder')].map(m => (m === 'RoadBuilder' ? 'Road Builder' : m)).join(', ') })}`,
+    `  4. ${t('readme.how4')}`,
+    `  5. ${t('readme.how5')}`,
     '',
   ];
   if (summary.length) {
-    lines.push('WHAT CONVERTS');
-    for (const c of summary) lines.push(`  ${c.label}: ${STATUS_LABEL[c.status] ?? c.status} - ${c.summary}`);
+    lines.push(t('readme.converts'));
+    for (const c of summary) lines.push(`  ${t('readme.line', { label: c.label, status: t(`readme.status.${c.status}` as 'readme.status.converted'), summary: c.summary })}`);
     lines.push('');
   }
-  lines.push(`REPORT: ${pkg.report.items.length} items, ${warn} warnings.`);
+  lines.push(t('readme.report', { n: pkg.report.items.length, w: warn }));
   for (const i of pkg.report.items.filter(i => i.level === 'warning').slice(0, 15)) lines.push(`  - ${i.message.length > 160 ? i.message.slice(0, 157) + '...' : i.message}`);
-  if (warn > 15) lines.push(`  ... and ${warn - 15} more in report.json`);
+  if (warn > 15) lines.push(`  ${t('readme.more', { n: warn - 15 })}`);
   lines.push('');
   return lines.join('\r\n');
 }
 
 /** Short README for the "Road Builder configs only" zip. */
 export function rbOnlyReadme(pkg: BuiltPackage): string {
+  const t = translator(pkg.lang ?? 'en');
   return [
-    `Road Builder road types for "${pkg.plan.source.city}" (${pkg.rbConfigs.length} files, *-cs1conv.json).`,
+    t('readme.rbOnly.title', { city: pkg.plan.source.city, n: pkg.rbConfigs.length }),
     '',
-    'With Cities: Skylines II closed, copy these files into:',
+    t('readme.rbOnly.copy'),
     `  ${RB_FOLDER}`,
-    'Road Builder loads them the next time the game starts. Files with the same name are replaced.',
+    t('readme.rbOnly.loads'),
     '',
   ].join('\r\n');
 }

@@ -5,9 +5,9 @@ import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
-/** Dev only: serve %LOCALAPPDATA%\cs1-to-cs2\samples at /samples/ so `?open=/samples/skibidi.cs1x` works. */
+/** Dev only: serve %LOCALAPPDATA%\cs1-to-cs2\samples and \qa at /samples/ and /qa/, so `?open=/samples/skibidi.cs1x` works. */
 function samples(): Plugin {
-  const dir = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2', 'samples');
+  const root = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2');
   return {
     name: 'cs1conv-samples',
     apply: 'serve',
@@ -25,7 +25,8 @@ function samples(): Plugin {
           res.end('ok');
         });
       });
-      server.middlewares.use('/samples', (req, res, next) => {
+      for (const sub of ['samples', 'qa']) server.middlewares.use(`/${sub}`, (req, res, next) => {
+        const dir = path.join(root, sub);
         const name = decodeURIComponent((req.url ?? '/').split('?')[0]).replace(/^\/+/, '');
         if (!name) {
           const list = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => /\.(cs1x|json)$/.test(f)) : [];
@@ -47,6 +48,8 @@ export default defineConfig({
   base: './',
   plugins: [react(), samples()],
   worker: { format: 'es' },
+  // the app is one page with its docs and messages in two languages (~500 kB, ~165 kB gzipped); no route to split
+  build: { chunkSizeWarningLimit: 700 },
   // the buildings worker's matcher lives in ../buildings and is imported by relative path
   server: { port: 5178, strictPort: true, fs: { allow: ['..'] } },
   test: { include: ['test/**/*.test.ts'] },

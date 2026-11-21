@@ -55,6 +55,7 @@ fieldset { border: 0; padding: 0; margin: 0; display: contents; }
   content: 'Drop the .cs1x to open it'; position: fixed; inset: 12px; border: 3px dashed var(--accent); border-radius: 16px;
   display: grid; place-items: center; font-size: 28px; background: #0e1318cc; z-index: 50; pointer-events: none;
 }
+select.lang { width: auto; min-height: 32px; }
 header { display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); min-height: 50px; }
 .brand b { font-size: 16px; margin-right: 8px; }
 .brand span { color: var(--muted); }
@@ -134,8 +135,8 @@ ul.plain li { margin: 4px 0; }
 .stat span { color: var(--muted); font-size: 12px; }
 .stat.wide { flex: 1; min-width: 200px; justify-content: center; }
 .downloads { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.tabs button { border-radius: 6px 6px 0 0; border-bottom: none; background: transparent; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.tabs button { border-radius: 6px 6px 0 0; border-bottom: none; background: transparent; padding: 6px 9px; white-space: nowrap; flex: none; }
 .tabs button.on { background: var(--panel2); border-color: var(--line); color: white; box-shadow: inset 0 -2px 0 var(--accent); }
 .panel { flex: 1; overflow: auto; min-height: 0; padding-right: 2px; }
 .panel-bar { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
@@ -172,6 +173,8 @@ table.mapping th:nth-child(2) { width: 21%; text-align: right; }
 table.mapping th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--panel); padding: 4px; }
 table.mapping td { border-top: 1px solid var(--line); padding: 5px 4px; vertical-align: top; overflow-wrap: anywhere; }
 table.mapping td.num { white-space: nowrap; text-align: right; }
+table.assets th:nth-child(1) { width: 34%; }
+table.assets th:nth-child(2) { width: 13%; }
 table.assets select { margin: 4px 0 2px; }
 table.assets .fallback { display: block; color: var(--muted); }
 table.assets .fallback select { margin: 2px 0; max-width: 100%; }

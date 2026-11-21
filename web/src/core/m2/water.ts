@@ -5,14 +5,15 @@
 
 import type { PackageReportItem, PlanWater } from '../types.ts';
 import { plural, r2, tally } from './context.ts';
+import { fmtNumber } from '../i18n/index.ts';
 import type { PlanContext, SectionResult } from './context.ts';
 
 export function buildWater(ctx: PlanContext, enabled = true): SectionResult<PlanWater> {
   const w = ctx.city.water;
   const items: PackageReportItem[] = [];
-  const label = 'Water';
-  if (!w) return { items, summary: { id: 'water', label, status: 'absent', summary: 'no water data in this export', details: [] } };
-  if (!enabled) return { items, summary: { id: 'water', label, status: 'not-converted', summary: 'switched off in the options', details: [] } };
+  const t = ctx.t, label = t('cat.water');
+  if (!w) return { items, summary: { id: 'water', label, status: 'absent', summary: t('sum.water.absent'), details: [] } };
+  if (!enabled) return { items, summary: { id: 'water', label, status: 'not-converted', summary: t('sum.off'), details: [] } };
 
   // Wet share of the crop and deepest point, from the depth grid.
   let wet = 0, total = 0, maxDepth = 0;
@@ -52,11 +53,14 @@ export function buildWater(ctx: PlanContext, enabled = true): SectionResult<Plan
     items,
     summary: {
       id: 'water', label, status: sea != null || sources.length ? 'converted' : 'not-converted',
-      summary: `sea level ${sea ?? '?'} m${sources.length ? `, ${plural(sources.length, 'natural source')}` : ''}${wetFraction != null ? `; ${(wetFraction * 100).toFixed(0)} % of the crop is water` : ''}`,
+      summary: [
+        t('sum.water.sea', { sea: sea == null ? '?' : fmtNumber(ctx.lang, Math.round(sea * 10) / 10, 1) }) + (sources.length ? `, ${t('sum.water.sources', { n: sources.length })}` : ''),
+        ...(wetFraction == null ? [] : [wetFraction < 0.005 ? t('sum.water.dry') : t('sum.water.wet', { pct: Math.round(wetFraction * 100) })]),
+      ].join(ctx.lang === 'fr' ? ' ; ' : '; '),
       details: [
-        'The terrain step sets the CS2 sea level from CS1 and places the natural water sources (rivers, lakes) at their CS1 positions and target heights.',
-        'CS2 then simulates the water itself, so rivers and lakes refill over the first in-game minutes.',
-        ...(facility ? [`${plural(facility, 'water-building source')} (pumps, drains) come with buildings later.`] : []),
+        t('sum.water.d1'),
+        t('sum.water.d2'),
+        ...(facility ? [t('sum.water.d3', { n: facility })] : []),
       ],
     },
   };

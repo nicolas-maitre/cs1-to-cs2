@@ -16,6 +16,9 @@ describe('documentation', () => {
     expect(read(guide, 'user-guide.md')).toBe(guideMarkdown());
     expect(read(guide, 'faq.md')).toBe(faqMarkdown());
     expect(read(guide, 'what-converts.md')).toBe(matrixMarkdown());
+    expect(read(guide, 'fr', 'user-guide.md')).toBe(guideMarkdown('fr'));
+    expect(read(guide, 'fr', 'faq.md')).toBe(faqMarkdown('fr'));
+    expect(read(guide, 'fr', 'what-converts.md')).toBe(matrixMarkdown('fr'));
   });
 
   it('has the content the app shows', () => {

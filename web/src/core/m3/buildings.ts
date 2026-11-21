@@ -127,17 +127,17 @@ export interface BuildingsResult extends SectionResult<PlanBuildings> { matches:
 
 export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): BuildingsResult {
   const items: PackageReportItem[] = [];
-  const label = 'Buildings and services';
+  const tr = ctx.t, label = tr('cat.buildings');
   const bs = ctx.city.buildings, assets = ctx.city.assets;
   const none = (status: 'absent' | 'not-converted', summary: string, details: string[] = []): BuildingsResult => ({ items, matches: [], summary: { id: 'buildings', label, status, summary, details } });
-  if (!bs || !assets) return none('absent', 'no buildings in this export (exporter 1.2 or later exports them)');
-  if (!o.enabled) return none('not-converted', 'switched off in the options');
+  if (!bs || !assets) return none('absent', tr('sum.buildings.absent'));
+  if (!o.enabled) return none('not-converted', tr('sum.off'));
   const inCropAll = bs.buildings.filter(b => ctx.inCrop(b.position[0], b.position[2]) && !b.parent);
   const growablesInCrop = inCropAll.filter(b => b.growable).length;
   if (!o.catalogue) {
-    return none('not-converted', `${plural(inCropAll.length - growablesInCrop, 'service building or park')} in the crop wait for the CS2 building catalogue`, [
-      'Matching CS1 buildings to CS2 needs the CS2 building catalogue. Load it in the Assets tab (cs2-catalogue.json).',
-      `${plural(growablesInCrop, 'growable building')} in the crop are left to CS2 zoning either way.`,
+    return none('not-converted', tr('sum.buildings.noCatalogue', { n: inCropAll.length - growablesInCrop }), [
+      tr('sum.buildings.noCatalogue.d1'),
+      tr('sum.buildings.noCatalogue.d2', { n: growablesInCrop }),
     ]);
   }
 
@@ -218,14 +218,14 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
     summary: {
       id: 'buildings', label,
       status: !out.length ? 'not-converted' : noEq || skipped.roadNotImported ? 'partial' : 'converted',
-      summary: `${plural(out.length, 'building')} placed as ${plural(prefabs.size, 'CS2 type')}; ${plural(skipped.growable, 'growable')} left to zoning`,
+      summary: tr('sum.buildings', { n: out.length, types: prefabs.size, growables: skipped.growable }),
       details: [
-        'Service buildings, stations, parks and landmarks get the closest CS2 building: same kind of service, then capacity and lot size. Check and change each type in the Assets tab.',
-        'Growable (zoned) buildings are not placed: CS2 grows its own on the converted zones.',
-        `A building that does not fit at its CS1 spot tries its alternatives, then free land along an imported road within 400 m${byFallback.anywhere ? `; ${plural(byFallback.anywhere, 'large building')} (harbours, airports, big parks) may go anywhere in the crop` : ''}. Change this per type in the Assets tab.`,
-        ...(noEq ? [`${plural(noEq, 'building')} have no CS2 equivalent (e.g. libraries).`] : []),
-        ...(skipped.roadNotImported ? [`${plural(skipped.roadNotImported, 'building')} stand on roads that are not in the plan.`] : []),
-        'Pillars, pipe junctions, poles and sub-buildings are rebuilt by CS2 itself.',
+        tr('sum.buildings.d1'),
+        tr('sum.buildings.d2'),
+        byFallback.anywhere ? tr('sum.buildings.d3anywhere', { n: byFallback.anywhere }) : tr('sum.buildings.d3'),
+        ...(noEq ? [tr('sum.buildings.d4', { n: noEq })] : []),
+        ...(skipped.roadNotImported ? [tr('sum.buildings.d5', { n: skipped.roadNotImported })] : []),
+        tr('sum.buildings.d6'),
       ],
     },
   };

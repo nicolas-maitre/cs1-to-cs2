@@ -19,17 +19,17 @@ const roadPlanOf = (ctx: PlanContext) => ({ crop: ctx.crop, transform: { dx: ctx
 
 export function buildObjects(ctx: PlanContext, o: { enabled: boolean; catalogue: Cs2Catalogue | null; theme?: string }): SectionResult<PlanObjects> {
   const items: PackageReportItem[] = [];
-  const label = 'Trees and rocks';
+  const tr = ctx.t, label = tr('cat.objects');
   const { trees, props, assets } = ctx.city;
-  const none = (status: 'absent' | 'not-converted', summary: string, details: string[] = []): SectionResult<PlanObjects> => ({ items, summary: { id: 'objects', label, status, summary, details } });
-  if (!trees && !props) return none('absent', 'no trees or props in this export');
+  const none = (status: 'absent' | 'not-converted' | 'none', summary: string, details: string[] = []): SectionResult<PlanObjects> => ({ items, summary: { id: 'objects', label, status, summary, details } });
+  if (!trees && !props) return none('absent', tr('sum.objects.absent'));
   const inCropCount = (rows: number[][] | undefined) => (rows ?? []).filter(r => ctx.inCrop(r[1], r[3])).length;
   const treesIn = inCropCount(trees?.trees), propsIn = inCropCount(props?.props);
-  if (!treesIn && !propsIn) return none('absent', 'no free-standing trees or props in the crop');
-  if (!o.enabled) return none('not-converted', 'switched off in the options');
-  if (!o.catalogue) return none('not-converted', `${plural(treesIn, 'tree')} in the crop wait for the CS2 catalogue`, ['Choosing a CS2 tree for each CS1 tree needs the CS2 catalogue (Assets tab).']);
+  if (!treesIn && !propsIn) return none('none', tr('sum.objects.none'));
+  if (!o.enabled) return none('not-converted', tr('sum.off'));
+  if (!o.catalogue) return none('not-converted', tr('sum.objects.noCatalogue', { n: treesIn }), [tr('sum.objects.noCatalogue.d1')]);
   if (!o.catalogue.prefabs.some(p => isCs2Vegetation(p as never))) {
-    return none('not-converted', 'the CS2 catalogue has no trees', ['This catalogue lists buildings only. The bundled one, or a full cs2-catalogue.json from buildings/run.mjs, has the CS2 trees and boulders.']);
+    return none('not-converted', tr('sum.objects.noTrees'), [tr('sum.objects.noTrees.d1')]);
   }
   const section = buildObjectsSection({ trees: trees ?? undefined, props: props ?? undefined, assets: assets ?? {} }, o.catalogue, roadPlanOf(ctx), { theme: o.theme }) as PlanObjects;
   const types = Object.entries(section.stats.byType).sort((a, b) => b[1].count - a[1].count);
@@ -45,12 +45,12 @@ export function buildObjects(ctx: PlanContext, o: { enabled: boolean; catalogue:
     section, items,
     summary: {
       id: 'objects', label, status: !section.stats.items ? 'not-converted' : skippedProps ? 'partial' : 'converted',
-      summary: section.stats.items ? `${plural(treesPlaced, 'tree')}${rocks ? ` and ${plural(rocks, 'rock')}` : ''} as CS2 ${rocks ? 'trees and boulders' : 'trees'}` : 'no tree or rock in the crop has a CS2 equivalent',
+      summary: section.stats.items ? (rocks ? tr('sum.objectsRocks', { trees: treesPlaced, rocks }) : tr('sum.objects', { trees: treesPlaced })) : tr('sum.objects.noneMatched'),
       details: [
-        'Each CS1 tree type gets the CS2 tree of the same species when CS2 has it, otherwise of the same kind (deciduous, conifer, palm, bush) and the closest height.',
-        'CS1 rocks become the CS2 boulder with the same number. Other free-standing props (benches, lamps, decorations) have no sensible CS2 equivalent.',
-        ...(skippedProps ? [`${plural(skippedProps, 'prop')} in the crop are not placed.`] : []),
-        'A tree standing on a CS2 road is moved just past the road edge; trees inside a building lot are left out.',
+        tr('sum.objects.d1'),
+        tr('sum.objects.d2'),
+        ...(skippedProps ? [tr('sum.objects.d3', { n: skippedProps })] : []),
+        tr('sum.objects.d4'),
       ],
     },
   };

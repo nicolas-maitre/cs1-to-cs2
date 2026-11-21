@@ -40,10 +40,10 @@ export const hexColor = (c?: number[]) => (c && c.length >= 3 ? '#' + c.slice(0,
 export function buildTransit(ctx: PlanContext, enabled = true): SectionResult<PlanTransit> {
   const t = ctx.city.transit;
   const items: PackageReportItem[] = [];
-  const label = 'Transit lines';
-  if (!t) return { items, summary: { id: 'transit', label, status: 'absent', summary: 'no transit lines in this export', details: [] } };
-  if (!t.lines.length) return { items, summary: { id: 'transit', label, status: 'absent', summary: 'the city has no transport lines', details: [] } };
-  if (!enabled) return { items, summary: { id: 'transit', label, status: 'not-converted', summary: 'switched off in the options', details: [] } };
+  const tr = ctx.t, label = tr('cat.transit');
+  if (!t) return { items, summary: { id: 'transit', label, status: 'absent', summary: tr('sum.transit.absent'), details: [] } };
+  if (!t.lines.length) return { items, summary: { id: 'transit', label, status: 'none', summary: tr('sum.transit.none'), details: [] } };
+  if (!enabled) return { items, summary: { id: 'transit', label, status: 'not-converted', summary: tr('sum.off'), details: [] } };
   const lines: PlanTransitLine[] = [];
   const noEquivalent = new Map<string, number>();
   let outside = 0, kerbside = 0, stations = 0, truncated = 0;
@@ -91,13 +91,13 @@ export function buildTransit(ctx: PlanContext, enabled = true): SectionResult<Pl
     summary: {
       id: 'transit', label,
       status: !lines.length ? 'not-converted' : skipped || truncated || stations ? 'partial' : 'converted',
-      summary: lines.length ? `${plural(kerbside, 'bus or tram line')} with stops${stations ? `, ${plural(stations, 'station line')} waiting for stations` : ''}` : 'no line has two stops in the crop',
+      summary: lines.length ? tr('sum.transit', { n: kerbside }) + (stations ? `, ${tr('sum.transit.stations', { n: stations })}` : '') : tr('sum.transit.noneInCrop'),
       details: [
-        'Line type, name, number and colour are kept; CS2 routes each line between its stops.',
-        'Bus and tram stops are placed on the imported roads, on the same side as in CS1.',
-        ...(stations ? ['Train, metro, ship and plane lines need their station buildings, which are not converted yet.'] : []),
-        ...(skipped ? [`${plural(skipped, 'line')} (monorail, cable car, helicopter, …) have no CS2 equivalent.`] : []),
-        ...(truncated ? [`${plural(truncated, 'line')} lose stops outside the crop.`] : []),
+        tr('sum.transit.d1'),
+        tr('sum.transit.d2'),
+        ...(stations ? [tr('sum.transit.d3')] : []),
+        ...(skipped ? [tr('sum.transit.d4', { n: skipped })] : []),
+        ...(truncated ? [tr('sum.transit.d5', { n: truncated })] : []),
       ],
     },
   };

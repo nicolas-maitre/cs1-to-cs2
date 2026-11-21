@@ -1,4 +1,6 @@
-import { APP_VERSION, PRIVACY } from '../core/docs.ts';
+import { APP_VERSION, docsFor } from '../core/docs.ts';
+import type { MessageKey } from '../core/i18n/index.ts';
+import { useI18n } from './i18n.tsx';
 import { MODS } from './links.ts';
 
 export interface LoadError { title: string; message: string; hint?: string }
@@ -10,26 +12,22 @@ interface Props {
   onHelp: (section: 'guide' | 'converts' | 'faq' | 'about') => void;
 }
 
-const STEPS: { title: string; text: string }[] = [
-  { title: 'Install the exporter', text: 'Subscribe to the CS1 → CS2 Exporter mod in Cities: Skylines and enable it in Content Manager.' },
-  { title: 'Export your city', text: 'Load the city, then Options → Mod Settings → CS1 → CS2 Exporter → Export city. It writes a .cs1x file.' },
-  { title: 'Open it here', text: 'Drop the .cs1x on this page. It is read in your browser; nothing is uploaded.' },
-  { title: 'Crop and map', text: 'Pick the part of the city that fits a CS2 map, check how each road type converts, and download the package.' },
-  { title: 'Install the package', text: 'Copy the Road Builder road types into CS2\'s RoadBuilder folder (the package README says where) before starting CS2.' },
-  { title: 'Import in CS2', text: 'Start a new city with Road Builder and the CS1 → CS2 Importer, then import the plan.' },
-];
+const STEPS = [1, 2, 3, 4, 5, 6] as const;
+const LIMITS: MessageKey[] = ['landing.limit1', 'landing.limit2', 'landing.limit3', 'landing.limit4'];
 
 export function Landing({ busy, error, onPick, onHelp }: Props) {
+  const { t, lang } = useI18n();
+  const privacy = docsFor(lang).PRIVACY;
   return (
     <div className="landing">
       <section className="hero">
-        <h1>Bring your Cities: Skylines city to Cities: Skylines II</h1>
-        <p className="lead">cs1conv reads an export of your CS1 city and turns it into an import package for CS2: the road network with its road types, bridges and tunnels, rail and metro, the terrain, zoning, traffic rules, transit lines, service buildings and districts, as far as CS2 can express them.</p>
+        <h1>{t('landing.title')}</h1>
+        <p className="lead">{t('landing.lead')}</p>
         <div className="drop" role="group" aria-labelledby="drop-title">
-          <h2 id="drop-title">Drop a <code>.cs1x</code> file here</h2>
-          <p className="muted">or</p>
-          <button className="primary big" onClick={onPick} disabled={!!busy}>Choose a .cs1x file…</button>
-          <p className="muted small">Everything runs in this browser tab. Your city never leaves your computer.</p>
+          <h2 id="drop-title">{t('landing.dropBefore')} <code>.cs1x</code> {t('landing.dropAfter')}</h2>
+          <p className="muted">{t('landing.or')}</p>
+          <button className="primary big" onClick={onPick} disabled={!!busy}>{t('landing.choose')}</button>
+          <p className="muted small">{t('landing.private')}</p>
           <div aria-live="polite" className="drop-status">
             {busy && <p className="busy-inline"><span className="spinner" aria-hidden="true" />{busy}</p>}
           </div>
@@ -43,40 +41,35 @@ export function Landing({ busy, error, onPick, onHelp }: Props) {
         </div>
       </section>
       <section aria-labelledby="steps-title">
-        <h2 id="steps-title">How it works <button className="link small" onClick={() => onHelp('guide')}>full guide</button></h2>
+        <h2 id="steps-title">{t('landing.how')} <button className="link small" onClick={() => onHelp('guide')}>{t('landing.fullGuide')}</button></h2>
         <ol className="steps">
-          {STEPS.map((s, i) => (
-            <li key={s.title}><span className="num" aria-hidden="true">{i + 1}</span><div><b>{s.title}</b><p>{s.text}</p></div></li>
+          {STEPS.map(i => (
+            <li key={i}><span className="num" aria-hidden="true">{i}</span><div><b>{t(`landing.step${i}.title`)}</b><p>{t(`landing.step${i}.text`)}</p></div></li>
           ))}
         </ol>
       </section>
       <section aria-labelledby="mods-title">
-        <h2 id="mods-title">Mods you need</h2>
+        <h2 id="mods-title">{t('landing.mods')}</h2>
         <ul className="mods">
           {MODS.map(m => (
             <li key={m.name}>
               <span className="tag">{m.game}</span>
               {m.url ? <a href={m.url} target="_blank" rel="noreferrer">{m.name}</a> : <b>{m.name}</b>}
-              {!m.url && <span className="tag soon">coming soon</span>}
-              {!m.required && <span className="tag">optional</span>}
-              <span className="muted"> – {m.why}</span>
+              {!m.url && <span className="tag soon">{t('landing.soon')}</span>}
+              {!m.required && <span className="tag">{t('landing.optional')}</span>}
+              <span className="muted"> – {t(m.why)}</span>
             </li>
           ))}
         </ul>
       </section>
       <section aria-labelledby="limits-title">
-        <h2 id="limits-title">Good to know</h2>
-        <ul className="plain">
-          <li>CS2 maps are smaller: you convert a square of up to 14.3 km, the CS2 playable area. Large 81-tile cities need a crop.</li>
-          <li>Road types are rebuilt with Road Builder, so roads keep their lanes, medians, bus lanes and trees. Some widths change slightly; the report lists each one.</li>
-          <li>Service buildings, parks and landmarks are matched to the closest CS2 building; zoned buildings are grown by CS2 itself. Props and trees are not converted yet.</li>
-          <li>Works with exports from cities using 81 Tiles, TM:PE, Node Controller, Intersection Marking Tool and Vanilla+ roads.</li>
-        </ul>
-        <p><button className="link" onClick={() => onHelp('converts')}>What converts, feature by feature</button> · <button className="link" onClick={() => onHelp('faq')}>FAQ and troubleshooting</button></p>
+        <h2 id="limits-title">{t('landing.limits')}</h2>
+        <ul className="plain">{LIMITS.map(k => <li key={k}>{t(k)}</li>)}</ul>
+        <p><button className="link" onClick={() => onHelp('converts')}>{t('landing.whatConverts')}</button> · <button className="link" onClick={() => onHelp('faq')}>{t('landing.faq')}</button></p>
       </section>
       <footer className="landing-foot">
-        <p><b>Privacy:</b> {PRIVACY[0]}</p>
-        <p className="muted small">cs1conv {APP_VERSION} · not affiliated with Colossal Order or Paradox Interactive · <button className="link" onClick={() => onHelp('about')}>About</button> · <a href="./THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">Third-party notices</a></p>
+        <p><b>{t('landing.privacy')}</b> {privacy[0]}</p>
+        <p className="muted small">cs1conv {APP_VERSION} · {t('landing.notAffiliated')} · <button className="link" onClick={() => onHelp('about')}>{t('landing.about')}</button> · <a href="./THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">{t('landing.notices')}</a></p>
       </footer>
     </div>
   );

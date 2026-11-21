@@ -81,9 +81,9 @@ export function traceOutlines(grid: Uint8Array, n: number, id: number, keep: (c:
 export function buildDistricts(ctx: PlanContext, enabled = true): SectionResult<PlanDistricts> {
   const d = ctx.city.districts;
   const items: PackageReportItem[] = [];
-  const label = 'Districts and policies';
-  if (!d) return { items, summary: { id: 'districts', label, status: 'absent', summary: 'no district data in this export', details: [] } };
-  if (!enabled) return { items, summary: { id: 'districts', label, status: 'not-converted', summary: 'switched off in the options', details: [] } };
+  const tr = ctx.t, label = tr('cat.districts');
+  if (!d) return { items, summary: { id: 'districts', label, status: 'absent', summary: tr('sum.districts.absent'), details: [] } };
+  if (!enabled) return { items, summary: { id: 'districts', label, status: 'not-converted', summary: tr('sum.off'), details: [] } };
   const g = d.grid, n = g.resolution, cs = g.cellSize, half = g.size / 2;
   const centreIn = (c: number, r: number) => ctx.inCrop(-half + (c + 0.5) * cs, -half + (r + 0.5) * cs);
   const city = mapPolicies(d.city?.policies ?? []);
@@ -120,12 +120,15 @@ export function buildDistricts(ctx: PlanContext, enabled = true): SectionResult<
     items,
     summary: {
       id: 'districts', label,
-      status: !result.items.length && !city.cs2.length ? (d.districts.length ? 'not-converted' : 'absent') : unconverted.size ? 'partial' : 'converted',
-      summary: result.items.length ? `${plural(result.items.length, 'district')} with names and outlines${result.items.some(i => i.policies.length) ? ', with policies' : ''}` : d.districts.length ? 'no district in the crop' : 'the city has no districts',
+      status: !result.items.length && !city.cs2.length ? 'none' : unconverted.size ? 'partial' : 'converted',
+      summary: [
+        result.items.length ? tr(result.items.some(i => i.policies.length) ? 'sum.districts.withPolicies' : 'sum.districts', { n: result.items.length }) : d.districts.length ? tr('sum.districts.noneInCrop') : tr('sum.districts.none'),
+        ...(city.cs2.length ? [tr('sum.districts.city', { policies: city.cs2.join(', ') })] : []),
+      ].join(ctx.lang === 'fr' ? ' ; ' : '; '),
       details: [
-        'Districts keep their name and outline; CS2 policies with a direct equivalent are set (heavy traffic ban, combustion engine ban, recycling, cycling, small business).',
-        'Zone specialisations (leisure, tourism, organic, IT, self-sufficient, specialised industry) have no CS2 policy: those zones stay generic.',
-        'Park, industry, campus and airport areas have no CS2 equivalent.',
+        tr('sum.districts.d1'),
+        tr('sum.districts.d2'),
+        tr('sum.districts.d3'),
       ],
     },
   };

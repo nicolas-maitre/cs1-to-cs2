@@ -3,6 +3,7 @@ import { CS1_MAP_SIZE, CS2_MAX_CROP, MIN_CROP } from '../core/crop.ts';
 import type { Crop } from '../core/types.ts';
 import { CATEGORY_STYLE, SKIPPED_CATS, hitSegment } from './scene.ts';
 import type { Scene, SegInfo } from './scene.ts';
+import { useI18n } from './i18n.tsx';
 
 interface Props {
   scene: Scene;
@@ -44,8 +45,9 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const cropRef = useRef(crop);
   cropRef.current = crop;
-  const props = useRef({ scene, showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts });
-  props.current = { scene, showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts };
+  const { t, n, lang } = useI18n();
+  const props = useRef({ scene, showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts, t, n });
+  props.current = { scene, showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts, t, n };
   const [cursor, setCursor] = useState('grab');
   const [hover, setHover] = useState<{ s: SegInfo; x: number; y: number } | null>(null);
   const [focused, setFocused] = useState(false);
@@ -236,7 +238,8 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
     const hs = handleSize();
     for (const [x, y] of [[tl.x, tl.y], [br.x, tl.y], [tl.x, br.y], [br.x, br.y]]) ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
     ctx.font = '12px system-ui, sans-serif';
-    const label = `${(c.size / 1000).toFixed(2)} km  ·  centre ${c.centerX}, ${c.centerZ}${c.size >= CS2_MAX_CROP ? '  ·  CS2 max' : ''}`;
+    const tr = props.current.t, fmt = props.current.n;
+    const label = tr('map.cropLabel', { km: fmt(c.size / 1000, 2), x: String(c.centerX), z: String(c.centerZ) }) + (c.size >= CS2_MAX_CROP ? `  ·  ${tr('map.cs2max')}` : '');
     const tw = ctx.measureText(label).width;
     const ly = Math.max(22, tl.y);
     ctx.fillStyle = '#0b1016cc';
@@ -250,10 +253,12 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
     ctx.fillRect(12, h - 30, bar + 70, 20);
     ctx.fillStyle = '#e9ecef';
     ctx.fillRect(18, h - 18, bar, 3);
-    ctx.fillText(meters >= 1000 ? `${meters / 1000} km` : `${meters} m`, 24 + bar, h - 15);
+    ctx.fillText(meters >= 1000 ? `${fmt(meters / 1000, 1)} km` : `${meters} m`, 24 + bar, h - 15);
   };
 
   const setView = (v: View) => { view.current = v; schedule({ base: true, over: true }); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { schedule({ over: true }); }, [lang]);
   const fit = (minX: number, maxX: number, minZ: number, maxZ: number) => {
     const { w, h } = size.current;
     setView({ x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, scale: Math.min(w / (maxX - minX || 1), h / (maxZ - minZ || 1)) * 0.92 });
@@ -418,15 +423,15 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
       <canvas ref={base} className="map-base" aria-hidden="true" />
       <canvas ref={over} className="map-over" style={{ cursor }}
         tabIndex={0} role="application" aria-roledescription="map"
-        aria-label={`City map with the crop square, ${(crop.size / 1000).toFixed(2)} km centred on ${crop.centerX}, ${crop.centerZ}.`}
+        aria-label={t('map.aria', { km: n(crop.size / 1000, 2), x: String(crop.centerX), z: String(crop.centerZ) })}
         aria-describedby="map-keys"
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onKeyDown={onKey}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={() => setHover(null)} onWheel={onWheel}
         onContextMenu={e => e.preventDefault()} />
-      <p id="map-keys" className="sr-only">Arrow keys move the crop square, Shift for 500 m steps. Plus and minus resize it. Control plus arrows pan the map, square brackets zoom, F shows the whole city, C zooms to the crop.</p>
+      <p id="map-keys" className="sr-only">{t('map.keys')}</p>
       <div className="map-tools">
-        <button onClick={fitCity} title="Show the whole network (F)">Fit city</button>
-        <button onClick={fitCrop} title="Zoom to the crop (C)">Zoom to crop</button>
+        <button onClick={fitCity} title={t('map.fitCityTitle')}>{t('map.fitCity')}</button>
+        <button onClick={fitCrop} title={t('map.zoomCropTitle')}>{t('map.zoomCrop')}</button>
       </div>
       <Legend />
       {hover && (
@@ -439,12 +444,13 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
 });
 
 function Legend() {
+  const { t } = useI18n();
   const cats = ['road', 'highway', 'train', 'metro', 'pedestrian'] as const;
   return (
-    <div className="legend" aria-label="Map legend">
-      {cats.map(c => <span key={c}><i style={{ background: CATEGORY_STYLE[c].color }} />{CATEGORY_STYLE[c].label}</span>)}
-      <span><i style={{ background: 'rgba(136,0,0,0.9)' }} />IMT fill</span>
-      <span><i style={{ background: '#ffd43b' }} />Crosses crop edge (left out)</span>
+    <div className="legend" aria-label={t('map.legend')}>
+      {cats.map(c => <span key={c}><i style={{ background: CATEGORY_STYLE[c].color }} />{t(`net.${c}`)}</span>)}
+      <span><i style={{ background: 'rgba(136,0,0,0.9)' }} />{t('map.imtFill')}</span>
+      <span><i style={{ background: '#ffd43b' }} />{t('map.crossing')}</span>
     </div>
   );
 }

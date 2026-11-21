@@ -24,16 +24,17 @@ export function cropTransform(c: Crop) {
 }
 
 /** Problems with a crop: errors make the package invalid, warnings are reported. */
-export function validateCrop(c: Crop, mapSize = CS1_MAP_SIZE): { errors: string[]; warnings: string[] } {
+export function validateCrop(c: Crop, mapSize = CS1_MAP_SIZE): { errors: string[]; warnings: string[]; beyondMap?: number } {
   const errors: string[] = [], warnings: string[] = [];
+  let beyondMap: number | undefined;
   if (![c.centerX, c.centerZ, c.size].every(Number.isFinite)) errors.push('crop values must be numbers');
   else {
     if (c.size < MIN_CROP) errors.push(`crop size ${c.size} m is below the minimum ${MIN_CROP} m`);
     if (c.size > CS2_MAX_CROP) errors.push(`crop size ${c.size} m exceeds the CS2 playable area (${CS2_MAX_CROP} m)`);
     const b = cropBounds(c), h = mapSize / 2;
-    if (b.minX < -h || b.maxX > h || b.minZ < -h || b.maxZ > h) warnings.push(`crop extends beyond the CS1 map (±${h} m); that part is empty`);
+    if (b.minX < -h || b.maxX > h || b.minZ < -h || b.maxZ > h) { warnings.push(`crop extends beyond the CS1 map (±${h} m); that part is empty`); beyondMap = h; }
   }
-  return { errors, warnings };
+  return { errors, warnings, ...(beyondMap !== undefined ? { beyondMap } : {}) };
 }
 
 /** Clamp a crop to sane limits (used by the UI while dragging). */

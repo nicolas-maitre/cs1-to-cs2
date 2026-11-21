@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
+import { translator } from '../src/core/i18n/index.ts';
 import { ReadError, readCityFile, readCs1x } from '../src/core/cs1x.ts';
 import { inboundLanes, planLaneRef } from '../src/core/m2/context.ts';
 import type { PlanContext } from '../src/core/m2/context.ts';
@@ -47,7 +48,7 @@ function ctxOf(c: Cs1City): PlanContext {
   return {
     city: c, crop: CROP, dx: 0, dz: 0, infos: new Map(c.netInfos.map(i => [i.name, i])), nodes: new Map(c.nodes.map(n => [n.id, n])),
     segments: new Map(c.segments.map(s => [s.id, s])), planSegments: new Set(pkg.plan.segments.map(s => s.id)), planNodes: new Set(pkg.plan.nodes.map(n => n.id)),
-    reversed: new Set(pkg.plan.segments.filter(s => s.reversed).map(s => s.id)), inCrop: (x, z) => Math.abs(x) <= 500 && Math.abs(z) <= 500,
+    reversed: new Set(pkg.plan.segments.filter(s => s.reversed).map(s => s.id)), inCrop: (x, z) => Math.abs(x) <= 500 && Math.abs(z) <= 500, t: translator('en'), lang: 'en',
   };
 }
 
@@ -262,7 +263,7 @@ describe('package with M2 sections', () => {
     expect(pkg.plan.traffic!.segmentEnds).toEqual([{ segment: 1, node: 1, priority: 'yield' }]);
     expect(pkg.summary.map(s => s.id)).toEqual(['roads', 'tracks', 'imt', 'skipped', 'terrain', 'zoning', 'water', 'transit', 'traffic', 'nodecontroller', 'buildings', 'districts', 'objects']);
     const readme = packageFiles(pkg).find(f => f.path === 'README.txt')!.text;
-    expect(readme).toMatch(/Road Builder, Traffic/);
+    expect(readme).toMatch(/Road Builder, CS1 → CS2 Importer, Traffic/);
     expect(readme).toMatch(/ModsData\\RoadBuilder/);
     expect(readme).toMatch(/Zoning: converted/);
     expect(readme).toContain('\r\n');
@@ -335,7 +336,7 @@ describe('empty sections', () => {
   it('says "the city has no …" instead of "not converted" when a section is present but empty', () => {
     const c = cross({ transit: { lines: [] }, zones: { cellSize: 8, columns: 4, zoneCodes: { 0: 'Unzoned' }, blocks: [{ id: 1, position: [0, 0, 0], angle: 0, rows: 1, segment: 1, zones: '00--' }] } });
     const ctx = ctxOf(c);
-    expect(buildTransit(ctx).summary).toMatchObject({ status: 'absent', summary: 'the city has no transport lines' });
-    expect(buildZoning(ctx, DEFAULT_ZONING).summary).toMatchObject({ status: 'absent', summary: 'the city has no zoned areas' });
+    expect(buildTransit(ctx).summary).toMatchObject({ status: 'none', summary: 'the city has no transport lines' });
+    expect(buildZoning(ctx, DEFAULT_ZONING).summary).toMatchObject({ status: 'none', summary: 'the city has no zoned areas' });
   });
 });

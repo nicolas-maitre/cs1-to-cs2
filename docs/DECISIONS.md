@@ -186,3 +186,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 67. **Bridge and mod call `AllowUsage()` on every `SafeCommandBufferSystem` before running step or exec code** (Claude). This fixes "EntityCommandBuffer not allowed" after `save.load` (decision 54), verified in game.
 68. **Traffic mod lane connections (237) and lane arrows (211) are not applied yet** (Claude). The mod's data model needs lane-handle entities; they're reported for now.
 69. **The e2e has plug-in steps** (`tools/e2e/steps/*.mjs`, each run after a named phase) and a `--no-*` switch for every M2 step (Claude).
+70. **Web 0.5.0: English + French** (Claude), picked from the browser language with a switch. A test fails if any UI string lacks a translation. The French guide is in `docs/guide/fr/`.
+71. **The user guide quotes the importer mod's exact option labels, and a test checks them against `cs2-importer/mod/LocaleEN.cs`** (Claude), so a renamed option fails the build instead of silently making the guide wrong.
+72. **Default transit depots** (Claude). When the CS1 crop has a line but no depot of its type, the package adds a default one (e.g. SubwayYard01) and reports it. Rail depots need their track connected by hand.
+73. **Shared pure libraries are committed together with the web tool when the web tool depends on their new behaviour** (`terrain/lib/water.mjs`, `buildings/lib/plan.mjs`), so CI never sees one without the other (Claude, coordination rule).

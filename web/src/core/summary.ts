@@ -4,8 +4,10 @@
 import type { BuiltPackage } from './plan.ts';
 import { terrainSummary } from './plan.ts';
 import type { Cs1City } from './types.ts';
+import { fmtNumber, listOf, translator } from './i18n/index.ts';
 
-export type ConvStatus = 'converted' | 'partial' | 'report-only' | 'not-converted' | 'absent';
+/** absent = the export has no such section; none = it has, but there is nothing of that kind in the city or the crop. */
+export type ConvStatus = 'converted' | 'partial' | 'report-only' | 'not-converted' | 'none' | 'absent';
 
 export interface ConvCategory {
   id: string;
@@ -53,65 +55,66 @@ export function sectionCheck(city: Cs1City): { sections: SectionCheck[]; failed:
   return { sections, failed, warnings };
 }
 
-const plural = (n: number, w: string) => `${n.toLocaleString('en')} ${w}${n === 1 ? '' : 's'}`;
 
-/** Per-category conversion summary for a built package. M2 categories extend this through `extra`. */
+/** Per-category conversion summary for a built package, in the package's language. M2/M3 categories come in `extraSummary`. */
 export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategory[] {
+  const lang = pkg.lang ?? 'en';
+  const t = translator(lang);
   const out: ConvCategory[] = [];
   const st = pkg.plan.stats;
   const by = st.byPrefabType;
   const items = pkg.report.items;
-  const count = (kind: string) => items.filter(i => i.kind === kind).reduce((t, i) => t + (i.count ?? 1), 0);
+  const count = (kind: string) => items.filter(i => i.kind === kind).reduce((a, i) => a + (i.count ?? 1), 0);
   const roads = by.RoadBuilderPrefab ?? 0, vanillaRoads = by.RoadPrefab ?? 0, tracks = by.TrackPrefab ?? 0, paths = by.PathwayPrefab ?? 0;
   const widthLoss = items.filter(i => i.kind === 'width-loss').length;
   out.push({
-    id: 'roads', label: 'Roads', status: roads + vanillaRoads ? (widthLoss ? 'partial' : 'converted') : 'not-converted',
-    summary: `${plural(roads + vanillaRoads, 'segment')} as ${plural(st.rbConfigs, 'generated Road Builder road')}${vanillaRoads ? ` and ${vanillaRoads} vanilla` : ''}`,
-    details: [
-      'Lane layout, medians, parking, bus and tram lanes, trees and speed are rebuilt with Road Builder.',
-      'Elevated roads, bridges, slopes and tunnels keep their height; Road Builder makes those forms itself.',
-      ...(widthLoss ? [`${plural(widthLoss, 'road type')} come out narrower or wider than in CS1 (Road Builder sidewalks max 7 m, fixed lane widths).`] : []),
-      'Painted bike lanes inside the carriageway become sidewalk bike lanes at the edge only.',
-    ],
+    id: 'roads', label: t('cat.roads'), status: roads + vanillaRoads ? (widthLoss ? 'partial' : 'converted') : 'not-converted',
+    summary: vanillaRoads
+      ? t('sum.roadsVanilla', { segments: roads + vanillaRoads, rb: st.rbConfigs, vanilla: vanillaRoads })
+      : t('sum.roads', { segments: roads, rb: st.rbConfigs }),
+    details: [t('sum.roads.d1'), t('sum.roads.d2'), ...(widthLoss ? [t('sum.roads.d3', { n: widthLoss })] : []), t('sum.roads.d4')],
   });
   out.push({
-    id: 'tracks', label: 'Rail, metro and paths', status: tracks + paths ? 'converted' : 'absent',
-    summary: `${plural(tracks, 'track segment')}, ${plural(paths, 'path segment')} as vanilla CS2 networks`,
-    details: ['Train, metro and tram tracks map to the matching CS2 double, two-way or one-way track.', 'Pedestrian paths become CS2 pavement paths; bike paths become CS2 bike paths.', 'Monorail has no CS2 equivalent and is skipped.'],
+    id: 'tracks', label: t('cat.tracks'), status: tracks + paths ? 'converted' : 'none',
+    summary: tracks + paths
+      ? t('sum.tracks', { list: listOf(lang, [tracks > 0 && t('sum.tracks.tracks', { n: tracks }), paths > 0 && t('sum.tracks.paths', { n: paths })]) })
+      : t('sum.tracks.none'),
+    details: [t('sum.tracks.d1'), t('sum.tracks.d2'), t('sum.tracks.d3')],
   });
+  const imtNone = city.source === 'cs1x' && ['ok', 'partial'].includes(city.manifest.sections?.imt ?? '');
   const nodeFills = count('imt-node-fill'), partial = count('imt-partial-fill'), paint = count('imt-paint'), ov = count('imt-override');
   const surf = pkg.plan.surfaces?.stats.items ?? 0;
+  const reported = nodeFills + partial + paint;
   out.push({
-    id: 'imt', label: 'IMT markings', status: city.imtFillers.length ? (ov || surf ? 'partial' : 'report-only') : 'absent',
-    summary: city.imtFillers.length ? `${plural(ov, 'segment')} get bus lanes or medians from IMT fills; ${surf ? `${plural(surf, 'junction fill')} become CS2 surfaces; ` : ''}${plural(nodeFills + partial + paint, 'fill')} are reported only` : 'no IMT data',
-    details: [
-      'A red fill over a whole lane becomes a bus lane; a pavement or grass fill over a whole lane becomes a median.',
-      'Pavement, grass and gravel fills at junctions become CS2 surfaces (pavement, grass, sand).',
-      'Painted junction fills, partial fills and grey paint have no CS2 equivalent and are listed in the report.',
-    ],
+    id: 'imt', label: t('cat.imt'), status: city.imtFillers.length ? (ov || surf ? 'partial' : reported ? 'report-only' : 'none') : imtNone ? 'none' : 'absent',
+    summary: city.imtFillers.length
+      ? (ov + surf + reported ? listOf(lang, [ov > 0 && t('sum.imt.lanes', { n: ov }), surf > 0 && t('sum.imt.surfaces', { n: surf }), reported > 0 && t('sum.imt.reported', { n: reported })]) : t('sum.imt.noneInCrop'))
+      : imtNone ? t('sum.imt.noneInCity') : t('sum.imt.absent'),
+    details: city.imtFillers.length ? [t('sum.imt.d1'), t('sum.imt.d2'), t('sum.imt.d3')] : [],
   });
-  const skippedBuilding = items.filter(i => i.kind === 'not-placeable' && /building/i.test(i.message)).reduce((t, i) => t + (i.count ?? 0), 0);
-  const skippedOther = items.filter(i => i.kind === 'not-placeable' && !/building/i.test(i.message)).reduce((t, i) => t + (i.count ?? 0), 0);
+  const skippedBuilding = items.filter(i => i.kind === 'not-placeable' && /building/i.test(i.message)).reduce((a, i) => a + (i.count ?? 0), 0);
+  const skippedOther = items.filter(i => i.kind === 'not-placeable' && !/building/i.test(i.message)).reduce((a, i) => a + (i.count ?? 0), 0);
   out.push({
-    id: 'skipped', label: 'Pipes, power lines, building networks', status: skippedBuilding + skippedOther ? 'not-converted' : 'absent',
-    summary: `${plural(skippedOther, 'utility or transport-line segment')} and ${plural(skippedBuilding, 'building sub-network segment')} are not placed`,
-    details: ['CS2 lays water and electricity along roads automatically.', 'Station tracks, park paths and other networks inside buildings come with buildings in a later version.'],
+    id: 'skipped', label: t('cat.skipped'), status: skippedBuilding + skippedOther ? 'not-converted' : 'none',
+    summary: skippedBuilding + skippedOther
+      ? t('sum.skipped', { list: listOf(lang, [skippedOther > 0 && t('sum.skipped.other', { n: skippedOther }), skippedBuilding > 0 && t('sum.skipped.building', { n: skippedBuilding })]), n: skippedBuilding + skippedOther })
+      : t('sum.skipped.none'),
+    details: [t('sum.skipped.d1'), t('sum.skipped.d2')],
   });
+  const apply = pkg.plan.water?.apply;
   out.push({
-    id: 'terrain', label: 'Terrain', status: city.terrain ? 'converted' : 'absent',
-    summary: city.terrain ? terrainSummary(pkg.plan) : 'no terrain in this file: roads follow the CS2 map\'s ground',
+    id: 'terrain', label: t('cat.terrain'), status: city.terrain ? 'converted' : 'absent',
+    summary: city.terrain ? terrainSummary(pkg.plan, lang) : t('sum.terrain.absent'),
     details: city.terrain ? [
-      'The crop of the CS1 heightmap (and the land around it, for the world map) replaces the CS2 map\'s terrain, at the same heights, so roads sit on the original ground.',
-      pkg.plan.water?.apply ? `The sea level is set to CS1's ${pkg.plan.water.apply.seaLevel?.toFixed(1)} m and ${pkg.plan.water.apply.sources.length} water source(s) refill rivers and lakes.` : 'Without water data the map is made dry (sea level below the lowest ground).',
-      ...(pkg.plan.outsideConnections ? [`${pkg.plan.outsideConnections.counts.connections} outside connection(s) where highways and railways leave the square.`] : []),
+      t('sum.terrain.d1'),
+      apply?.seaLevel != null ? t('sum.terrain.d2water', { sea: fmtNumber(lang, Math.round(apply.seaLevel * 10) / 10, 1), n: apply.sources.length }) : t('sum.terrain.d2dry'),
+      ...(pkg.plan.outsideConnections ? [t('sum.terrain.d3', { n: pkg.plan.outsideConnections.counts.connections })] : []),
     ] : [],
   });
   out.push(...(pkg.extraSummary ?? []));
   const bst = city.manifest.sections?.buildings;
   if (bst && bst !== 'absent' && !out.some(c => c.id === 'buildings')) out.push({
-    id: 'buildings', label: 'Buildings, parks, props', status: 'not-converted',
-    summary: 'in the export, not converted yet: CS2 grows its own buildings on the converted zones',
-    details: ['Service buildings, stations, parks and unique buildings need an asset mapping, planned for a later version.'],
+    id: 'buildings', label: t('sum.legacyBuildings'), status: 'not-converted', summary: t('sum.legacyBuildings.text'), details: [t('sum.legacyBuildings.d1')],
   });
   // A section whose export failed is not "absent": say so.
   const secStatus = city.manifest.sections ?? {};
@@ -120,7 +123,7 @@ export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategor
     const sec = sectionOf[c.id];
     if (sec && secStatus[sec] === 'failed' && c.status === 'absent') {
       c.status = 'not-converted';
-      c.summary = 'the export of this section failed: export the city again';
+      c.summary = t('sum.failed');
     }
   }
   return out;

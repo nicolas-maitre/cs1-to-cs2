@@ -328,3 +328,44 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
 57. **UI:** a second select per placed type in the Assets tab, "If it doesn't fit at its spot: Auto (…) / look nearby (≤ 400 m) / anywhere in the crop / don't place it". Choices are saved with the other preferences, and "Reset choices" clears them too. **CLI:** `--fallback nearby|anywhere|skip` for all types, `--fallback-by-type <map.json>` per type. Unknown values fall back to the default.
 
 58. **Trees:** the objects op now moves a tree off a CS2 road (its `roadsideMove`) instead of dropping it. That's an importer option, so the plan doesn't change; only the "What converts" text says so.
+
+## Release polish: real-city pass, French, in-game guide (0.5.0)
+
+59. **Real-city UI pass** (Skibidi, Rennmont, Cacao, Westfield; desktop 1440 × 900 and phone 375 × 812). Fixed:
+    - **Slow open on big cities:** Rennmont took about 8 s from page load to its first plan, 6 s of it in drawing the 6,043 zone blocks into one Path2D. Chrome's Path2D gets quadratically slower as one path grows (40,000 squares: 4.7 s in one path, 0.2 s in 2,000-square paths). Zones and building footprints are now split into paths of at most 2,000 shapes. Rennmont: 2.2 s to the plan in the production build.
+    - **"Not in this file" for things the file has but the city doesn't** (no transit lines, no districts, no IMT fills, no trees in the crop): a new status, "Nothing to convert".
+    - **Wording:** parts with a count of 0 are left out ("0 segments get bus lanes…"). The water and terrain lines give the same sea level (0.1 m). A flat crop reads "flat ground at 60 m". Districts say "city-wide: …" when only city policies convert.
+    - **Report tab:** CS1 references read "segment 394 · road type Highway" instead of raw JSON, and the filter chips have readable names.
+    - **Layout:** the tabs stay on one row (they scroll sideways when the panel is narrower than the labels). The Assets table gives its last column more room, so the two selects are readable.
+
+60. **i18n without a library.** `src/core/i18n/` has the English and French messages and an ICU-like formatter (variables, plural with `one` / `other` / `=n`, numbers by locale). It is about 100 lines with no dependency. The core needs it too: the "What converts" summaries and `README.txt` are built in the Web Worker and by the CLI. The language comes from `navigator.languages` (French if the first of en/fr listed is French, else English), a header menu switches it, and the choice is kept in localStorage. `document.lang` and the title follow.
+
+61. **What is translated:** every UI string; the "What converts" summaries and details; the package `README.txt`; the user guide, FAQ, conversion matrix and privacy text (`docs.fr.ts`, generated to `docs/guide/fr/`); the reader's error messages (`ReadError` carries i18n keys).
+    - **What stays English:** `report.json` and its messages in the Report tab, a technical log the importer and support read. A note says so in French. Also in English: the names of CS2 prefabs, CS2 policies and the importer's option labels, which the guide quotes as the game shows them.
+    - **`--lang fr`** in the CLI. French tab names are shorter ("Aperçu", "Types RB") so the tabs fit.
+
+62. **Translation tests** (`test/i18n.test.ts`):
+    - French has every key, with the same variables, and every message parses.
+    - Every key the code uses exists, as do the keys built at run time (statuses, report kinds, sections).
+    - No literal English text is left in the JSX.
+    - The French docs mirror the English ones: same steps and paragraphs, same matrix statuses, and the same importer labels, taken from `cs2-importer/mod/LocaleEN.cs`.
+
+63. **Guide rewritten around the importer's real options**, read from `cs2-importer/mod/LocaleEN.cs`:
+    - Unzip the package under `%LOCALAPPDATA%\cs1-to-cs2\`, so it shows in "Packages on this PC".
+    - **Install Road Builder configs**, then restart.
+    - New city → **Check** → **Prepare map** → the steps under **Import into this city** → **Import into this city**.
+
+    "Prepare map" comes from the importer's own check message; worker-3 is finishing it and was asked to confirm the labels. The matrix now says what the importer builds today (zoning, junction settings, priority signs, buildings, trees, districts, surfaces, transit). It says "in progress" for terrain/water (Prepare map) and for lane arrows and lane connections. The README.txt and the Overview install steps follow the same flow.
+
+64. **Kept in step with the other workers' in-flight changes:**
+    - `regionSources` gains `lake-boost` and `<kind>-spread` sources (terrain worker), ported so the terrain test stays byte-for-byte.
+    - The buildings worker's `addDefaultDepots` is called on the plan's `buildings` after transit, so lines get a depot. Rail yards are reported as needing their track connected. The Skibidi parity test now compares items and `defaultDepots` with theirs.
+
+65. **Version 0.5.0.** The build-size warning limit is raised to 700 kB. The page carries its docs and messages in two languages: 504 kB, 165 kB gzipped. There is no second route to split off.
+
+66. **Guide corrected with worker-3's facts** (supersedes the "Prepare map" part of 63):
+    - The importer doesn't apply terrain, water or outside connections yet. The guide says the roads follow the map's own ground, and that the package's `terrain` folder is ready for later. There is no "Prepare map" step until worker-3 confirms the label.
+    - New steps "Check the package" and "Import into the city", with the exact option labels, status messages, timing and the import report path.
+    - Limits: TM:PE lane connections, lane arrows and U-turn rules are not applied in this version (only priority signs); about 7 % of zone cells find no CS2 block; metro and train lines need their stations; rail yards need their track linked by hand.
+    - Two new FAQ entries, and the matrix notes updated. The Overview install steps, README.txt and the top-level README follow the same flow.
+    - Worker-4's expected water source counts match the web port (Skibidi 14 region sources, Cacao 23).

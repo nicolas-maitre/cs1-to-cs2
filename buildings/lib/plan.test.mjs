@@ -1,7 +1,7 @@
 // node --test buildings/lib/plan.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBuildingsPlan, closestOnBezier } from './plan.mjs';
+import { buildBuildingsPlan, closestOnBezier, addDefaultDepots } from './plan.mjs';
 
 const straight = (x0, z0, x1, z1) => [[x0, 0, z0], [x0 + (x1 - x0) / 3, 0, z0 + (z1 - z0) / 3], [x0 + 2 * (x1 - x0) / 3, 0, z0 + 2 * (z1 - z0) / 3], [x1, 0, z1]];
 
@@ -60,4 +60,24 @@ test('fallback is written only when chosen, per type or for all', () => {
   assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan).items[0].fallback, undefined);
   assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan, { fallback: 'skip' }).items[0].fallback, 'skip');
   assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan, { fallback: 'skip', fallbackByType: { Hospital: 'nearby' } }).items[0].fallback, 'nearby');
+});
+
+test('default depots: one per transport type with lines and no depot; rail yards at a station, flagged', () => {
+  const transit = { lines: [
+    { name: 'Bus 1', cs1Type: 'Bus', stops: [{ x: 10, z: 20 }] },
+    { name: 'Metro 1', cs1Type: 'Metro', stops: [{ x: 1, z: 1, cs1Building: 0 }, { x: 50, z: 60, cs1Building: 7 }] },
+    { name: 'Metro 2', cs1Type: 'Metro', stops: [{ x: 5, z: 5 }] },
+    { name: 'Ferry', cs1Type: 'Ship', stops: [{ x: 0, z: 0 }] },
+  ] };
+  const b = { items: [{ prefab: 'BusDepot01' }], stats: {} };
+  const added = addDefaultDepots(b, transit, { prefabs: [{ name: 'SubwayYard01', size: [44, 20] }] });
+  assert.deepEqual(added.map((d) => d.prefab), ['SubwayYard01']); // the bus depot exists; ships have no mapping
+  const yard = b.items.at(-1);
+  assert.equal(yard.default, true);
+  assert.equal(yard.needsTrackLink, true);
+  assert.equal(yard.fallback, 'nearby');
+  assert.deepEqual([yard.x, yard.z, yard.lot], [50, 60, [44, 20]]); // the station stop, catalogue lot
+  assert.match(yard.reason, /Metro 1, Metro 2/);
+  assert.equal(b.stats.defaultDepots, 1);
+  assert.deepEqual(addDefaultDepots({ items: [], stats: {} }, { lines: [] }), []);
 });

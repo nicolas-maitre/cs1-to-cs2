@@ -22,9 +22,21 @@ Open the `.cs1x` written by the exporter, not a `.crp` save. If it says the form
 
 The rest converts normally. Export again; if it keeps failing, the exporter's message is in the web tool under Overview → File check.
 
-## CS2 says a road type is missing.
+## The importer doesn't list my package.
 
-Road Builder roads must be copied to ModsData\RoadBuilder **before** CS2 starts. Copy them (or press Install in the importer), then restart CS2.
+**Packages on this PC** lists the folders under `%LOCALAPPDATA%\cs1-to-cs2\` that hold a `cs1conv-plan.json`. Unzip the package there, or type its folder in **Package folder**.
+
+## The importer says road types are missing.
+
+Road Builder roads must be in ModsData\RoadBuilder **before** CS2 starts. "Road Builder configs aren't installed": press **Install Road Builder configs**, then restart CS2. "Installed but not loaded yet": restart CS2. Then press **Check** again. Roads of a missing type are skipped.
+
+## My city has none of its CS1 hills, rivers or sea.
+
+The importer doesn't apply the terrain and the water yet: the roads follow the CS2 map's own ground. The package already holds the converted terrain (the `terrain` folder), and the importer will use it in a later version.
+
+## Where are my TM:PE lane connections and lane arrows?
+
+They are in the package but not applied in this version: only the priority signs are (with the Traffic mod). The import report lists the rest.
 
 ## Why weren't all my buildings placed?
 
@@ -33,6 +45,10 @@ Zoned (growable) buildings are not placed: CS2 grows its own on the converted zo
 ## Why did a building end up somewhere else?
 
 CS2 buildings often need more room than their CS1 counterparts. When one doesn't fit at its CS1 spot, the importer tries the next-best CS2 buildings, then free land along an imported road nearby (up to 400 m). Very large buildings may go anywhere in the square. In the Assets tab you can change this per type, or leave the building out instead.
+
+## My metro or train line has no vehicles.
+
+CS2 lines get their vehicles from a depot of their type, and CS1 metro and train lines don't need one. When the city has none, the package adds a default depot or yard at the line's first stop. Connect a rail yard's track to the line by hand: CS2 yards only send trains over connected track.
 
 ## Do I need the Traffic mod?
 
@@ -44,7 +60,7 @@ CS2 runs its own light phases and builds junctions itself. Timed lights become p
 
 ## European or North American buildings?
 
-Choose the zone theme under Overview → Options. It sets which CS2 residential and commercial zones the converted zones use.
+Choose the zone theme under Overview → Options. It sets which CS2 residential and commercial zones the converted zones use, and which tree variants are preferred.
 
 ## Does the exporter change my CS1 save?
 
@@ -57,3 +73,7 @@ Most of it is the terrain: two 4096 × 4096 heightmaps, the size CS2 uses, 64 MB
 ## Is my big city too large for the web tool?
 
 The map and the package builder are made for large cities: a 60 000-segment test city stays smooth, and the package is built in the background.
+
+## Can I use the web tool in French?
+
+Yes: it follows your browser's language, and the language menu at the top of the page switches between English and French. The report (`report.json`) stays in English.

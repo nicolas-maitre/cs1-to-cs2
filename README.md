@@ -11,7 +11,7 @@ There are three parts:
 - **cs1conv web tool:** a static web page, so everything stays on your computer. You choose the part of the city that fits a CS2 map, check how each road type, building and rule converts, and download the import package. The package is self-contained: it also carries the converted terrain, water and outside connections. The same core is a Node CLI for scripts.
 - **CS1 → CS2 Importer:** a CS2 mod that builds the package in a new CS2 city.
 
-**User guide:** [docs/guide/user-guide.md](docs/guide/user-guide.md) · [FAQ and troubleshooting](docs/guide/faq.md) · [What converts](docs/guide/what-converts.md). The web tool's Help page shows the same text.
+**User guide:** [docs/guide/user-guide.md](docs/guide/user-guide.md) · [FAQ and troubleshooting](docs/guide/faq.md) · [What converts](docs/guide/what-converts.md). The web tool's Help page shows the same text. **En français :** [guide](docs/guide/fr/user-guide.md) · [FAQ](docs/guide/fr/faq.md) · [ce qui est converti](docs/guide/fr/what-converts.md); the web tool follows the browser's language (English or French).
 
 ## Status
 
@@ -23,15 +23,17 @@ The plan columns say whether the web tool writes a feature into the import packa
 | Train, metro and tram tracks, pedestrian and bike paths | yes | yes, same as roads |
 | IMT lane paint → bus lanes and medians | yes | yes, part of the Road Builder road types |
 | TM:PE speed limits and bus-only lanes | yes | yes, as Road Builder road variants |
-| Terrain (playable area and world map) | yes: `terrain/heightmap.r16`, `terrain/worldmap.r16` | by script today (`terrain/apply.mjs`); importer mod in progress |
-| Water (sea level, rivers, lakes), outside connections | yes: `water.apply`, `outsideConnections` | by script today (`terrain/mapprep.mjs`); importer mod in progress |
-| Zoning (NA or EU theme) | yes | in progress |
-| TM:PE lights, priority signs, lane arrows and connections, turn bans, crosswalks | yes | in progress (Traffic mod for signs and lane connections) |
-| Transit lines with stops and colours | yes | in progress |
-| Service buildings, stations, parks, landmarks | yes (matched to CS2 buildings) | by script: `buildings/` placer |
-| Districts and policies | yes | in progress |
-| Trees and rocks | yes (CS2 trees and boulders) | by script (`buildings/`); importer mod in progress |
-| IMT pavement, grass and gravel fills at junctions | yes (CS2 surfaces) | by script (`buildings/`); importer mod in progress |
+| Terrain (playable area and world map) | yes: `terrain/heightmap.r16`, `terrain/worldmap.r16` | by script today (`terrain/apply.mjs`); importer mod's **Prepare map** in progress |
+| Water (sea level, rivers, lakes), outside connections | yes: `water.apply`, `outsideConnections` | by script today (`terrain/mapprep.mjs`); importer mod's **Prepare map** in progress |
+| Zoning (NA or EU theme) | yes | yes: Importer mod (**Zoning**) |
+| TM:PE traffic lights, all-way stops, turn bans, crosswalks | yes | yes: Importer mod (**Traffic lights, stops, turn bans, crosswalks**) |
+| TM:PE priority signs | yes | yes: Importer mod with the Traffic mod (**Priority signs**) |
+| TM:PE lane arrows, lane connections and U-turn rules | yes | not applied in this version (listed in the import report) |
+| Transit lines with stops and colours, default depots | yes | yes: Importer mod (**Transit lines**); metro and train lines need their stations |
+| Service buildings, stations, parks, landmarks | yes (matched to CS2 buildings, with a fallback per type) | yes: Importer mod (**Buildings, trees, districts**) and the `buildings/` script |
+| Districts and policies | yes | yes: Importer mod (**Buildings, trees, districts**) |
+| Trees and rocks | yes (CS2 trees and boulders) | yes: Importer mod (**Buildings, trees, districts**) |
+| IMT pavement, grass and gravel fills at junctions | yes (CS2 surfaces) | yes: Importer mod (**Buildings, trees, districts**) |
 | Node Controller, timed lights, painted IMT junction markings | report only | – |
 | Other props (benches, lamps, …) | exported, not converted | – |
 
@@ -65,7 +67,7 @@ node web/cli/cs1conv.ts plan city.cs1x --auto-crop 3000 --out package --install-
 
 See [web/README.md](web/README.md).
 
-**3. Import (CS2).** Start CS2 with Road Builder and the importer (the Road Builder configs must be installed before CS2 starts). Start a new city, then Options → *CS1 → CS2 importer* → pick the package → **Check** → **Import into this city**. See [cs2-importer/README.md](cs2-importer/README.md).
+**3. Import (CS2).** Unzip the package into its own folder under `%LOCALAPPDATA%\cs1-to-cs2\`. Start CS2 with Road Builder and the importer (the Road Builder configs must be installed before CS2 starts: the importer's **Install Road Builder configs** does it, then restart). Start a new city, then Options → *CS1 → CS2 importer* → pick the package → **Check** → **Import into this city**. The importer doesn't apply the terrain and water yet (by script: [tools/e2e](tools/e2e/README.md)). The [user guide](docs/guide/user-guide.md) has every step; see also [cs2-importer/README.md](cs2-importer/README.md).
 
 **All in one, by script:** [tools/e2e](tools/e2e/README.md) runs export → plan → new CS2 city → terrain and water → roads → outside connections → save:
 

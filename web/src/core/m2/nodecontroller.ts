@@ -8,8 +8,8 @@ import type { PlanContext, SectionResult } from './context.ts';
 export function buildNodeController(ctx: PlanContext): SectionResult<never> {
   const nc = ctx.city.nodeController;
   const items: PackageReportItem[] = [];
-  const label = 'Node Controller';
-  if (!nc) return { items, summary: { id: 'nodecontroller', label, status: 'absent', summary: 'no Node Controller data in this export', details: [] } };
+  const tr = ctx.t, label = tr('cat.nodecontroller');
+  if (!nc) return { items, summary: { id: 'nodecontroller', label, status: 'absent', summary: tr('sum.nc.absent'), details: [] } };
   const inPlan = nc.nodes.filter(n => ctx.planNodes.has(n.id));
   const changed = new Map<string, number>();
   const changedIds: number[] = [];
@@ -26,9 +26,9 @@ export function buildNodeController(ctx: PlanContext): SectionResult<never> {
   return {
     items,
     summary: {
-      id: 'nodecontroller', label, status: inPlan.length ? 'report-only' : 'absent',
-      summary: inPlan.length ? `${plural(inPlan.length, 'node')} in the crop have Node Controller data (${typeChanges} changed type): listed in the report` : 'no Node Controller nodes in the crop',
-      details: ['CS2 builds junction and node geometry itself; there is no equivalent for node offsets, shifts, slopes, stretching or hidden markings.', 'Pedestrian crossings set with TM:PE are converted under Traffic rules.'],
+      id: 'nodecontroller', label, status: inPlan.length ? 'report-only' : 'none',
+      summary: inPlan.length ? tr('sum.nc', { n: inPlan.length, changed: typeChanges }) : tr('sum.nc.none'),
+      details: [tr('sum.nc.d1'), tr('sum.nc.d2')],
     },
   };
 }

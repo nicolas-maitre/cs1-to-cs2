@@ -21,15 +21,18 @@ export const SUPPORTED_FORMAT_VERSION = 1;
 
 export type ReadErrorCode = 'empty' | 'crp-save' | 'not-cs1x' | 'corrupt-zip' | 'no-manifest' | 'format-too-old' | 'format-too-new';
 
-/** A file that cannot be read at all, with a message and a hint meant for the user. */
+/** A file that cannot be read at all, with a message and a hint meant for the user (English, plus i18n keys for the UI). */
 export class ReadError extends Error {
   code: ReadErrorCode;
   hint: string;
-  constructor(code: ReadErrorCode, message: string, hint: string) {
+  /** message and hint keys in core/i18n (err.*, hint.*), with their variables */
+  i18n?: { msg: string; hint: string; vars?: Record<string, string | number> };
+  constructor(code: ReadErrorCode, message: string, hint: string, i18n?: ReadError['i18n']) {
     super(message);
     this.name = 'ReadError';
     this.code = code;
     this.hint = hint;
+    this.i18n = i18n;
   }
 }
 
@@ -37,17 +40,17 @@ const EXPORT_HINT = 'Export the city with the CS1 → CS2 Exporter mod in Cities
 
 /** Read a .cs1x (zip) or an M0 dump (JSON) from raw bytes. Throws ReadError for unusable files. */
 export async function readCityFile(bytes: Uint8Array, opts: { hash?: boolean } = {}): Promise<Cs1City> {
-  if (!bytes.length) throw new ReadError('empty', 'The file is empty.', EXPORT_HINT);
+  if (!bytes.length) throw new ReadError('empty', 'The file is empty.', EXPORT_HINT, { msg: 'err.empty', hint: 'hint.export' });
   let city: Cs1City;
   if (isZip(bytes)) city = readCs1x(bytes);
   else if (bytes[0] === 0x43 && bytes[1] === 0x52 && bytes[2] === 0x41 && bytes[3] === 0x50) {
-    throw new ReadError('crp-save', 'This is a Cities: Skylines save or asset (.crp), not a .cs1x export.', EXPORT_HINT);
+    throw new ReadError('crp-save', 'This is a Cities: Skylines save or asset (.crp), not a .cs1x export.', EXPORT_HINT, { msg: 'err.crp-save', hint: 'hint.export' });
   } else {
     let json: unknown;
     try { json = parseJson(strFromU8(bytes)); }
-    catch { throw new ReadError('not-cs1x', 'This file is neither a .cs1x export nor a network dump.', EXPORT_HINT); }
+    catch { throw new ReadError('not-cs1x', 'This file is neither a .cs1x export nor a network dump.', EXPORT_HINT, { msg: 'err.not-cs1x', hint: 'hint.export' }); }
     try { city = fromM0Dump(json as never); }
-    catch { throw new ReadError('not-cs1x', 'This JSON file is not a .cs1x export or a network dump.', EXPORT_HINT); }
+    catch { throw new ReadError('not-cs1x', 'This JSON file is not a .cs1x export or a network dump.', EXPORT_HINT, { msg: 'err.not-cs1x-json', hint: 'hint.export' }); }
   }
   if (opts.hash !== false) city.sha256 = await sha256Hex(bytes);
   return city;
@@ -57,17 +60,17 @@ export async function readCityFile(bytes: Uint8Array, opts: { hash?: boolean } =
 export function readCs1x(bytes: Uint8Array): Cs1City {
   let entries: Record<string, Uint8Array>;
   try { entries = unzipSync(bytes); }
-  catch (e) { throw new ReadError('corrupt-zip', `The file looks like a zip but cannot be unpacked (${e instanceof Error ? e.message : e}).`, 'The download or copy may be incomplete. Export the city again.'); }
+  catch (e) { const detail = String(e instanceof Error ? e.message : e); throw new ReadError('corrupt-zip', `The file looks like a zip but cannot be unpacked (${detail}).`, 'The download or copy may be incomplete. Export the city again.', { msg: 'err.corrupt-zip', hint: 'hint.incomplete', vars: { detail } }); }
   const text = (name: string) => (entries[name] ? strFromU8(entries[name]) : null);
   const manifestText = text('manifest.json');
-  if (manifestText == null) throw new ReadError('no-manifest', 'This zip has no manifest.json, so it is not a .cs1x export.', EXPORT_HINT);
+  if (manifestText == null) throw new ReadError('no-manifest', 'This zip has no manifest.json, so it is not a .cs1x export.', EXPORT_HINT, { msg: 'err.no-manifest', hint: 'hint.export' });
   let manifest: Manifest;
   try { manifest = parseJson<Manifest>(manifestText); }
-  catch { throw new ReadError('no-manifest', 'manifest.json in this file is not valid JSON.', 'The export may have been interrupted. Export the city again.'); }
-  if (manifest.format !== 'cs1x') throw new ReadError('not-cs1x', `This zip is not a .cs1x export (format ${JSON.stringify(manifest.format)}).`, EXPORT_HINT);
+  catch { throw new ReadError('no-manifest', 'manifest.json in this file is not valid JSON.', 'The export may have been interrupted. Export the city again.', { msg: 'err.bad-manifest', hint: 'hint.interrupted' }); }
+  if (manifest.format !== 'cs1x') throw new ReadError('not-cs1x', `This zip is not a .cs1x export (format ${JSON.stringify(manifest.format)}).`, EXPORT_HINT, { msg: 'err.not-cs1x-zip', hint: 'hint.export', vars: { format: JSON.stringify(manifest.format) ?? 'none' } });
   const v = Number(manifest.formatVersion);
-  if (!Number.isFinite(v) || v < 1) throw new ReadError('format-too-old', `This .cs1x has format version ${manifest.formatVersion ?? '(none)'}, from a pre-release exporter.`, 'Update the CS1 → CS2 Exporter mod and export the city again.');
-  if (v > SUPPORTED_FORMAT_VERSION) throw new ReadError('format-too-new', `This .cs1x has format version ${v}; this tool reads version ${SUPPORTED_FORMAT_VERSION}.`, 'The exporter is newer than this web tool. Reload the page to get the latest version of the tool.');
+  if (!Number.isFinite(v) || v < 1) throw new ReadError('format-too-old', `This .cs1x has format version ${manifest.formatVersion ?? '(none)'}, from a pre-release exporter.`, 'Update the CS1 → CS2 Exporter mod and export the city again.', { msg: 'err.format-too-old', hint: 'hint.updateExporter', vars: { version: String(manifest.formatVersion ?? '(none)') } });
+  if (v > SUPPORTED_FORMAT_VERSION) throw new ReadError('format-too-new', `This .cs1x has format version ${v}; this tool reads version ${SUPPORTED_FORMAT_VERSION}.`, 'The exporter is newer than this web tool. Reload the page to get the latest version of the tool.', { msg: 'err.format-too-new', hint: 'hint.reload', vars: { version: v, supported: SUPPORTED_FORMAT_VERSION } });
   const report: Cs1ReportItem[] = [];
   const exporterReport = text('report.json');
   if (exporterReport) {

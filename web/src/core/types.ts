@@ -315,9 +315,10 @@ export interface Plan {
 
 /** Placed buildings (M3): service buildings, parks, landmarks … matched to CS2 prefabs. Growables are left to zoning. */
 export interface PlanBuildingItem {
-  /** CS1 building id */
+  /** CS1 building id (negative for a default depot the converter adds) */
   id: number;
-  cs1Info: string;
+  /** CS1 building type; null for a default depot */
+  cs1Info: string | null;
   type: 'BuildingPrefab';
   prefab: string;
   /** match score 0–1; null when the user chose the prefab */
@@ -329,23 +330,30 @@ export interface PlanBuildingItem {
   /** unit vector from the building towards its road */
   facing: [number, number] | null;
   lot: number[] | null;
-  cs1Lot: [number, number];
+  cs1Lot: [number, number] | null;
   /** CS1 segment id of the access road (a plan segment), 0 if none */
   accessSegment: number;
   /** next-best CS2 prefabs, tried in order when the first does not fit; empty when the user chose the prefab */
   alternatives: string[];
   /** CS1 district id (plan.districts) */
   district?: number;
+  /** a depot added because CS2 lines need one and CS1 had none (buildings/lib/plan.mjs addDefaultDepots) */
+  default?: boolean;
+  reason?: string;
+  /** rail yard: its track has to be connected to the line by hand */
+  needsTrackLink?: boolean;
   /** what the placer does when the building does not fit at its spot: nearby (≤ 400 m), anywhere in the crop, or skip */
   fallback?: 'nearby' | 'anywhere' | 'skip';
 }
 export interface PlanBuildings {
   generator: { matcher: string; web: string };
+  /** default depots added for transit lines (type, prefab, lines, needsTrackLink, at) */
+  defaultDepots?: { type: string; prefab: string; lines: string[]; needsTrackLink: boolean; at: [number, number] }[];
   catalogue: { game: string | null; prefabs: number };
   cs1AngleConvention: { facing: string; agreement: number | null; buildingsWithRoad: number };
   items: PlanBuildingItem[];
   stats: {
-    items: number; withRoad: number; withoutRoad: number; growablesInCrop: number;
+    items: number; withRoad: number; withoutRoad: number; growablesInCrop: number; defaultDepots?: number;
     skipped: { outsideCrop: number; subBuilding: number; growable: number; skip: number; noEquivalent: number; roadNotImported: number };
   };
 }

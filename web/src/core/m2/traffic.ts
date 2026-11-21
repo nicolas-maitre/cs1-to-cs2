@@ -82,7 +82,7 @@ const ARROW: Record<string, 'left' | 'straight' | 'right'> = { Left: 'left', For
 export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<PlanTraffic> {
   const tm = ctx.city.tmpe;
   const items: PackageReportItem[] = [];
-  const label = 'Traffic rules (TM:PE)';
+  const tr = ctx.t, label = tr('cat.traffic');
   const inPlanEnd = (seg: number, node: number) => ctx.planSegments.has(seg) && ctx.planNodes.has(node);
 
   // Traffic lights come from the network itself (with or without TM:PE).
@@ -93,11 +93,11 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
     nodes.push({ id, trafficLights: /(^|,\s*)TrafficLights(,|$)/.test(n.flags ?? '') });
   }
   nodes.sort((a, b) => a.id - b.id);
-  if (!enabled) return { items, summary: { id: 'traffic', label, status: 'not-converted', summary: 'switched off in the options', details: [] } };
+  if (!enabled) return { items, summary: { id: 'traffic', label, status: 'not-converted', summary: tr('sum.off'), details: [] } };
   if (!tm) {
     return {
       section: { requires: [], nodes, segmentEnds: [], laneConnections: [], laneArrows: [] }, items,
-      summary: { id: 'traffic', label, status: 'absent', summary: `no TM:PE data; ${plural(nodes.filter(n => n.trafficLights).length, 'junction')} keep their CS1 traffic lights`, details: [] },
+      summary: { id: 'traffic', label, status: 'absent', summary: tr('sum.traffic.absent', { n: nodes.filter(n => n.trafficLights).length }), details: [] },
     };
   }
 
@@ -196,17 +196,17 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
     summary: {
       id: 'traffic', label, status: reportOnly ? 'partial' : 'converted',
       summary: [
-        prioCount && `${plural(prioCount, 'priority sign')}`,
-        laneConnections.length && `${plural(laneConnections.length, 'lane connection')}`,
-        laneArrows.length && `${plural(laneArrows.length, 'lane arrow')}`,
-        `${plural(nodes.filter(n => n.trafficLights).length, 'traffic light')}`,
+        prioCount && tr('sum.traffic.prio', { n: prioCount }),
+        laneConnections.length && tr('sum.traffic.conn', { n: laneConnections.length }),
+        laneArrows.length && tr('sum.traffic.arrows', { n: laneArrows.length }),
+        tr('sum.traffic.lights', { n: nodes.filter(n => n.trafficLights).length }),
       ].filter(Boolean).join(', '),
       details: [
-        'Speed limits become Road Builder road variants (CS2 has one speed per road); bus-only lanes become bus lanes.',
-        'Traffic lights on/off, all-way stops, turn bans and crosswalks use vanilla CS2 junction settings.',
-        'Priority signs, lane arrows, lane connections and U-turn rules need the Traffic mod in CS2.',
-        ...(timed ? [`${plural(timed, 'timed traffic light')} become plain traffic lights.`] : []),
-        'Turn on red, entering blocked junctions, lane changing and parking restrictions have no CS2 setting.',
+        tr('sum.traffic.d1'),
+        tr('sum.traffic.d2'),
+        tr('sum.traffic.d3'),
+        ...(timed ? [tr('sum.traffic.d4', { n: timed })] : []),
+        tr('sum.traffic.d5'),
       ],
     },
   };

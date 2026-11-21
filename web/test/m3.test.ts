@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { translator } from '../src/core/i18n/index.ts';
 import { buildBuildingsPlan } from '../../buildings/lib/plan.mjs';
 import { matchAssets } from '../../buildings/match/match.mjs';
 import { readCityFile, readCs1x } from '../src/core/cs1x.ts';
@@ -70,7 +71,7 @@ function ctxOf(c: Cs1City): PlanContext {
   return {
     city: c, crop: CROP, dx: 0, dz: 0, infos: new Map(c.netInfos.map(i => [i.name, i])), nodes: new Map(c.nodes.map(n => [n.id, n])),
     segments: new Map(c.segments.map(s => [s.id, s])), planSegments: new Set(pkg.plan.segments.map(s => s.id)), planNodes: new Set(pkg.plan.nodes.map(n => n.id)),
-    reversed: new Set(), inCrop: (x, z) => Math.abs(x) <= 400 && Math.abs(z) <= 400,
+    reversed: new Set(), inCrop: (x, z) => Math.abs(x) <= 400 && Math.abs(z) <= 400, t: translator('en'), lang: 'en',
   };
 }
 
@@ -234,7 +235,9 @@ describe.skipIf(!fs.existsSync(FULL) || !fs.existsSync(SAMPLE))('Skibidi with th
     const pkg = buildPackage(c, { crop, catalogue: slim });
     const fallbackByType = Object.fromEntries((pkg.assetMatches ?? []).map(m => [m.cs1, m.fallback]));
     const theirs = buildBuildingsPlan({ network: { nodes: c.nodes, segments: c.segments }, buildings: c.buildings, assets: c.assets }, full, pkg.plan, { theme: 'North American', fallbackByType }); // the package uses the zoning theme (NA)
-    expect(pkg.plan.buildings!.items.map(({ type: _t, district: _d, ...i }) => i)).toEqual(theirs.items);
+    const strip = (l: unknown[]) => (l as Record<string, unknown>[]).map(({ type: _t, district: _d, ...i }) => i); // default depots carry type in both
+    expect(strip(pkg.plan.buildings!.items)).toEqual(strip(theirs.items));
+    expect(pkg.plan.buildings!.defaultDepots ?? []).toEqual((theirs as { defaultDepots?: unknown[] }).defaultDepots ?? []);
     expect(pkg.plan.buildings!.items.length).toBeGreaterThan(50);
   }, 60_000);
 });
@@ -275,7 +278,7 @@ describe('objects and surfaces (buildings/lib/objects.mjs)', () => {
     const nodeFillReports = pkg.report.items.filter(i => i.kind === 'imt-node-fill').map(i => i.cs1?.node);
     expect(nodeFillReports).not.toContain(1); // converted, so not "no CS2 equivalent"
     expect(pkg.summary.find(s => s.id === 'objects')).toMatchObject({ status: 'partial', summary: '2 trees and 1 rock as CS2 trees and boulders' });
-    expect(pkg.summary.find(s => s.id === 'imt')!.summary).toContain('1 junction fill become CS2 surfaces');
+    expect(pkg.summary.find(s => s.id === 'imt')!.summary).toContain('1 junction fill becomes a CS2 surface');
   });
 
   it('leaves them out when switched off, without trees in the catalogue, or without a catalogue', () => {

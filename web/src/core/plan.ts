@@ -10,6 +10,8 @@ import type { RbConfig, RbReport } from './rb.ts';
 import { packageReadme } from './readme.ts';
 import { APP_VERSION } from './docs.ts';
 import { conversionSummary } from './summary.ts';
+import { fmtNumber, translator } from './i18n/index.ts';
+import type { Lang } from './i18n/index.ts';
 import type { ConvCategory } from './summary.ts';
 import type { PlanContext } from './m2/context.ts';
 import { buildNodeController } from './m2/nodecontroller.ts';
@@ -25,6 +27,7 @@ import type { ZoningOptions } from './m2/zoning.ts';
 import { buildBuildings } from './m3/buildings.ts';
 import type { AssetMatch, AssetOverrides, Cs2Catalogue, FallbackOverrides, PlacementFallback } from './m3/buildings.ts';
 import { buildDistricts } from './m3/districts.ts';
+import { addDefaultDepots } from '../../../buildings/lib/plan.mjs';
 import { buildObjects, buildSurfaces, SURFACE_MAP } from './m3/objects.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
@@ -34,6 +37,8 @@ export const GENERATOR = { name: 'cs1conv-web', version: APP_VERSION };
 
 export interface BuildOptions {
   crop: Crop;
+  /** Language of the "What converts" summaries and the package README (default en). report.json is always English. */
+  lang?: Lang;
   /** Per ground-NetInfo mapping overrides (key: NetInfo name). */
   overrides?: Record<string, MappingOverride>;
   generatedAt?: string;
@@ -85,6 +90,8 @@ export interface RbVariant extends RbReport { key: string; segments: number }
 
 export interface BuiltPackage {
   plan: Plan;
+  /** Language of summary and README.txt. */
+  lang: Lang;
   report: PackageReport;
   rbConfigs: RbConfig[];
   rbVariants: RbVariant[];
@@ -291,6 +298,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     city, crop, dx, dz, infos, nodes, segments: new Map(city.segments.map(s => [s.id, s])),
     planSegments: new Set(planSegments.map(s => s.id)), planNodes: usedNodes, reversed: new Set(planSegments.filter(s => s.reversed).map(s => s.id)),
     inCrop: (x, z) => inCrop(crop, x, z),
+    t: translator(opts.lang ?? 'en'), lang: opts.lang ?? 'en',
   };
   const zoning = buildZoning(ctx, opts.zoning ?? DEFAULT_ZONING);
   const water = buildWater(ctx, opts.water !== false);
@@ -299,6 +307,17 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const nc = buildNodeController(ctx);
   const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, fallbacks: opts.assetFallbacks, fallback: opts.assetFallback, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const districts = buildDistricts(ctx, opts.districts !== false);
+  // CS2 lines get vehicles only from a depot of their type; CS1 metro/train lines need none: add defaults (buildings/lib/plan.mjs)
+  if (buildings.section && transit.section) {
+    const added = addDefaultDepots(buildings.section, transit.section, opts.catalogue ?? undefined) as { type: string; prefab: string; lines: string[]; needsTrackLink: boolean }[];
+    for (const d of added) {
+      buildings.items.push({
+        level: d.needsTrackLink ? 'warning' : 'info', kind: 'buildings',
+        message: `default ${d.prefab} added for ${d.lines.join(', ')}: CS1 had no ${d.type.toLowerCase()} depot and CS2 lines need one${d.needsTrackLink ? '; connect its track to the line by hand (CS2 yards only dispatch over connected track)' : ''}`,
+      });
+    }
+    if (added.length) buildings.summary.details.splice(-1, 0, ctx.t(added.some(d => d.needsTrackLink) ? 'sum.buildings.depotsRail' : 'sum.buildings.depots', { list: added.map(d => d.prefab).join(', ') }));
+  }
   const objects = buildObjects(ctx, { enabled: opts.objects !== false, catalogue: opts.catalogue ?? null, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const surfaces = buildSurfaces(ctx, opts.surfaces !== false);
   for (const r of [zoning, water, transit, traffic, nc, buildings, districts, objects, surfaces]) items.push(...r.items);
@@ -399,6 +418,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   items.sort((x, y) => order[x.level] - order[y.level]);
   const pkg: BuiltPackage = {
     plan,
+    lang: opts.lang ?? 'en',
     report: { format: 'cs1conv-report', formatVersion: 1, items },
     rbConfigs: [...rbConfigs.values()].map(e => e.config),
     rbVariants: [...rbConfigs.values()].map(e => ({ ...e.report, key: e.key, segments: e.segments })),
@@ -453,16 +473,18 @@ export function completePackage(city: Cs1City, pkg: BuiltPackage, opts: { terrai
   if (!t) return [];
   pkg.plan.terrain = t.terrain;
   const s = pkg.summary.find(c => c.id === 'terrain');
-  if (s) s.summary = terrainSummary(pkg.plan);
+  if (s) s.summary = terrainSummary(pkg.plan, pkg.lang);
   return t.files;
 }
 
 /** One line for the "What converts" list: heightmap and the sea level the mod will set. */
-export function terrainSummary(plan: Plan): string {
+export function terrainSummary(plan: Plan, lang: Lang = 'en'): string {
+  const tr = translator(lang);
   const sea = plan.water?.apply?.seaLevel ?? plan.water?.seaLevel;
   const t = plan.terrain;
-  const range = t ? `, ${Math.round(t.min)}–${Math.round(t.max)} m` : '';
-  return `CS2 heightmap 4096² in the package (terrain/)${range}; sea level ${sea != null ? `${sea.toFixed(1)} m (CS1)` : t ? `${t.seaLevelDry} m (dry map)` : 'from CS1'}`;
+  const range = t ? tr('sum.terrain.range', { min: Math.round(t.min), max: Math.round(t.max) }) : '';
+  const seaText = sea != null ? tr('sum.terrain.seaCs1', { sea: fmtNumber(lang, Math.round(sea * 10) / 10, 1) }) : t ? tr('sum.terrain.seaDry', { sea: t.seaLevelDry }) : tr('sum.terrain.seaFromCs1');
+  return tr('sum.terrain', { range, sea: seaText });
 }
 
 /** Files of the package, relative paths → text (UTF-8, no BOM). Binary terrain files come from completePackage(). */

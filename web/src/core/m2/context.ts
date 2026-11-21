@@ -3,6 +3,7 @@
 import type { PackageReportItem } from '../types.ts';
 import type { ConvCategory } from '../summary.ts';
 import type { Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo } from '../types.ts';
+import type { Lang, T } from '../i18n/index.ts';
 
 export interface PlanContext {
   city: Cs1City;
@@ -19,6 +20,9 @@ export interface PlanContext {
   /** Segments whose course was reversed (CS1 Invert flag). */
   reversed: Set<number>;
   inCrop: (x: number, z: number) => boolean;
+  /** Translator for the "What converts" summaries (report items stay in English). */
+  t: T;
+  lang: Lang;
 }
 
 export interface SectionResult<T> {

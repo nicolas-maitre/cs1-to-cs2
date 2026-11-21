@@ -3,7 +3,7 @@
 
 import { bezierPoint } from '../core/imt.ts';
 import { cellCentre } from '../core/m2/zoning.ts';
-import { buildBuildingLayer, buildDistrictLayer } from './sceneM3.ts';
+import { buildBuildingLayer, buildDistrictLayer, PATH_CHUNK } from './sceneM3.ts';
 import type { BuildingLayer, DistrictLayer } from './sceneM3.ts';
 import { categorize } from '../core/mapping.ts';
 import type { NetCategory } from '../core/mapping.ts';
@@ -66,6 +66,7 @@ export const ZONE_STYLE: Record<string, { color: string; label: string }> = {
 };
 
 const SAMPLES = 8;
+
 
 export function buildScene(city: Cs1City): Scene {
   const infos = new Map(city.netInfos.map(i => [i.name, i]));
@@ -143,6 +144,7 @@ export function buildScene(city: Cs1City): Scene {
   });
   // zoned cells as rotated squares
   const zonePaths = new Map<string, { zone: string; color: string; path: Path2D; count: number }>();
+  const zoneChunks: { zone: string; color: string; path: Path2D; count: number }[] = [];
   if (city.zones) {
     const z = city.zones, cols = z.columns || 4, cs = z.cellSize || 8, h = cs / 2 - 0.6;
     for (const b of z.blocks) {
@@ -155,7 +157,7 @@ export function buildScene(city: Cs1City): Scene {
         if (!st) continue;
         const [x, zz] = cellCentre(b.position[0], b.position[2], b.angle, i % cols, Math.floor(i / cols), cs);
         let e = zonePaths.get(name);
-        if (!e) { e = { zone: name, color: st.color, path: new Path2D(), count: 0 }; zonePaths.set(name, e); }
+        if (!e || e.count >= PATH_CHUNK) { e = { zone: name, color: st.color, path: new Path2D(), count: 0 }; zonePaths.set(name, e); zoneChunks.push(e); }
         e.count++;
         // corners: ±h along the column direction (ca, sa) and the row direction (sa, −ca); screen y = −z
         const pts = [[-h, -h], [h, -h], [h, h], [-h, h]].map(([u, v]) => [x + u * ca + v * sa, -(zz + u * sa - v * ca)]);
@@ -173,7 +175,7 @@ export function buildScene(city: Cs1City): Scene {
     const c = l.color ?? [255, 255, 255];
     return { name: l.name ?? l.type, color: `rgb(${c[0]},${c[1]},${c[2]})`, path, stops };
   });
-  return { buckets: sorted, fills, segs, grid, cell, extent: { minX, maxX, minZ, maxZ }, terrain: city.terrain ? hillshade(city.terrain) : null, terrainSize: city.terrain?.size ?? 0, ends, skipped, zones: [...zonePaths.values()], lines, buildings: buildBuildingLayer(city), districts: buildDistrictLayer(city) };
+  return { buckets: sorted, fills, segs, grid, cell, extent: { minX, maxX, minZ, maxZ }, terrain: city.terrain ? hillshade(city.terrain) : null, terrainSize: city.terrain?.size ?? 0, ends, skipped, zones: zoneChunks, lines, buildings: buildBuildingLayer(city), districts: buildDistrictLayer(city) };
 }
 
 /** Hillshade + hypsometric tint of the raw heightmap; image row 0 = north (screen top). */
