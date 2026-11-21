@@ -9,7 +9,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Routes, autoroutes, sens uniques, routes Vanilla+ et du Workshop | Routes Road Builder générées | converti, approché | Voies, terre-pleins, stationnement, voies de bus et de tram, arbres et vitesse sont conservés ; les largeurs peuvent changer (trottoirs Road Builder de 7 m au plus). |
+| Routes, autoroutes, sens uniques, routes Vanilla+ et du Workshop | Une route CS2 vanilla équivalente, sinon une route Road Builder générée | converti, approché | Voies, terre-pleins, stationnement, voies de bus et de tram, arbres et vitesse sont conservés ; les largeurs peuvent changer (trottoirs Road Builder de 7 m au plus). Une route vanilla n'est utilisée que si les voies correspondent (chacune à 0,5 m près, largeur totale à 1 m près). |
 | Routes surélevées, ponts, rampes, tunnels | La même route Road Builder à la hauteur de CS1 | converti | Road Builder crée lui-même les formes surélevée, pont et tunnel. |
 | Bandes cyclables peintes sur la chaussée | Trottoir avec piste cyclable | converti, approché | Au bord de la route seulement ; CS2 n'a pas de bandes cyclables peintes sur la chaussée. |
 

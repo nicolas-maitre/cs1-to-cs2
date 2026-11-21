@@ -67,12 +67,17 @@ export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategor
   const count = (kind: string) => items.filter(i => i.kind === kind).reduce((a, i) => a + (i.count ?? 1), 0);
   const roads = by.RoadBuilderPrefab ?? 0, vanillaRoads = by.RoadPrefab ?? 0, tracks = by.TrackPrefab ?? 0, paths = by.PathwayPrefab ?? 0;
   const widthLoss = items.filter(i => i.kind === 'width-loss').length;
+  const matchedTypes = Object.values(pkg.plan.prefabs).filter(p => p.matched).map(p => `${p.source} → ${p.name}`);
   out.push({
     id: 'roads', label: t('cat.roads'), status: roads + vanillaRoads ? (widthLoss ? 'partial' : 'converted') : 'not-converted',
     summary: vanillaRoads
       ? t('sum.roadsVanilla', { segments: roads + vanillaRoads, rb: st.rbConfigs, vanilla: vanillaRoads })
       : t('sum.roads', { segments: roads, rb: st.rbConfigs }),
-    details: [t('sum.roads.d1'), t('sum.roads.d2'), ...(widthLoss ? [t('sum.roads.d3', { n: widthLoss })] : []), t('sum.roads.d4')],
+    details: [
+      t('sum.roads.d1'), t('sum.roads.d2'),
+      ...(matchedTypes.length ? [t('sum.roads.vanilla', { n: matchedTypes.length, list: matchedTypes.join(', ') })] : []),
+      ...(widthLoss ? [t('sum.roads.d3', { n: widthLoss })] : []), t('sum.roads.d4'),
+    ],
   });
   out.push({
     id: 'tracks', label: t('cat.tracks'), status: tracks + paths ? 'converted' : 'none',

@@ -260,6 +260,8 @@ export interface PlanPrefab {
   lanesFrom?: string;
   /** Speed limit of this RB variant when it differs from the CS1 road's default (TM:PE). */
   speedKmh?: number;
+  /** A vanilla CS2 road chosen because the generated Road Builder profile matches it (docs/DECISIONS.md #100). */
+  matched?: boolean;
 }
 
 export interface PlanNode {

@@ -9,7 +9,7 @@ import type { Cs1City } from '../core/types.ts';
 import { useI18n } from './i18n.tsx';
 import { Rich } from './Rich.tsx';
 
-export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean; depotMode?: Partial<Record<(typeof RAIL_DEPOT_TYPES)[number], RailDepotMode>> }
+export interface ConvOptions { preferVanilla?: boolean; zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean; depotMode?: Partial<Record<(typeof RAIL_DEPOT_TYPES)[number], RailDepotMode>> }
 
 /** Which sections to convert and how zones map. */
 export function ConversionOptions({ value, onChange, city }: { value: ConvOptions; onChange: (v: ConvOptions) => void; city: Cs1City }) {
@@ -18,10 +18,11 @@ export function ConversionOptions({ value, onChange, city }: { value: ConvOption
   const setZ = (p: Partial<ZoningOptions>) => onChange({ ...value, zoning: { ...z, ...p } });
   const railTypes = RAIL_DEPOT_TYPES.filter(type => city.transit?.lines.some(l => l.type === type));
   const check = (key: keyof Omit<ConvOptions, 'zoning' | 'depotMode'>, label: string, disabled = false) => (
-    <label className="check"><input type="checkbox" checked={value[key]} disabled={disabled} onChange={e => onChange({ ...value, [key]: e.target.checked })} /> {label}</label>
+    <label className="check"><input type="checkbox" checked={value[key] !== false} disabled={disabled} onChange={e => onChange({ ...value, [key]: e.target.checked })} /> {label}</label>
   );
   return (
     <div className="options">
+      {check('preferVanilla', t('opt.preferVanilla'))}
       <fieldset className="opt-group" disabled={!city.zones}>
         <legend><label className="check"><input type="checkbox" checked={z.enabled} onChange={e => setZ({ enabled: e.target.checked })} /> {t('opt.zoning')}</label></legend>
         <label>{t('opt.theme')}

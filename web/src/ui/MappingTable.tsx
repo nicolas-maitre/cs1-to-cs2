@@ -43,7 +43,8 @@ export function MappingTable({ rows, overrides, onOverride }: Props) {
                 <td>
                   <div className="ni"><i style={{ background: st.color }} title={tk(`net.${r.category}`, st.label)} />{r.title}</div>
                   {sub && <div className="muted small" title={r.infos.join('\n')}>{sub}</div>}
-                  {tg.mode === 'rb' && r.rb && <div className="small">{t('mapping.width')} <span className={Math.abs(r.rb.diff) >= 0.5 ? 'loss' : ''}>{n(r.rb.cs1Width, 1)} → {n(r.rb.rbWidth, 1)} m</span> · RB {r.rb.category}</div>}
+                  {tg.mode === 'rb' && r.rb && r.vanilla?.road && <div className="small">{t('mapping.width')} <span className={Math.abs(r.vanilla.road.width - r.rb.cs1Width) >= 0.5 ? 'loss' : ''}>{n(r.rb.cs1Width, 1)} → {n(r.vanilla.road.width, 1)} m</span> · {t('mapping.vanillaTag')}</div>}
+                  {tg.mode === 'rb' && r.rb && !r.vanilla?.road && <div className="small">{t('mapping.width')} <span className={Math.abs(r.rb.diff) >= 0.5 ? 'loss' : ''}>{n(r.rb.cs1Width, 1)} → {n(r.rb.rbWidth, 1)} m</span> · RB {r.rb.category}</div>}
                 </td>
                 <td className="num">{n(r.segmentsInCrop)}<span className="muted"> / {n(r.segments)}</span></td>
                 <td>
@@ -56,6 +57,7 @@ export function MappingTable({ rows, overrides, onOverride }: Props) {
                     <option value="skip">{t('mapping.skip')}</option>
                   </select>
                   {overrides[r.netInfo] && <div className="small">{t('mapping.override', { target: tg.mode === 'vanilla' ? tg.name : tg.mode === 'skip' ? t('mapping.skip') : t('mapping.autoRb') })}</div>}
+                  {r.vanilla && !overrides[r.netInfo] && <div className="small muted">{r.vanilla.road ? t('mapping.vanillaWhy', { reason: r.vanilla.reason }) : t('mapping.rbWhy', { reason: r.vanilla.reason })}</div>}
                   {r.prefabKeys.length > 1 && <div className="small muted">{t('mapping.prefabs', { n: r.prefabKeys.length })}</div>}
                 </td>
               </tr>
@@ -73,6 +75,7 @@ function autoLabel(r: MappingRow, t: T) {
     // what auto would be: roads → Road Builder, otherwise unknown here
     return r.category === 'road' || r.category === 'highway' ? t('mapping.autoRb') : t('mapping.autoDefault');
   }
+  if (tg.mode === 'rb' && r.vanilla?.road) return t('mapping.autoVanilla', { name: r.vanilla.road.name });
   if (tg.mode === 'rb') return r.rb ? t('mapping.autoRbCat', { cat: r.rb.category }) : t('mapping.autoRbNoLane');
   if (tg.mode === 'vanilla') return tg.name;
   return t('mapping.autoSkip', { reason: tg.reason });

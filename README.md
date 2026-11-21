@@ -19,7 +19,7 @@ The plan columns say whether the web tool writes a feature into the import packa
 
 | Feature | In the package | Built in CS2 |
 | --- | --- | --- |
-| Roads: lanes, medians, bus/tram lanes, trees, speed (Road Builder), bridges, tunnels, slopes | yes | yes: Importer mod and scripts (Skibidi 3 km crop: 2035/2035 segments) |
+| Roads: lanes, medians, bus/tram lanes, trees, speed (vanilla CS2 roads when the lanes match, else Road Builder), bridges, tunnels, slopes | yes | yes: Importer mod and scripts (Skibidi 3 km crop: 2035/2035 segments) |
 | Train, metro and tram tracks, pedestrian and bike paths | yes | yes, same as roads |
 | IMT lane paint → bus lanes and medians | yes | yes, part of the Road Builder road types |
 | TM:PE speed limits and bus-only lanes | yes | yes, as Road Builder road variants |

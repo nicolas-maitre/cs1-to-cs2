@@ -89,6 +89,27 @@ export interface RbReport {
   notes: string[];
   cs1Slots: string[];
   rbLanes: string[];
+  /** The generated road's cross-section left → right (vanilla.ts compares it with the vanilla CS2 roads). */
+  profile: RoadProfile;
+}
+
+/** One lane of a road cross-section; offsets are m from the centre line, + = right of start → end. */
+export interface ProfileLane {
+  /** car | bus | tram | parking | bike | pedestrian | median | shoulder | other; combined lanes as "car,tram" */
+  type: string;
+  dir: 'forward' | 'backward' | 'both' | 'none';
+  offset: number;
+  width: number;
+}
+export interface RoadProfile {
+  category: 'road' | 'highway';
+  width: number;
+  speedKmh: number;
+  /** the speed was set by TM:PE (not the CS1 road's default) */
+  speedSet?: boolean;
+  /** the generated road has tree addons (sidewalk or median trees) */
+  trees: boolean;
+  lanes: ProfileLane[];
 }
 
 const nearest = (v: number, list: number[]) => list.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
@@ -304,6 +325,7 @@ export function convert(info: NetInfo, overrides: Map<number, LaneOverrideKind> 
   const title = rawTitle.replace(/ (Elevated|Bridge|Slope|Tunnel)\d*$/, '');
   if (title !== rawTitle) notes.push(`only the ${rawTitle.slice(title.length + 1)} variant is in the export; its sidewalks may be narrower than the ground road's`);
   const category = a.highway ? 'Highway' : 'Road';
+  const profile: RoadProfile = { category: a.highway ? 'highway' : 'road', width: rbWidth, speedKmh: speed, ...(speedOverride != null ? { speedSet: true } : {}), trees: /Trees/.test([...addons].join(',')), lanes: profileLanes(out, rbWidth) };
 
   const config: RbConfig = {
     Type: 'RoadConfig', Version: 5, OriginalID: id, ID: id,
@@ -322,6 +344,41 @@ export function convert(info: NetInfo, overrides: Map<number, LaneOverrideKind> 
       cs1: info.name, imtOverrides: sig || undefined, title, id, category, cs1Width, rbWidth, diff: +(rbWidth - cs1Width).toFixed(2), speedKmh: speed, notes,
       cs1Slots: a.slots.map(s => `${s.kind}${s.invert ? '←' : '→'} ${s.width}m @${s.pos}`),
       rbLanes: out.map(o => `${o.lane.GroupPrefabName.replace(RB, '').replace('GroupPrefab', '')}${o.lane.Invert ? '←' : '→'} ${o.width}m ${JSON.stringify(o.lane.GroupOptions)}`),
+      profile,
     },
   };
+}
+
+/** Road Builder lane groups (left → right, with their widths) → cross-section lanes. A sidewalk with parking ("P") or a
+ *  bike lane ("B") holds a 2 m parking / bike lane at its inner edge. */
+function profileLanes(out: { lane: RbLane; width: number }[], total: number): ProfileLane[] {
+  const lanes: ProfileLane[] = [];
+  let x = -total / 2;
+  for (const o of out) {
+    const g = o.lane.GroupPrefabName.replace(RB, '').replace('GroupPrefab', '');
+    const left = x, right = x + o.width, c = x + o.width / 2;
+    const dir = o.lane.Invert ? 'backward' : 'forward';
+    const opt = o.lane.GroupOptions;
+    x = right;
+    switch (g) {
+      case 'Car': lanes.push({ type: opt['Transport Option'] === 'Tram' ? 'car,tram' : 'car', dir, offset: c, width: o.width }); break;
+      case 'Bus': lanes.push({ type: opt['Transport Option'] === 'Tram' ? 'bus,tram' : 'bus', dir, offset: c, width: o.width }); break;
+      case 'Tram': lanes.push({ type: 'tram', dir, offset: c, width: o.width }); break;
+      case 'Parking': lanes.push({ type: 'parking', dir: 'none', offset: c, width: o.width }); break;
+      case 'Median': lanes.push({ type: 'median', dir: 'none', offset: c, width: o.width }); break;
+      case 'Shoulder': lanes.push({ type: 'shoulder', dir: 'none', offset: c, width: o.width }); break;
+      case 'Sidewalk': {
+        const extra = opt.Parking === 'P' ? 'parking' : opt.Parking === 'B' ? 'bike' : '';
+        // the inner edge is the one towards the road: right for the left sidewalk (inverted), left for the right one
+        const inner = o.lane.Invert ? right : left, sign = o.lane.Invert ? -1 : 1;
+        if (extra) {
+          lanes.push({ type: extra, dir: extra === 'bike' ? dir : 'none', offset: inner + sign * 1, width: 2 });
+          lanes.push({ type: 'pedestrian', dir: 'both', offset: (o.lane.Invert ? left : right) - sign * (o.width - 2) / 2, width: o.width - 2 });
+        } else lanes.push({ type: 'pedestrian', dir: 'both', offset: c, width: o.width });
+        break;
+      }
+      default: lanes.push({ type: 'other', dir: 'none', offset: c, width: o.width });
+    }
+  }
+  return lanes.map(l => ({ ...l, offset: Math.round(l.offset * 100) / 100 + 0 }));
 }

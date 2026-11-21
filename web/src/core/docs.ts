@@ -5,7 +5,7 @@
 import type { Lang } from './i18n/index.ts';
 import { DOCS_FR } from './docs.fr.ts';
 
-export const APP_VERSION = '0.5.2';
+export const APP_VERSION = '0.6.0';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }
@@ -51,7 +51,7 @@ export const DOCS_EN: Docs = {
     {
       game: 'Cities: Skylines II (CS2)',
       items: [
-        'CS2 1.6 or later, with the **Road Builder** mod (converted road types are Road Builder roads).',
+        'CS2 1.6 or later, with the **Road Builder** mod (road types that match a vanilla CS2 road use it; the others become Road Builder roads).',
         'The **CS1 → CS2 Importer** mod, which builds the package in your city.',
         'The **Traffic** mod for TM:PE priority signs, lane arrows and lane connections (optional).',
       ],
@@ -92,7 +92,7 @@ export const DOCS_EN: Docs = {
       title: 'Check the conversion',
       body: [
         '**Overview** shows what converts per category with your city\'s numbers, a preview of the terrain, the options (zone theme, which parts to convert) and the install steps.',
-        '**Mapping** lists every road type with its CS2 equivalent; you can pick another one. **Road types** shows the generated Road Builder roads and any width change.',
+        '**Mapping** lists every road type with its CS2 equivalent: a vanilla CS2 road when the generated road has the same lanes ("vanilla Small Road (matched)"), else a Road Builder road, with the reason in both cases; you can pick another one. **Prefer vanilla CS2 roads** (in the options, on by default) does the matching; turn it off to make every road a Road Builder road. **Road types** shows the generated Road Builder roads and any width change.',
         '**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn\'t fit at its spot: look for free land nearby (up to 400 m), anywhere in the square, or leave it out. Very large buildings (universities, power plants, cargo terminals) look anywhere by default.',
         '**Report** lists everything that is approximated or dropped.',
       ],
@@ -154,6 +154,7 @@ export const DOCS_EN: Docs = {
   FAQ: [
     { q: 'Is my city uploaded anywhere?', a: ['No. The web tool runs entirely in your browser; the file never leaves your computer. There is no server behind the page.'] },
     { q: 'Why can\'t I convert my whole 81-tile city?', a: ['A CS2 map\'s playable area is about 14.3 km across, smaller than CS1\'s 81 tiles (17.3 km). The web tool lets you pick the square that fits; you can convert another square into another city.'] },
+    { q: 'Why are some roads vanilla CS2 roads and others Road Builder roads?', a: ['When the road cs1conv would generate has the same lanes as a vanilla CS2 road (same driving lanes and directions on each side, each within 0.5 m in width, parking and bike lanes on the same sides, the same median, a total width within 1 m and the same speed), the vanilla road is used: fewer Road Builder configs to install, and the roads look like the game\'s own. Trees, bus lanes and other changes from IMT or TM:PE usually keep a road on Road Builder. **Mapping** gives the reason for each type. To force Road Builder, pick **Road Builder** for the type, or turn off **Prefer vanilla CS2 roads**.'] },
     { q: 'Some roads are narrower or wider than in CS1. Why?', a: ['Road types are rebuilt with Road Builder, which has fixed lane widths and sidewalks of at most 7 m. A CS1 road with 9 m sidewalks becomes a few metres narrower. Every change is listed under **Road types** and in the report.'] },
     { q: 'The page says it can\'t open my file.', a: ['Open the `.cs1x` written by the exporter, not a `.crp` save. If it says the format version is too new, reload the page to get the latest tool; if it is too old, update the exporter and export again.'] },
     { q: 'A section of my export failed.', a: ['The rest converts normally. Export again; if it keeps failing, the exporter\'s message is in the web tool under Overview → File check.'] },
@@ -176,7 +177,7 @@ export const DOCS_EN: Docs = {
   ],
 
   MATRIX: [
-    { area: 'Roads', cs1: 'Roads, highways, one-ways, Vanilla+ and workshop roads', cs2: 'Generated Road Builder roads', status: 'approx', notes: 'Lanes, medians, parking, bus and tram lanes, trees and speed are kept; widths can change (Road Builder sidewalks max 7 m).' },
+    { area: 'Roads', cs1: 'Roads, highways, one-ways, Vanilla+ and workshop roads', cs2: 'A matching vanilla CS2 road, else a generated Road Builder road', status: 'approx', notes: 'Lanes, medians, parking, bus and tram lanes, trees and speed are kept; widths can change (Road Builder sidewalks max 7 m). A vanilla road is used only when the lanes match (each within 0.5 m, total within 1 m).' },
     { area: 'Roads', cs1: 'Elevated roads, bridges, slopes, tunnels', cs2: 'The same Road Builder road at the CS1 height', status: 'yes', notes: 'Road Builder makes the elevated, bridge and tunnel forms itself.' },
     { area: 'Roads', cs1: 'Painted bike lanes in the carriageway', cs2: 'Sidewalk with bike lane', status: 'approx', notes: 'Only at the road edge; CS2 has no painted carriageway bike lanes.' },
     { area: 'Rail and paths', cs1: 'Train, metro and tram tracks', cs2: 'CS2 double, two-way or one-way tracks', status: 'yes', notes: '' },

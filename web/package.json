@@ -1,7 +1,7 @@
 {
   "name": "cs1conv-web",
   "private": true,
-  "version": "0.5.2",
+  "version": "0.6.0",
   "type": "module",
   "description": "CS1 → CS2 converter: .cs1x preview, crop, road mapping and import package writer (web UI + Node CLI)",
   "engines": {
@@ -16,7 +16,8 @@
     "cli": "node cli/cs1conv.ts",
     "docs": "node scripts/gen-docs.mjs",
     "notices": "node scripts/notices.mjs",
-    "slim-catalogue": "node scripts/slim-catalogue.mjs"
+    "slim-catalogue": "node scripts/slim-catalogue.mjs",
+    "slim-roads": "node scripts/slim-roads.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",

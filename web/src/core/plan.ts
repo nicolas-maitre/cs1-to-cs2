@@ -29,6 +29,8 @@ import type { AssetMatch, AssetOverrides, Cs2Catalogue, FallbackOverrides, Place
 import { buildDistricts } from './m3/districts.ts';
 import { addDefaultDepots } from '../../../buildings/lib/plan.mjs';
 import { buildObjects, buildSurfaces, SURFACE_MAP } from './m3/objects.ts';
+import { matchVanilla } from './vanilla.ts';
+import type { Cs2RoadCatalogue, VanillaMatch } from './vanilla.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
   PlanTransit,
@@ -61,6 +63,10 @@ export interface BuildOptions {
   /** M3: per-type placement fallback (Assets tab); others get defaultFallback, or `assetFallback` when given. */
   assetFallbacks?: FallbackOverrides;
   assetFallback?: PlacementFallback;
+  /** Vanilla CS2 road layouts (cs2-roads.json); with preferVanilla, a road whose generated profile matches one uses it. */
+  roads?: Cs2RoadCatalogue | null;
+  /** Use a matching vanilla CS2 road instead of a generated Road Builder road (default true; needs `roads`). */
+  preferVanilla?: boolean;
   /** Metro / train yards: at the crop edge (default) or placed by the user (plan.transit.depotMode). */
   depotMode?: PlanTransit['depotMode'];
   /** M3: districts and policies (default on). */
@@ -88,6 +94,8 @@ export interface MappingRow {
   prefabKeys: string[];
   /** Base RB config (no IMT overrides) for rb rows. */
   rb?: RbReport;
+  /** For rb rows when vanilla roads are preferred: the matching vanilla road of the base profile, or why none fits. */
+  vanilla?: VanillaMatch;
 }
 
 export interface RbVariant extends RbReport { key: string; segments: number }
@@ -146,6 +154,12 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     return p && infos.has(p) ? p : name;
   };
 
+  // Vanilla roads: a road type, or one of its IMT / TM:PE variants, whose generated profile matches a vanilla CS2 road
+  // uses that road (docs/DECISIONS.md #100). Not with an explicit "Road Builder" choice for the type.
+  const preferVanilla = opts.preferVanilla !== false && !!opts.roads?.roads?.length;
+  const vanillaAllowed = (row: { override?: MappingOverride }) => preferVanilla && row.override?.mode !== 'rb';
+  const vanillaByVariant = new Map<string, VanillaMatch>();
+
   // ---- mapping rows (whole city)
   const rows = new Map<string, MappingRow>();
   const targetOf = new Map<string, ResolvedTarget>();
@@ -160,6 +174,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
         infos: [], segments: 0, segmentsInCrop: 0, target, override: overrides[base], prefabKeys: [],
       };
       if (info && target.mode === 'rb') row.rb = convert(info)?.report;
+      if (row.rb && vanillaAllowed(row)) row.vanilla = matchVanilla(row.rb.profile, opts.roads);
       rows.set(base, row);
       targetOf.set(base, target);
     }
@@ -255,21 +270,34 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
       const laneSig = overrideSignature(ov);
       const sig = speed != null ? `${laneSig ? laneSig + ',' : ''}speed=${speed}` : laneSig;
       const ck = `${base}|${sig}`;
-      let entry = rbConfigs.get(ck);
-      if (!entry) {
+      let vm = vanillaByVariant.get(ck);
+      if (vm === undefined && vanillaAllowed(row)) {
         const res = convert(baseInfo, ov, { speedKmh: speed, overrideLabel: label });
-        if (!res) { skip(base, 'unmapped-netinfo', 'road has no drive lane Road Builder can represent', s.id); continue; }
-        entry = { ...res, key: rbKey(res.config.ID), segments: 0 };
-        rbConfigs.set(ck, entry);
-        prefabs[entry.key] = {
-          type: 'RoadBuilderPrefab', name: res.config.ID, source: base,
-          ...(laneSig ? { imt: laneSig, lanesFrom: label } : {}), ...(speed != null ? { speedKmh: speed } : {}),
-        };
+        vm = res ? matchVanilla(res.report.profile, opts.roads) : { road: null, reason: '' };
+        vanillaByVariant.set(ck, vm);
       }
-      entry.segments++;
-      key = entry.key;
-      if (speed != null) speedGroups.set(`${base}|${speed}`, (speedGroups.get(`${base}|${speed}`) ?? 0) + 1);
-      if (ov) items.push({ level: 'info', kind: label === 'TM:PE' ? 'traffic' : 'imt-override', message: `${label} lane override ${laneSig} on ${base}: segment uses RB variant ${entry.config.ID}`, cs1: { segment: s.id } });
+      if (vm?.road) {
+        key = prefabKeyVanilla(vm.road.name);
+        if (!prefabs[key]) prefabs[key] = { type: 'RoadPrefab', name: vm.road.name, source: base, matched: true, ...(laneSig ? { imt: laneSig, lanesFrom: label } : {}) };
+        else if (!prefabs[key].source.split(', ').includes(base)) prefabs[key].source += `, ${base}`;
+        if (ov) items.push({ level: 'info', kind: label === 'TM:PE' ? 'traffic' : 'imt-override', message: `${label} lane override ${laneSig} on ${base}: the result matches vanilla ${vm.road.name}`, cs1: { segment: s.id } });
+      } else {
+        let entry = rbConfigs.get(ck);
+        if (!entry) {
+          const res = convert(baseInfo, ov, { speedKmh: speed, overrideLabel: label });
+          if (!res) { skip(base, 'unmapped-netinfo', 'road has no drive lane Road Builder can represent', s.id); continue; }
+          entry = { ...res, key: rbKey(res.config.ID), segments: 0 };
+          rbConfigs.set(ck, entry);
+          prefabs[entry.key] = {
+            type: 'RoadBuilderPrefab', name: res.config.ID, source: base,
+            ...(laneSig ? { imt: laneSig, lanesFrom: label } : {}), ...(speed != null ? { speedKmh: speed } : {}),
+          };
+        }
+        entry.segments++;
+        key = entry.key;
+        if (speed != null) speedGroups.set(`${base}|${speed}`, (speedGroups.get(`${base}|${speed}`) ?? 0) + 1);
+        if (ov) items.push({ level: 'info', kind: label === 'TM:PE' ? 'traffic' : 'imt-override', message: `${label} lane override ${laneSig} on ${base}: segment uses RB variant ${entry.config.ID}`, cs1: { segment: s.id } });
+      }
     } else {
       if (lv.speed.has(s.id)) speedOnVanilla++;
       key = prefabKeyVanilla(target.name);
@@ -446,6 +474,8 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
       items.push({ level: 'info', kind: 'outside-connections', message: `${oc.counts.connections} outside connection(s) where the network leaves the crop (${oc.counts.road} road, ${oc.counts.train} train)${oc.skipped.length ? `; ${oc.skipped.length} skipped (end node not imported)` : ''}`, count: oc.counts.connections });
     }
   }
+  const matched = Object.values(prefabs).filter(p => p.matched);
+  if (matched.length) items.push({ level: 'info', kind: 'mapping-override', message: `${matched.length} road type(s) use a matching vanilla CS2 road instead of a Road Builder road: ${matched.map(p => `${p.source}${p.imt ? ` (${p.imt})` : ''} → ${p.name}`).join('; ')}`, count: matched.length });
   const order: Record<string, number> = { warning: 0, info: 1 };
   items.sort((x, y) => order[x.level] - order[y.level]);
   const pkg: BuiltPackage = {

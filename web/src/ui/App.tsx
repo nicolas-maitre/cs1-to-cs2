@@ -7,6 +7,7 @@ import { DEFAULT_ZONING } from '../core/m2/zoning.ts';
 import type { ZoningOptions } from '../core/m2/zoning.ts';
 import type { AssetOverrides, Cs2Catalogue, FallbackOverrides } from '../core/m3/buildings.ts';
 import { slimCatalogue } from '../core/m3/catalogue.ts';
+import type { Cs2RoadCatalogue } from '../core/vanilla.ts';
 import { AssetsTable } from './AssetsTable.tsx';
 import { Help } from './Help.tsx';
 import { TerrainPreview } from './TerrainPreview.tsx';
@@ -36,7 +37,7 @@ const STORE = 'cs1conv.ui.v1';
 
 interface Loaded extends Source { fileName: string; size: number }
 
-const DEFAULT_CONV: ConvOptions = { zoning: DEFAULT_ZONING, traffic: true, transit: true, water: true, buildings: true, districts: true, objects: true, surfaces: true };
+const DEFAULT_CONV: ConvOptions = { preferVanilla: true, zoning: DEFAULT_ZONING, traffic: true, transit: true, water: true, buildings: true, districts: true, objects: true, surfaces: true };
 
 function loadPrefs(): { overrides?: Record<string, MappingOverride>; crops?: Record<string, Crop>; conv?: ConvOptions; assetOverrides?: AssetOverrides; assetFallbacks?: FallbackOverrides } {
   try { return JSON.parse(localStorage.getItem(STORE) ?? '{}'); } catch { return {}; }
@@ -80,6 +81,14 @@ export function App() {
   const [assetOverrides, setAssetOverrides] = useState<AssetOverrides>(() => loadPrefs().assetOverrides ?? {});
   const [assetFallbacks, setAssetFallbacks] = useState<FallbackOverrides>(() => loadPrefs().assetFallbacks ?? {});
   const [catalogue, setCatalogue] = useState<Cs2Catalogue | null>(null);
+  const [roads, setRoads] = useState<Cs2RoadCatalogue | null>(null);
+  // The bundled vanilla CS2 road list (public/cs2-roads.json) for "Prefer vanilla roads".
+  useEffect(() => {
+    fetch('./cs2-roads.json')
+      .then(r => (r.ok ? r.json() : null))
+      .then(c => { if (c && Array.isArray(c.roads)) setRoads(c); })
+      .catch(() => { /* no bundled road list: every road is a Road Builder road */ });
+  }, []);
   const [catalogueSource, setCatalogueSource] = useState<string | null>(null);
   const catalogueInput = useRef<HTMLInputElement>(null);
 
@@ -165,9 +174,9 @@ export function App() {
   const scene = useMemo(() => (loaded ? buildScene(loaded.city) : null), [loaded]);
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
   const opts: BuildOptions | null = useMemo(() => (loaded ? {
-    crop: committed, overrides, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
+    crop: committed, overrides, roads, preferVanilla: conv.preferVanilla !== false, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
     buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, depotMode: conv.depotMode, assetOverrides, assetFallbacks, lang,
-  } : null), [loaded, committed, overrides, conv, assetOverrides, assetFallbacks, lang]);
+  } : null), [loaded, committed, overrides, roads, conv, assetOverrides, assetFallbacks, lang]);
   const { pkg, busy: building, ms, error: buildError, zip: buildZip } = usePackage(loaded, opts, catalogue);
   const [zipping, setZipping] = useState(false);
   const stats = useMemo(() => (pkg ? mappingStats(pkg.mapping) : null), [pkg]);

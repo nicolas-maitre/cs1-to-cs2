@@ -10,6 +10,10 @@ Non. L'outil web tourne entièrement dans votre navigateur ; le fichier ne quitt
 
 La zone jouable d'une carte CS2 mesure environ 14,3 km de côté, moins que les 81 tuiles de CS1 (17,3 km). L'outil web vous laisse choisir le carré qui tient ; vous pouvez convertir un autre carré dans une autre ville.
 
+## Pourquoi certaines routes sont-elles des routes CS2 vanilla et d'autres des routes Road Builder ?
+
+Quand la route que cs1conv générerait a les mêmes voies qu'une route CS2 vanilla (mêmes voies de circulation et mêmes sens de chaque côté, chacune à 0,5 m près en largeur, stationnement et pistes cyclables des mêmes côtés, même terre-plein, largeur totale à 1 m près et même vitesse), la route vanilla est utilisée : moins de configurations Road Builder à installer, et des routes identiques à celles du jeu. Les arbres, les voies de bus et les autres changements venant d'IMT ou de TM:PE gardent en général une route sur Road Builder. **Routes** donne la raison pour chaque type. Pour imposer Road Builder, choisissez **Road Builder** pour ce type, ou désactivez **Préférer les routes CS2 vanilla**.
+
 ## Certaines routes sont plus étroites ou plus larges que dans CS1. Pourquoi ?
 
 Les types de route sont recréés avec Road Builder, qui a des largeurs de voie fixes et des trottoirs de 7 m au plus. Une route CS1 avec des trottoirs de 9 m devient quelques mètres plus étroite. Chaque changement figure sous **Types RB** et dans le rapport.

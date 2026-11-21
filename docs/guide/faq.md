@@ -10,6 +10,10 @@ No. The web tool runs entirely in your browser; the file never leaves your compu
 
 A CS2 map's playable area is about 14.3 km across, smaller than CS1's 81 tiles (17.3 km). The web tool lets you pick the square that fits; you can convert another square into another city.
 
+## Why are some roads vanilla CS2 roads and others Road Builder roads?
+
+When the road cs1conv would generate has the same lanes as a vanilla CS2 road (same driving lanes and directions on each side, each within 0.5 m in width, parking and bike lanes on the same sides, the same median, a total width within 1 m and the same speed), the vanilla road is used: fewer Road Builder configs to install, and the roads look like the game's own. Trees, bus lanes and other changes from IMT or TM:PE usually keep a road on Road Builder. **Mapping** gives the reason for each type. To force Road Builder, pick **Road Builder** for the type, or turn off **Prefer vanilla CS2 roads**.
+
 ## Some roads are narrower or wider than in CS1. Why?
 
 Road types are rebuilt with Road Builder, which has fixed lane widths and sidewalks of at most 7 m. A CS1 road with 9 m sidewalks becomes a few metres narrower. Every change is listed under **Road types** and in the report.

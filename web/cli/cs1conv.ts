@@ -22,6 +22,7 @@ import type { MappingOverride } from '../src/core/mapping.ts';
 import { DEFAULT_ZONING } from '../src/core/m2/zoning.ts';
 import type { ZoningOptions } from '../src/core/m2/zoning.ts';
 import type { Cs2Catalogue, PlacementFallback } from '../src/core/m3/buildings.ts';
+import type { Cs2RoadCatalogue } from '../src/core/vanilla.ts';
 import type { Crop, Cs1City } from '../src/core/types.ts';
 
 const RB_SUFFIX = '-cs1conv.json';
@@ -32,7 +33,7 @@ function usage(msg?: string): never {
   node web/cli/cs1conv.ts inspect <file.cs1x|dump.json> [--json]
   node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb [--prune]]
        [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
-       [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--lang en|fr] [--metro-depot edge|manual] [--train-depot edge|manual]
+       [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--lang en|fr] [--metro-depot edge|manual] [--train-depot edge|manual] [--roads <cs2-roads.json>] [--no-prefer-vanilla]
        [--no-buildings] [--no-districts] [--no-objects] [--no-surfaces] [--no-terrain] [--no-world]
   node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 
@@ -47,7 +48,7 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'prune', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts', 'no-objects', 'no-surfaces', 'no-terrain', 'no-world'];
+      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'prune', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts', 'no-objects', 'no-surfaces', 'no-prefer-vanilla', 'no-terrain', 'no-world'];
       if (boolFlags.includes(name)) flags[name] = true;
       else { const v = argv[++i]; if (v == null) usage(`--${name} needs a value`); flags[name] = v; }
     } else pos.push(a);
@@ -62,6 +63,21 @@ async function load(file: string): Promise<Cs1City> {
 }
 
 /** The CS2 building catalogue: --catalogue, else %LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json when it exists. */
+/** The vanilla CS2 road list: --roads, else %LOCALAPPDATA%\cs1-to-cs2\samples\cs2-roads.json, else the bundled web/public one. */
+function loadRoads(flags: Record<string, string | true>): Cs2RoadCatalogue | null {
+  if (flags['no-prefer-vanilla']) return null;
+  const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  const local = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2', 'samples', 'cs2-roads.json');
+  const bundled = path.join(here, '..', 'public', 'cs2-roads.json');
+  const file = typeof flags.roads === 'string' ? flags.roads : [local, bundled].find(f => fs.existsSync(f)) ?? null;
+  if (!file) return null;
+  if (!fs.existsSync(file)) usage(`road list not found: ${file}`);
+  const c = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  if (!Array.isArray(c.roads)) usage(`${file} is not a CS2 road list (no roads array)`);
+  console.log(`CS2 vanilla roads: ${file} (${c.roads.length} roads)`);
+  return c;
+}
+
 function loadCatalogue(flags: Record<string, string | true>): Cs2Catalogue | null {
   const explicit = typeof flags.catalogue === 'string' ? flags.catalogue : null;
   const local = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2', 'samples', 'cs2-catalogue.json');
@@ -182,7 +198,7 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
   const fallback = typeof flags.fallback === 'string' ? flags.fallback : undefined;
   if (fallback && !['nearby', 'anywhere', 'skip'].includes(fallback)) usage('--fallback must be nearby, anywhere or skip');
   const pkg = buildPackage(city, {
-    crop, overrides, lang, depotMode,
+    crop, overrides, lang, depotMode, roads: loadRoads(flags), preferVanilla: !flags['no-prefer-vanilla'],
     zoning: { enabled: !flags['no-zoning'], theme, residentialHigh: resHigh as ZoningOptions['residentialHigh'], office: office as ZoningOptions['office'] },
     traffic: !flags['no-traffic'], transit: !flags['no-transit'], water: !flags['no-water'],
     buildings: !flags['no-buildings'], districts: !flags['no-districts'], objects: !flags['no-objects'], surfaces: !flags['no-surfaces'], catalogue: loadCatalogue(flags),

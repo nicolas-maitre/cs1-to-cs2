@@ -13,7 +13,7 @@ D'une ville Cities: Skylines à une ville Cities: Skylines II, étape par étape
 
 **Cities: Skylines II (CS2)**
 
-- CS2 1.6 ou plus récent, avec le mod **Road Builder** (les types de route convertis sont des routes Road Builder).
+- CS2 1.6 ou plus récent, avec le mod **Road Builder** (les types de route qui correspondent à une route CS2 vanilla l'utilisent ; les autres deviennent des routes Road Builder).
 - Le mod **CS1 → CS2 Importer**, qui construit le paquet dans votre ville.
 - Le mod **Traffic** pour les panneaux de priorité, flèches de voie et connexions de voies de TM:PE (facultatif).
 
@@ -47,7 +47,7 @@ Au clavier : cliquez sur la carte, puis utilisez les flèches pour déplacer le 
 
 **Aperçu** montre ce qui est converti par catégorie avec les chiffres de votre ville, un aperçu du terrain, les options (thème des zones, parties à convertir) et les étapes d'installation.
 
-**Routes** liste chaque type de route avec son équivalent CS2 ; vous pouvez en choisir un autre. **Types RB** montre les routes Road Builder générées et les changements de largeur.
+**Routes** liste chaque type de route avec son équivalent CS2 : une route CS2 vanilla quand la route générée a les mêmes voies ("Small Road vanilla (correspondance)"), sinon une route Road Builder, avec la raison dans les deux cas ; vous pouvez en choisir un autre. **Préférer les routes CS2 vanilla** (dans les options, activé par défaut) fait cette correspondance ; désactivez-le pour que toutes les routes soient des routes Road Builder. **Types RB** montre les routes Road Builder générées et les changements de largeur.
 
 **Bâtiments** liste les bâtiments CS1 avec le bâtiment CS2 choisi pour chaque type, le score de correspondance et la raison ; choisissez-en un autre ou ignorez un type. Pour chaque type, vous pouvez aussi dire ce qui se passe s'il ne tient pas à sa place : chercher un terrain libre à proximité (jusqu'à 400 m), n'importe où dans le carré, ou ne pas le placer. Les très grands bâtiments (universités, centrales, terminaux de fret) cherchent partout par défaut.
 

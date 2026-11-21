@@ -6,15 +6,15 @@ import type { Bezier, Cs1City, Cs1Node, Cs1Segment, NetInfo } from './types.ts';
 
 const lane = (p: number, w: number, t: string, v: string, d: string) => ({ fields: { m_position: p, m_width: w, m_laneType: t, m_vehicleType: v, m_direction: d, m_speedLimit: 1 }, props: [] });
 
-const BASIC: NetInfo = {
+export const BASIC: NetInfo = {
   name: 'Basic Road', title: 'Two-Lane Road', ai: 'RoadAI', service: 'Road', parent: null, fields: { m_halfWidth: 8, m_pavementWidth: 3 }, aiFields: { m_trafficLights: false },
   lanes: [lane(-6.5, 3, 'Pedestrian', 'None', 'Both'), lane(6.5, 3, 'Pedestrian', 'None', 'Both'), lane(-4, 2, 'Parking', 'Car', 'Backward'), lane(4, 2, 'Parking', 'Car', 'Forward'), lane(-1.5, 3, 'Vehicle', 'Car', 'Backward'), lane(1.5, 3, 'Vehicle', 'Car', 'Forward')],
 };
-const MEDIUM: NetInfo = {
+export const MEDIUM: NetInfo = {
   name: 'Medium Road', title: 'Four-Lane Road', ai: 'RoadAI', service: 'Road', parent: null, fields: { m_halfWidth: 16, m_pavementWidth: 4.8 }, aiFields: { m_trafficLights: true },
   lanes: [lane(-13.6, 4.8, 'Pedestrian', 'None', 'Both'), lane(13.6, 4.8, 'Pedestrian', 'None', 'Both'), ...[-7.5, -4.5].map(p => lane(p, 3, 'Vehicle', 'Car', 'Backward')), ...[4.5, 7.5].map(p => lane(p, 3, 'Vehicle', 'Car', 'Forward'))],
 };
-const HIGHWAY: NetInfo = {
+export const HIGHWAY: NetInfo = {
   name: 'Highway', title: 'Highway', ai: 'RoadAI', service: 'Road', parent: null, fields: { m_halfWidth: 11, m_pavementWidth: 2 }, aiFields: { m_highwayRules: true, m_enableZoning: false },
   lanes: [-4, 0, 4].map(p => lane(p, 4, 'Vehicle', 'Car', 'Forward')),
 };

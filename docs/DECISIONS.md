@@ -275,3 +275,17 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      | Buildings | 108/108 | 43/43 | 13/13 |
 
      Every compared road runs in CS1's direction, and no lane connection was set wrong. Trains and metros are the known limit (#99, #101). The final release is cut after the vanilla-road preference (#100) lands and passes the same acceptance.
+104. **Web 0.6.0: the vanilla-road matcher** (`web/src/core/vanilla.ts`; Claude; details in `web/DECISIONS-web.md` 87–90). It compares the road that would be generated with CS2's 49 vanilla roads dumped from the game:
+     - the same driving lanes and directions per side;
+     - each lane ±0.5 m wide and ±0.75 m in position;
+     - parking and bike lanes on the same sides;
+     - median ±1 m (a gap of 1 m or less isn't a median);
+     - total width ±1 m.
+
+     Only a TM:PE speed counts as a speed difference, because default speeds always differ between the games. Roads with trees, and bridges, quays and dams, stay on Road Builder.
+
+     | | Skibidi 3 km | CacaoCity | Westfield |
+     | --- | --- | --- | --- |
+     | Road types matched to vanilla | 7 | 8 | 5 |
+     | Segments on vanilla roads | 341 | 117 | 402 of 647 |
+     | Road Builder configs | 26, down from 33 | 32 | 10 |

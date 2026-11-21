@@ -9,7 +9,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Roads, highways, one-ways, Vanilla+ and workshop roads | Generated Road Builder roads | converts, approximated | Lanes, medians, parking, bus and tram lanes, trees and speed are kept; widths can change (Road Builder sidewalks max 7 m). |
+| Roads, highways, one-ways, Vanilla+ and workshop roads | A matching vanilla CS2 road, else a generated Road Builder road | converts, approximated | Lanes, medians, parking, bus and tram lanes, trees and speed are kept; widths can change (Road Builder sidewalks max 7 m). A vanilla road is used only when the lanes match (each within 0.5 m, total within 1 m). |
 | Elevated roads, bridges, slopes, tunnels | The same Road Builder road at the CS1 height | converts | Road Builder makes the elevated, bridge and tunnel forms itself. |
 | Painted bike lanes in the carriageway | Sidewalk with bike lane | converts, approximated | Only at the road edge; CS2 has no painted carriageway bike lanes. |
 

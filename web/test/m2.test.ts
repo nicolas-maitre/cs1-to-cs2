@@ -2,7 +2,7 @@ import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { translator } from '../src/core/i18n/index.ts';
 import { ReadError, readCityFile, readCs1x } from '../src/core/cs1x.ts';
-import { inboundLanes, planLaneRef } from '../src/core/m2/context.ts';
+import { inboundLanes, laneIsTramOnly, planLaneRef } from '../src/core/m2/context.ts';
 import type { PlanContext } from '../src/core/m2/context.ts';
 import { buildNodeController } from '../src/core/m2/nodecontroller.ts';
 import { buildTraffic, isBusOnly, trafficLaneVariants } from '../src/core/m2/traffic.ts';
@@ -361,6 +361,23 @@ describe('lane references', () => {
     const ctx = ctxOf(c);
     expect(planLaneRef(ctx, 1, 2)).toMatchObject({ ordinal: 1, count: 2, offset: 1.5, dir: 'forward' });
     expect(planLaneRef(ctx, 1, 3)).toBeNull(); // a bike lane has no CS2 counterpart
+  });
+
+  it('leave tram-only lanes out of ordinal and count; shared car+tram lanes stay (docs/DECISIONS.md #102)', () => {
+    const TRAM_ROAD: NetInfo = {
+      name: 'Tram Road', ai: 'RoadAI', service: 'Road', parent: null, fields: { m_halfWidth: 12, m_pavementWidth: 3 },
+      lanes: [lane(-7.5, 3, 'Vehicle', 'Car', 'Backward'), lane(-4.5, 3, 'Vehicle', 'Car, Tram', 'Backward'), lane(-1.5, 3, 'Vehicle', 'Tram', 'Backward'),
+        lane(1.5, 3, 'Vehicle', 'Tram', 'Forward'), lane(4.5, 3, 'Vehicle', 'Car, Tram', 'Forward'), lane(7.5, 3, 'Vehicle', 'Car', 'Forward')],
+    };
+    const c = city({ netInfos: [TRAM_ROAD], nodes: [node(1, -100, 0), node(2, 100, 0)], segments: [straight(1, 'Tram Road', -100, 100, 0, false, 1, 2)] });
+    const ctx = ctxOf(c);
+    expect(planLaneRef(ctx, 1, 0)).toMatchObject({ ordinal: 0, count: 4 });
+    expect(planLaneRef(ctx, 1, 1)).toMatchObject({ ordinal: 1, count: 4 }); // car+tram counts
+    expect(planLaneRef(ctx, 1, 4)).toMatchObject({ ordinal: 2, count: 4, dir: 'forward' });
+    expect(planLaneRef(ctx, 1, 2)).toBeNull(); // tram-only: not a car lane
+    expect(planLaneRef(ctx, 1, 3)).toBeNull();
+    expect(laneIsTramOnly(ctx, 1, 3)).toBe(true);
+    expect(laneIsTramOnly(ctx, 1, 4)).toBe(false);
   });
 
   it('leave lanes that the Road Builder variant turned into a median (IMT island) out of ordinal and count', () => {

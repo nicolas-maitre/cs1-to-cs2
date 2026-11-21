@@ -1,7 +1,7 @@
 # web: the cs1conv web tool and CLI
 
 Reads a `.cs1x` export of a Cities: Skylines city (or the M0 network dump). You pick a crop square, and the tool:
-- maps every CS1 NetInfo to a CS2 prefab or a generated Road Builder road;
+- maps every CS1 NetInfo to a CS2 prefab: a vanilla CS2 road when the generated road has the same lanes, else a generated Road Builder road;
 - matches CS1 buildings to CS2 buildings;
 - converts zoning, TM:PE rules, transit lines, water, districts, trees and rocks, and IMT junction surfaces;
 - writes the import package (`schema/README.md` §2).
@@ -32,7 +32,7 @@ src/core/          pure TS, no DOM (Node ≥ 24 runs it directly through type st
 src/ui/            React + canvas UI (map, landing, panels, Assets, Help); packageWorker.ts builds packages off the main thread;
                    i18n.tsx is the language provider and switch
 cli/cs1conv.ts
-scripts/           gen-docs.mjs (docs/guide), notices.mjs (third-party notices), slim-catalogue.mjs (bundled CS2 catalogue)
+scripts/           gen-docs.mjs (docs/guide), notices.mjs (third-party notices), slim-catalogue.mjs (bundled CS2 catalogue), slim-roads.mjs (bundled vanilla road layouts)
 public/            cs2-catalogue.json (slim CS2 building catalogue), THIRD-PARTY-NOTICES.txt
 test/              vitest; includes parity with the M0 spike generator and with buildings/lib/plan.mjs on the real data, when present
                    ui.test.tsx: the real UI in jsdom (smoke tests + axe-core accessibility checks), ui/dom.ts stubs canvas and downloads
@@ -49,6 +49,7 @@ npm run build             # static site in dist/ (relative paths: host it from a
 npm run docs              # regenerate docs/guide/*.md and docs/guide/fr/*.md from src/core/docs.ts and docs.fr.ts
 npm run notices           # regenerate public/THIRD-PARTY-NOTICES.txt
 npm run slim-catalogue    # refresh public/cs2-catalogue.json from %LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json
+npm run slim-roads        # refresh public/cs2-roads.json from %LOCALAPPDATA%\cs1-to-cs2\samples\cs2-roads.json
 ```
 
 Dev server only:
@@ -62,7 +63,7 @@ node web/cli/cs1conv.ts inspect <file.cs1x> [--json]
 node web/cli/cs1conv.ts plan <file.cs1x> --crop <cx>,<cz>,<size> --out <dir> [--overrides map.json] [--install-rb [--prune]]
 node web/cli/cs1conv.ts plan <file.cs1x> --auto-crop 3000 --out <dir> [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low]
      [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--no-zoning] [--no-traffic] [--no-transit] [--no-water] [--no-buildings] [--no-districts]
-     [--no-objects] [--no-surfaces] [--no-terrain] [--no-world] [--lang en|fr]
+     [--no-objects] [--no-surfaces] [--no-terrain] [--no-world] [--lang en|fr] [--roads <cs2-roads.json>] [--no-prefer-vanilla]
 node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 ```
 
@@ -72,6 +73,7 @@ node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 - **`--asset-overrides`** (buildings) is a JSON object keyed by CS1 building type name, with a CS2 building prefab name or `"skip"` as value.
 - **`--fallback`** sets what the importer does for every building type that doesn't fit at its CS1 spot: `nearby` (free land within 400 m), `anywhere` (anywhere along the imported roads in the crop) or `skip`. Without it, lots over 400 CS2 cells get `anywhere` and the rest `nearby`. **`--fallback-by-type`** is a JSON object keyed by CS1 building type name with one of those values.
 - **`--lang fr`** writes the "What converts" lines and `README.txt` in French (report.json stays English).
+- **`--roads`:** the vanilla CS2 road layouts used to prefer vanilla roads (docs/DECISIONS.md #100): a road type whose generated Road Builder road has the same lanes as a vanilla CS2 road uses that road (`v:<name>`, `matched: true`), so fewer Road Builder configs are installed. It defaults to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-roads.json` (the importer's `roadlayouts` exec op writes it), else the bundled `web/public/cs2-roads.json`. **`--no-prefer-vanilla`** keeps every road on Road Builder. An override `{"mode":"rb"}` keeps that type on Road Builder.
 - **`--catalogue`:** the CS2 building catalogue. It defaults to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json` when that exists (`node buildings/run.mjs catalogue` writes it). Without a catalogue, buildings aren't matched and the plan has no `buildings` section.
 
 ## Package

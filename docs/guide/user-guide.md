@@ -13,7 +13,7 @@ From a Cities: Skylines city to a Cities: Skylines II city, step by step.
 
 **Cities: Skylines II (CS2)**
 
-- CS2 1.6 or later, with the **Road Builder** mod (converted road types are Road Builder roads).
+- CS2 1.6 or later, with the **Road Builder** mod (road types that match a vanilla CS2 road use it; the others become Road Builder roads).
 - The **CS1 → CS2 Importer** mod, which builds the package in your city.
 - The **Traffic** mod for TM:PE priority signs, lane arrows and lane connections (optional).
 
@@ -47,7 +47,7 @@ Keyboard: click the map, then use the arrow keys to move the square, + and − t
 
 **Overview** shows what converts per category with your city's numbers, a preview of the terrain, the options (zone theme, which parts to convert) and the install steps.
 
-**Mapping** lists every road type with its CS2 equivalent; you can pick another one. **Road types** shows the generated Road Builder roads and any width change.
+**Mapping** lists every road type with its CS2 equivalent: a vanilla CS2 road when the generated road has the same lanes ("vanilla Small Road (matched)"), else a Road Builder road, with the reason in both cases; you can pick another one. **Prefer vanilla CS2 roads** (in the options, on by default) does the matching; turn it off to make every road a Road Builder road. **Road types** shows the generated Road Builder roads and any width change.
 
 **Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn't fit at its spot: look for free land nearby (up to 400 m), anywhere in the square, or leave it out. Very large buildings (universities, power plants, cargo terminals) look anywhere by default.
 

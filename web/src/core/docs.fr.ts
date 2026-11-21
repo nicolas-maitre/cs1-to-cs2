@@ -28,7 +28,7 @@ export const DOCS_FR: Docs = {
     {
       game: 'Cities: Skylines II (CS2)',
       items: [
-        'CS2 1.6 ou plus récent, avec le mod **Road Builder** (les types de route convertis sont des routes Road Builder).',
+        'CS2 1.6 ou plus récent, avec le mod **Road Builder** (les types de route qui correspondent à une route CS2 vanilla l\'utilisent ; les autres deviennent des routes Road Builder).',
         'Le mod **CS1 → CS2 Importer**, qui construit le paquet dans votre ville.',
         'Le mod **Traffic** pour les panneaux de priorité, flèches de voie et connexions de voies de TM:PE (facultatif).',
       ],
@@ -69,7 +69,7 @@ export const DOCS_FR: Docs = {
       title: 'Vérifiez la conversion',
       body: [
         '**Aperçu** montre ce qui est converti par catégorie avec les chiffres de votre ville, un aperçu du terrain, les options (thème des zones, parties à convertir) et les étapes d\'installation.',
-        '**Routes** liste chaque type de route avec son équivalent CS2 ; vous pouvez en choisir un autre. **Types RB** montre les routes Road Builder générées et les changements de largeur.',
+        '**Routes** liste chaque type de route avec son équivalent CS2 : une route CS2 vanilla quand la route générée a les mêmes voies ("Small Road vanilla (correspondance)"), sinon une route Road Builder, avec la raison dans les deux cas ; vous pouvez en choisir un autre. **Préférer les routes CS2 vanilla** (dans les options, activé par défaut) fait cette correspondance ; désactivez-le pour que toutes les routes soient des routes Road Builder. **Types RB** montre les routes Road Builder générées et les changements de largeur.',
         '**Bâtiments** liste les bâtiments CS1 avec le bâtiment CS2 choisi pour chaque type, le score de correspondance et la raison ; choisissez-en un autre ou ignorez un type. Pour chaque type, vous pouvez aussi dire ce qui se passe s\'il ne tient pas à sa place : chercher un terrain libre à proximité (jusqu\'à 400 m), n\'importe où dans le carré, ou ne pas le placer. Les très grands bâtiments (universités, centrales, terminaux de fret) cherchent partout par défaut.',
         '**Rapport** liste tout ce qui est approché ou laissé de côté.',
       ],
@@ -131,6 +131,7 @@ export const DOCS_FR: Docs = {
   FAQ: [
     { q: 'Ma ville est-elle envoyée quelque part ?', a: ['Non. L\'outil web tourne entièrement dans votre navigateur ; le fichier ne quitte jamais votre ordinateur. Il n\'y a pas de serveur derrière la page.'] },
     { q: 'Pourquoi ne puis-je pas convertir toute ma ville de 81 tuiles ?', a: ['La zone jouable d\'une carte CS2 mesure environ 14,3 km de côté, moins que les 81 tuiles de CS1 (17,3 km). L\'outil web vous laisse choisir le carré qui tient ; vous pouvez convertir un autre carré dans une autre ville.'] },
+    { q: 'Pourquoi certaines routes sont-elles des routes CS2 vanilla et d\'autres des routes Road Builder ?', a: ['Quand la route que cs1conv générerait a les mêmes voies qu\'une route CS2 vanilla (mêmes voies de circulation et mêmes sens de chaque côté, chacune à 0,5 m près en largeur, stationnement et pistes cyclables des mêmes côtés, même terre-plein, largeur totale à 1 m près et même vitesse), la route vanilla est utilisée : moins de configurations Road Builder à installer, et des routes identiques à celles du jeu. Les arbres, les voies de bus et les autres changements venant d\'IMT ou de TM:PE gardent en général une route sur Road Builder. **Routes** donne la raison pour chaque type. Pour imposer Road Builder, choisissez **Road Builder** pour ce type, ou désactivez **Préférer les routes CS2 vanilla**.'] },
     { q: 'Certaines routes sont plus étroites ou plus larges que dans CS1. Pourquoi ?', a: ['Les types de route sont recréés avec Road Builder, qui a des largeurs de voie fixes et des trottoirs de 7 m au plus. Une route CS1 avec des trottoirs de 9 m devient quelques mètres plus étroite. Chaque changement figure sous **Types RB** et dans le rapport.'] },
     { q: 'La page dit qu\'elle ne peut pas ouvrir mon fichier.', a: ['Ouvrez le `.cs1x` écrit par l\'exporteur, pas une sauvegarde `.crp`. Si elle indique un format trop récent, rechargez la page pour avoir le dernier outil ; s\'il est trop ancien, mettez l\'exporteur à jour et exportez à nouveau.'] },
     { q: 'Une partie de mon export a échoué.', a: ['Le reste se convertit normalement. Exportez à nouveau ; si l\'échec persiste, le message de l\'exporteur se trouve dans l\'outil web sous Aperçu → Vérification du fichier.'] },
@@ -153,7 +154,7 @@ export const DOCS_FR: Docs = {
   ],
 
   MATRIX: [
-    { area: 'Routes', cs1: 'Routes, autoroutes, sens uniques, routes Vanilla+ et du Workshop', cs2: 'Routes Road Builder générées', status: 'approx', notes: 'Voies, terre-pleins, stationnement, voies de bus et de tram, arbres et vitesse sont conservés ; les largeurs peuvent changer (trottoirs Road Builder de 7 m au plus).' },
+    { area: 'Routes', cs1: 'Routes, autoroutes, sens uniques, routes Vanilla+ et du Workshop', cs2: 'Une route CS2 vanilla équivalente, sinon une route Road Builder générée', status: 'approx', notes: 'Voies, terre-pleins, stationnement, voies de bus et de tram, arbres et vitesse sont conservés ; les largeurs peuvent changer (trottoirs Road Builder de 7 m au plus). Une route vanilla n\'est utilisée que si les voies correspondent (chacune à 0,5 m près, largeur totale à 1 m près).' },
     { area: 'Routes', cs1: 'Routes surélevées, ponts, rampes, tunnels', cs2: 'La même route Road Builder à la hauteur de CS1', status: 'yes', notes: 'Road Builder crée lui-même les formes surélevée, pont et tunnel.' },
     { area: 'Routes', cs1: 'Bandes cyclables peintes sur la chaussée', cs2: 'Trottoir avec piste cyclable', status: 'approx', notes: 'Au bord de la route seulement ; CS2 n\'a pas de bandes cyclables peintes sur la chaussée.' },
     { area: 'Rail et chemins', cs1: 'Voies de train, de métro et de tram', cs2: 'Voies CS2 doubles, à double sens ou à sens unique', status: 'yes', notes: '' },

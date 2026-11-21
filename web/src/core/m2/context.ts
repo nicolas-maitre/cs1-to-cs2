@@ -49,8 +49,14 @@ export interface DriveLane { index: number; position: number; width: number; dir
  * put bikes on the sidewalk or in a bike lane of their own, so counting them would shift every lane's ordinal and
  * count against the CS2 road (worker-3: Cacao, 212 of 764 lane references didn't resolve).
  */
-const bicycleOnly = (vehicleType: string) => vehicleType.split(/[,|]\s*/).every(v => v.trim() === 'Bicycle');
-const isDrive = (laneType: string, vehicleType: string) => /Vehicle|TransportVehicle/.test(laneType) && !/Parking/.test(laneType) && vehicleType !== 'None' && vehicleType !== '' && !bicycleOnly(vehicleType);
+const only = (vehicleType: string, v: string) => vehicleType.split(/[,|]\s*/).every(x => x.trim() === v);
+const bicycleOnly = (vehicleType: string) => only(vehicleType, 'Bicycle');
+/**
+ * Tram-only lanes are not counted either (docs/DECISIONS.md #102): lane connections and arrows are about car lanes, and
+ * the importer counts a road's lanes as CS2 car lanes (car, car+tram, bus). Shared car+tram lanes stay counted.
+ */
+export const tramOnly = (vehicleType: string) => only(vehicleType, 'Tram');
+const isDrive = (laneType: string, vehicleType: string) => /Vehicle|TransportVehicle/.test(laneType) && !/Parking/.test(laneType) && vehicleType !== 'None' && vehicleType !== '' && !bicycleOnly(vehicleType) && !tramOnly(vehicleType);
 
 export function driveLanes(info: NetInfo | undefined): DriveLane[] {
   if (!info) return [];
@@ -94,6 +100,13 @@ export function laneRemovedByMedian(ctx: PlanContext, segmentId: number, laneInd
   const seg = ctx.segments.get(segmentId);
   const lane = driveLanes(seg ? ctx.infos.get(seg.info) : undefined).find(l => l.index === laneIndex);
   return !!lane && medians.some(p => Math.abs(p - lane.position) < 0.25);
+}
+
+/** The CS1 lane is a tram-only lane (not a car lane in the plan's lane references). */
+export function laneIsTramOnly(ctx: PlanContext, segmentId: number, laneIndex: number): boolean {
+  const seg = ctx.segments.get(segmentId);
+  const l = (seg ? ctx.infos.get(seg.info) : undefined)?.lanes[laneIndex];
+  return !!l && /Vehicle/.test(String(l.fields.m_laneType ?? '')) && tramOnly(String(l.fields.m_vehicleType ?? ''));
 }
 
 export function planLaneRef(ctx: PlanContext, segmentId: number, laneIndex: number): PlanLaneRef | null {
