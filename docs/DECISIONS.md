@@ -302,3 +302,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      3. a smaller CS2 alternative of the same kind.
 
      If none fits, the building isn't placed. The import report lists it as "place it yourself", with its CS1 position and the reason. "Look nearby" and "anywhere in the crop" stay available as explicit per-type choices in the web tool, off by default. This applies to plans without a `fallback` field too.
+107. **Node Controller shifts and offsets must be applied, not only reported** (user, 2026-11-21; supersedes the Node Controller part of #39). In CS1, roads can only join at a node's centre, and Node Controller's per-end shift and offset are how players lined lanes up across junctions and ramps. Dropping them makes converted roads jog sideways at those nodes in CS2, which itself supports lane-aligned connections.
+     - The plan applies each road end's shift and offset.
+     - The importer builds them the way CS2's lane alignment does, after research on how the road tool stores it.
+     - Free-form slope and twist stay report-only unless CS2 has an equivalent.
