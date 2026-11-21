@@ -55,3 +55,60 @@ The saves were read-only, and nothing was saved. Each launch did a single `save.
 - **The buildings steps** ran through the e2e plug-in (exec of `Cs2Buildings.dll`, same code the importer mod now compiles in). Not yet run through the mod's own Import button.
 - **Q9 (terrain/water, sent to worker-4):** wet points mostly dry in CS2 on Cacao, which has 7 of 13 CS1 water sources as facilities and a sea level of 44 m; the screenshots show lakes but smaller. There's also a tall vertical terrain wall at the east edge of the oblique shot (`roads-oblique.png`), worth checking whether it's the CS1 terrain or the crop/border fill.
 - **Not converted, as designed:** TM:PE lane connections (265), lane arrows (234), U-turn rules (40), timed lights (22).
+
+## 4. Full city: Skibidi, 14 336 m crop (terrain/transit worker)
+
+`node tools/e2e/run.mjs --cs1x %LOCALAPPDATA%/cs1-to-cs2/samples/skibidi.cs1x --auto-crop 14336 --apply-terrain --clear-with mapprep --simulate 180` → run `.gamectl/e2e/20261121-091737`, saved as `cs1conv-e2e-20261121-1025` (city `cs1conv-full-skibidi`).
+- **Crop:** centre (1250, 1250), the whole CS2 playable area.
+- **Map:** Sunshine Peninsula.
+- **Overall:** `ok=false` only because of the importer's 8 known `edge-missing` segments (below).
+- **How it was measured:** `terrain/tools/perf-monitor.mjs` sampled every 2 s:
+  - CS2 and node working sets;
+  - the bridge `/health` frame counter, giving fps;
+  - the bridge's status age, i.e. how long the main thread stalled.
+
+  Data: `.gamectl/full/perf.ndjson`, `perf-summary.json`.
+
+| Step | Result | Time | CS2 peak WS | Main-thread stall (max) | fps min / mean |
+| --- | --- | --- | --- | --- | --- |
+| plan (web CLI) | 4741 segments (4148 RB, 553 track, 40 path), 4121 nodes, 78 RB configs, 253 buildings, 20 transit lines; package 72 MB (plan JSON 7.2 MB) | 3.4 s | – (node 428 MB) | – | – |
+| cs2 start + new city | ok | 118 s | 4.0 GB | 10.9 s (loading) | – |
+| clear (mapprep) | 197 base edges + 5 base buildings deleted, no crash | 1.9 s | 3.7 GB | 0.4 s | 28 / 42 |
+| terrain | applied; terrain = file to 0.0003 m (max over 281 samples) | 14 s | 3.9 GB | 0.7 s | 43 / 54 |
+| water | sea 182 m, 1 CS1 + 4 region sources (this run predates the spread sources; see below) | 0.5 s | – | – | – |
+| import | **4732/4740**, 8 `edge-missing`, 30 `not-tunnel`, 1 `not-elevated`; 0 Temp; 12 batches | 3.9 s | 4.1 GB | 0.9 s | 6.8 / 45 |
+| traffic + Traffic mod + zoning | 948/948 lights as planned, 623 priority signs, zoning ok | 9 s | 4.2 GB | 1.1 s | 6.7 / 13 |
+| **buildings** | 252/253 placed (38 alternatives, 63 slid, 95 on nearby land), 196 connected; 39 439 objects planned | 36.6 s | 4.4 GB | **26.8 s** | **0** / 6 |
+| connections | 10 (6 road, 4 train), 96 outside-connection lanes | 1.6 s | 4.4 GB | 0.9 s | 7 / 16 |
+| **transit** | 305/305 stops; **20/20 lines** (16 bus, Train Line 1, Metro Lines 1–3 on placed stations), all complete | 49.6 s | 4.4 GB | 1.3 s | 6.9 / 27 |
+| simulate 180 s | 75 buses running (no subway or rail yard, so 0 trains) | 180 s | 4.8 GB | 0.4 s | 25 / 39 |
+| water-check | dry 150/150, wet **100/150**, median 2.9 m, p90 53 m | 0.4 s | – | – | – |
+| save | 34.8 MB `.cok` | 2.8 s | **5.0 GB** (private 11.6 GB) | 1.8 s | 7 / 7.5 |
+
+**Findings:**
+- **F1, importer (worker-3, known):** 8 `edge-missing`, e.g. segments 33055, 2160, 24501, 25217, and 13 `other_cs2_edges_in_area`.
+  - **Cause:** CS1 grade separations shallower than CS2 accepts, e.g. a highway in a 4.6–5.2 m cut beside or under other roads, and a footpath at −3 m. CS2 joins the crossing courses.
+  - The 30 `not-tunnel` are cosmetic: CS2 builds an open cut instead of a tunnel cover.
+  - **Fix idea:** detect crossings with less than about 8 m clearance and deepen the lower road or report it. Open, in cs2-importer/DECISIONS-importer.md.
+- **F2, buildings (buildings worker):** the placer's resolve loop ran in one frame, freezing CS2 for about 27 s.
+  - **Fixed (uncommitted):** the loop yields every `frameBudgetMs` (20 ms default) in `buildings/src/Placement.cs`.
+  - **Verified at full scale** on `cs1conv-e2e-20261121-1025` with all 253 items. With `idempotent: false`, every item collided with its existing twin and ran the full slide and nearby/wide/anywhere search, a harsher case than a real import.
+  - **Result:** max main-thread stall **0.94 s (was 26.8 s)**, min 14.4 fps, 246/253 placed, 2803 yielded frames, 92 s. Files: `.gamectl/buildings/stall-20261121T0950*/`.
+- **F3, water (terrain worker), fixed:** one 3.5 km CS1 river stayed dry (wet 100/150, p90 53 m); a single source at a region's deepest cell can't feed a long channel.
+  - **Fix:** `terrain/lib/water.mjs` `regionSources` spreads more sources over big regions (farthest-point sampling, one per 1500 cells, up to 8, radius 40 m). Big lakes that already have a CS1 source also get a "lake-boost" source (decision 17).
+  - **Re-check:** `terrain/run-mapprep.mjs` on the same package, 300 s → `.gamectl/mapprep/full1`: **wet 146/150, dry 150/150, median 1.07 m, p90 6.8 m**, 15 sources.
+  - **CacaoCity:** the same fix gives wet 143/150 (was 42 before any simulation, 105 with lake-boost only), median 1.8 m, p90 6.1 m.
+  - Worker-2 is re-porting `regionSources` for the web package's `plan.water.apply`.
+- **F4, the 253/684 import in my CacaoCity runner (terrain worker), fixed; not an importer trap:**
+  - **Cause:** a later `cs1conv.ts plan --install-rb` without `--keep-other-rb` had removed CacaoCity's Road Builder types from ModsData, so 431 segments were `prefab-missing`. The importer reported each one as an error.
+  - **Fix:** `terrain/run-mapprep.mjs` now installs the package's types with `--keep-other-rb` before starting CS2.
+  - **Re-run:** 684/684 (`.gamectl/mapprep/cacao2`).
+  - Loading saves is unaffected: Road Builder restores road types from the save, after a one-time "reload this save" dialog.
+- **F5, metro and train vehicles (buildings worker), designed but not yet in a run:**
+  - **Why:** CS1 metro and train lines need no depot; CS2 lines get vehicles only from a depot of their type. So converted station lines had 0 vehicles.
+  - **Fix:** `buildings/lib/plan.mjs` `addDefaultDepots` (uncommitted, tests 24/24) adds BusDepot01 / TramDepot01 / SubwayYard01 / RailYard01 for every line type that has no matched depot, marked `default: true`.
+  - **Rail yards:** they sit at the line's first station with `needsTrackLink: true`, because CS2 yards dispatch only over connected track and placing a yard's own track onto a track end isn't automated.
+  - **Expected result:** buses get vehicles automatically; metro and train lines get vehicles once the user links the yard's track.
+- **Scale limits seen:** none in transit (305 stops in batches of 20, 20 lines, one per call), outside connections (10), water sources (15) or the save (35 MB).
+  - **Memory:** CS2 grew from 3.5 to 5.0 GB working set over the run.
+  - **Main thread:** apart from F2, no step stalled it for more than 1.8 s, and the import ran at a minimum of 6.8 fps.

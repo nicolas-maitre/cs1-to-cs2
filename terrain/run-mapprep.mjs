@@ -70,8 +70,18 @@ async function takeLock() {
   }
 }
 
+// Road Builder reads its road types once, when CS2 starts: install this package's *-cs1conv configs first (keeping
+// other cities'), or every RB segment of the plan fails with prefab-missing (CacaoCity: 431 of 684 segments)
+function installRoadBuilder() {
+  const pkg = dirname(planSrc);
+  if (!existsSync(join(pkg, 'roadbuilder'))) return { skipped: 'no roadbuilder/ next to the plan' };
+  execFileSync(process.execPath, [join(REPO, 'web', 'cli', 'cs1conv.ts'), 'install-rb', pkg, '--keep-other-rb'], { stdio: ['ignore', 'ignore', 'inherit'] });
+  return { installed: pkg };
+}
+
 let started = false;
 try {
+  S.roadbuilder = installRoadBuilder();
   await takeLock();
   started = true;
   const { bridge: b0 } = await step('start', () => start('cs2', { timeout: 400 }));

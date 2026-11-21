@@ -121,3 +121,13 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
 18. **`clear` also deletes the base map's top-level buildings** (`--keep-buildings` opts out).
     - **Why:** Sunshine Peninsula's 5 ruin landmarks keep the old map height (480–800 m), and their lots raise the converted terrain into tall pillars. That is the "vertical wall at the east edge" in QA Q9.
     - **Verified on CacaoCity:** 5 buildings + 197 edges deleted, no crash. Terrain = file to max 0.0004 m afterwards.
+
+19. **Big water regions get spread sources:** farthest-point sampling over the region, one per 1500 CS1 cells, at most 8, radius 40 m, height = CS1 depth at that cell. Sampling stops once every cell is within 400 m of a source.
+    - **Why:** in the full-city Skibidi run, a 3.5 km river fed from one point stayed dry along most of its length (wet 100/150, p90 53 m).
+    - **Result after 300 s:**
+      - full-city Skibidi: wet 146/150, median 1.07 m, p90 6.8 m;
+      - CacaoCity: wet 143/150, median 1.8 m, p90 6.1 m.
+    - **Cost:** 15 and 29 sources, about 100 ms to compute.
+
+20. **`run-mapprep.mjs` installs the package's Road Builder types with `--keep-other-rb` before starting CS2.**
+    - **Why:** another run's `--install-rb` had removed them, which made 431 of CacaoCity's 684 segments `prefab-missing`.

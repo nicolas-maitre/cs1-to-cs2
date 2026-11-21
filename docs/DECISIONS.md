@@ -203,3 +203,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - Whole city (14.3 km): 4738/4740 roads, 10/10 connections, trains and cargo running.
 75. **"Edge missing" at shallow forks was a verification bug, not a build bug** (Claude). CS2 merges the first metres of two courses that leave a node at a shallow angle. Verify now walks through CS2 fork nodes and lists them as `merged-fork`. Clearance pass: crossings with < min(8 m, CS1's clearance) are lowered or raised, but never past their CS1 height. The 2 remaining whole-city misses are CS1 geometry that overlaps in CS2, and they're reported.
 76. **The transit planner's C# port is guarded by a golden test** generated from `transit/lib/plan.mjs` (Claude).
+77. **Full-city stress test passed** (Skibidi 14 336 m: 4741 segments, 253 buildings, 20 lines; Claude).
+    - **Times:** import 3.9 s, buildings 37 s, transit 50 s.
+    - **Memory and save:** CS2 working set up to 5 GB, save 35 MB.
+    - **Fixed at scale:** a 27 s placer freeze (it now yields every 20 ms) and a dry 3.5 km river. Sources are now spread over big water regions: 146/150 wet, median depth error 1.07 m.
+    - Details in `docs/QA.md` §4.
+78. **Default depots for every transit type without a matched CS1 depot** (BusDepot01 / TramDepot01 / SubwayYard01 / RailYard01; Claude). CS2 lines only get vehicles from a depot of their type. Rail and subway yards still need their track linked, so metro and train lines show 0 trains until that's done.
