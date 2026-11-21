@@ -408,3 +408,5 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - CS1 `elevated`, `bridge` and `slope` keep their kind.
 
      Acceptance checks that the tunnel count per city equals CS1's.
+130. **Web 0.9.2: the utilities opt-in** (#128, Claude). When the crop has power, water or sewage facilities, Overview shows a prominent notice with "Let them move nearby (≤ 400 m) if they don't fit" and an undo. Only the power, water-pump/tower and sewage families are affected, per-type choices win, and the CLI flag is `--utilities-nearby`. The "What converts" list now counts off-road pipes and power lines as placed by the importer.
+131. **Coordinator review no longer uses `git stash` in the shared checkout** (Claude, after an incident). Stashing to test a clean tree briefly removed other workers' uncommitted changes while they kept editing. Everything was restored by a file-by-file three-way merge, with no loss. From now on, reviews run in a separate temporary checkout of a temporary commit built from the index, in the scratch folder.

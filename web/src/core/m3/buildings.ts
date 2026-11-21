@@ -47,7 +47,16 @@ export interface AssetMatch {
   fallbackAuto: PlacementFallback;
   /** the user's fallback for this type, if any */
   fallbackOverride?: PlacementFallback;
+  /** a utility facility (power plant, water pump or tower, sewage outlet or treatment): #128 */
+  utility: boolean;
 }
+
+/**
+ * Matcher families of the utility facilities (docs/DECISIONS.md #128). They stay strict ("don't move") by default
+ * like every building (#106); `utilitiesNearby` lets just these look for free land nearby, because a city without its
+ * power plants and pumps has no power or water. Incinerators (garbage) are not utilities here.
+ */
+export const UTILITY_FAMILIES: ReadonlySet<string> = new Set(['power', 'waterPump', 'sewage']);
 
 /** Per CS1 building type: a CS2 prefab name, or "skip". */
 export type AssetOverrides = Record<string, string>;
@@ -76,7 +85,7 @@ const THEME_NAME: Record<string, string> = { EU: 'European', NA: 'North American
 const cleanTitle = (a: Cs1Asset) => (a.title && !/^BUILDING_TITLE\[/.test(a.title) ? a.title : a.name.replace(/^\d+\./, '').replace(/_Data$/, ''));
 
 /** Matches every CS1 building type, then applies the user's overrides. */
-export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opts: { theme?: string; overrides?: AssetOverrides; fallbacks?: FallbackOverrides; fallback?: PlacementFallback } = {}): AssetMatch[] {
+export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opts: { theme?: string; overrides?: AssetOverrides; fallbacks?: FallbackOverrides; fallback?: PlacementFallback; utilitiesNearby?: boolean } = {}): AssetMatch[] {
   const m = matchAssets({ buildings: assets }, catalogue, { theme: THEME_NAME[opts.theme ?? ''] ?? opts.theme, alternatives: 6 });
   const byName = new Map(catalogue.prefabs.map(p => [p.name, p]));
   const assetByName = new Map(assets.map(a => [a.name, a]));
@@ -88,7 +97,7 @@ export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opt
       decision, prefab: ((r.prefab ?? r.cs2) as string | null) ?? null, lot: ((r.lot ?? r.cs2Lot) as number[] | null) ?? null,
       score: decision === 'place' ? (r.score as number) : null, reason: r.reason as string, family: (r.family as string | null) ?? null,
       alternatives: ((r.alternatives as { prefab?: string; cs2?: string; score: number }[] | undefined) ?? []).map(x => ({ prefab: (x.prefab ?? x.cs2)!, score: x.score })),
-      fallback: 'skip', fallbackAuto: 'skip',
+      fallback: 'skip', fallbackAuto: 'skip', utility: false,
     };
     const o = opts.overrides?.[out.cs1];
     if (o === 'skip') Object.assign(out, { decision: 'skip', prefab: null, lot: null, score: null, reason: 'skipped by you', override: o });
@@ -96,7 +105,9 @@ export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opt
       const p = byName.get(o);
       if (p) Object.assign(out, { decision: 'place', prefab: p.name, lot: p.lot ?? null, score: null, reason: 'chosen by you', override: o });
     }
-    out.fallbackAuto = opts.fallback ?? defaultFallback(out.lot);
+    out.utility = !!out.family && UTILITY_FAMILIES.has(out.family);
+    // per-type choice > utilities opt-in (#128) > global fallback > skip (#106)
+    out.fallbackAuto = opts.utilitiesNearby && out.utility ? 'nearby' : opts.fallback ?? defaultFallback(out.lot);
     const f = opts.fallbacks?.[out.cs1];
     out.fallback = f && PLACEMENT_FALLBACKS.includes(f) ? f : out.fallbackAuto;
     if (f && PLACEMENT_FALLBACKS.includes(f)) out.fallbackOverride = f;
@@ -119,6 +130,8 @@ export interface BuildingsOptions {
   theme?: string;
   /** per-type placement fallback chosen by the user */
   fallbacks?: FallbackOverrides;
+  /** utility facilities look for free land nearby unless their type has its own choice (#128) */
+  utilitiesNearby?: boolean;
   /** fallback for every type without its own (default: skip, docs/DECISIONS.md #106) */
   fallback?: PlacementFallback;
 }
@@ -141,7 +154,7 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
     ]);
   }
 
-  const matches = matchAssetTypes(assets.buildings, o.catalogue, { theme: o.theme, overrides: o.overrides, fallbacks: o.fallbacks, fallback: o.fallback });
+  const matches = matchAssetTypes(assets.buildings, o.catalogue, { theme: o.theme, overrides: o.overrides, fallbacks: o.fallbacks, fallback: o.fallback, utilitiesNearby: o.utilitiesNearby });
   const byName = new Map(matches.map(m => [m.cs1, m]));
   const skipped = { outsideCrop: 0, subBuilding: 0, growable: 0, skip: 0, noEquivalent: 0, roadNotImported: 0 };
   const out: PlanBuildingItem[] = [];

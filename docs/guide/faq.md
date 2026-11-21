@@ -60,7 +60,7 @@ Zoned (growable) buildings are not placed: CS2 grows its own on the converted zo
 
 ## A building is missing, or ended up somewhere else (my hospital moved). Why?
 
-CS2 buildings often need more room than their CS1 counterparts. When one doesn't fit at its CS1 spot, the importer slides it a little or tries a smaller CS2 alternative. If it still doesn't fit, it is **not moved** elsewhere: the import report lists it as "place it yourself" with its CS1 position, and you place it by hand. A building only goes somewhere else if you set its type to look for free land nearby (up to 400 m) or anywhere in the square in the Assets tab.
+CS2 buildings often need more room than their CS1 counterparts. When one doesn't fit at its CS1 spot, the importer slides it a little or tries a smaller CS2 alternative. If it still doesn't fit, it is **not moved** elsewhere: the import report lists it as "place it yourself" with its CS1 position, and you place it by hand. A building only goes somewhere else if you set its type to look for free land nearby (up to 400 m) or anywhere in the square in the Assets tab, or, for power, water and sewage buildings, if you pressed **Let them move nearby** in Overview.
 
 ## My metro or train line has no vehicles.
 

@@ -35,7 +35,7 @@ function usage(msg?: string): never {
   node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb [--prune]]
        [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
        [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--lang en|fr] [--metro-depot edge|manual] [--train-depot edge|manual] [--roads <cs2-roads.json>] [--no-prefer-vanilla]
-       [--height-mode conform|follow|walls] [--height-mode-by-type <map.json>] [--no-conform] [--no-utilities]
+       [--height-mode conform|follow|walls] [--height-mode-by-type <map.json>] [--no-conform] [--no-utilities] [--utilities-nearby]
        [--no-buildings] [--no-districts] [--no-objects] [--no-surfaces] [--no-terrain] [--no-world]
   node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 
@@ -50,7 +50,7 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'prune', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts', 'no-objects', 'no-surfaces', 'no-prefer-vanilla', 'no-conform', 'no-utilities', 'no-terrain', 'no-world'];
+      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'prune', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts', 'no-objects', 'no-surfaces', 'no-prefer-vanilla', 'no-conform', 'no-utilities', 'utilities-nearby', 'no-terrain', 'no-world'];
       if (boolFlags.includes(name)) flags[name] = true;
       else { const v = argv[++i]; if (v == null) usage(`--${name} needs a value`); flags[name] = v; }
     } else pos.push(a);
@@ -213,6 +213,7 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
     heightModes: typeof flags['height-mode-by-type'] === 'string' ? JSON.parse(fs.readFileSync(flags['height-mode-by-type'], 'utf8')) : undefined,
     roadConform: !flags['no-conform'],
     utilities: !flags['no-utilities'],
+    utilitiesNearby: !!flags['utilities-nearby'],
   });
   if (pkg.errors.length) usage(pkg.errors.join('; '));
 

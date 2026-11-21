@@ -60,7 +60,7 @@ Les bâtiments des zones ne sont pas placés : CS2 construit les siens sur les z
 
 ## Un bâtiment manque, ou s'est retrouvé ailleurs (mon hôpital a bougé). Pourquoi ?
 
-Les bâtiments CS2 ont souvent besoin de plus de place que leurs équivalents CS1. Quand l'un d'eux ne tient pas à sa place CS1, l'importeur le fait glisser un peu ou essaie une alternative CS2 plus petite. S'il ne tient toujours pas, il n'est **pas déplacé** ailleurs : le rapport d'import le liste comme "à placer vous-même" avec sa position CS1, et vous le placez à la main. Un bâtiment ne va ailleurs que si vous avez réglé son type, dans l'onglet Bâtiments, pour chercher un terrain libre à proximité (jusqu'à 400 m) ou n'importe où dans le carré.
+Les bâtiments CS2 ont souvent besoin de plus de place que leurs équivalents CS1. Quand l'un d'eux ne tient pas à sa place CS1, l'importeur le fait glisser un peu ou essaie une alternative CS2 plus petite. S'il ne tient toujours pas, il n'est **pas déplacé** ailleurs : le rapport d'import le liste comme "à placer vous-même" avec sa position CS1, et vous le placez à la main. Un bâtiment ne va ailleurs que si vous avez réglé son type, dans l'onglet Bâtiments, pour chercher un terrain libre à proximité (jusqu'à 400 m) ou n'importe où dans le carré, ou, pour les bâtiments d'électricité, d'eau et d'égouts, si vous avez cliqué sur **Les laisser se déplacer à proximité** dans Aperçu.
 
 ## Ma ligne de métro ou de train n'a pas de véhicules.
 

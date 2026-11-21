@@ -153,6 +153,44 @@ describe('plan.buildings', () => {
   });
 });
 
+describe('utility facilities opt-in (#128)', () => {
+  const UCAT: Cs2Catalogue = {
+    ...CATALOGUE, prefabs: [...CATALOGUE.prefabs,
+      { name: 'CoalPowerPlant01', kind: 'building', placeable: true, lot: [20, 20], components: { PowerPlant: {} }, capacity: { electricity: 100000 } },
+      { name: 'WaterPumpingStation01', kind: 'building', placeable: true, lot: [6, 6], components: { WaterPumpingStation: {} }, capacity: { water: 50000 } }],
+  };
+  const withUtilities = () => {
+    const c = town();
+    // copies: town() shares ASSETS and its building list with the other tests
+    c.assets = { ...c.assets!, buildings: [...c.assets!.buildings,
+      { name: 'Coal Power Plant', title: 'Coal Power Plant', count: 1, service: 'Electricity', ai: 'PowerPlantAI', growable: false, footprint: [10, 10], aiFields: { m_electricityProduction: 100000 } },
+      { name: 'Water Intake', title: 'Water Intake', count: 1, service: 'Water', ai: 'WaterFacilityAI', growable: false, footprint: [4, 4], aiFields: { m_waterIntake: 50000 } }] };
+    c.buildings = { ...c.buildings!, buildings: [...c.buildings!.buildings, bld(20, 'Coal Power Plant', -150, -60, { accessSegment: 1 }), bld(21, 'Water Intake', 150, 60, { accessSegment: 1 })] };
+    return c;
+  };
+  const fb = (p: ReturnType<typeof buildPackage>) => Object.fromEntries(p.plan.buildings!.items.map(i => [i.cs1Info, i.fallback]));
+
+  it('stays strict by default and says so prominently', () => {
+    const pkg = buildPackage(withUtilities(), { crop: CROP, catalogue: UCAT });
+    expect(fb(pkg)).toMatchObject({ 'Coal Power Plant': 'skip', 'Water Intake': 'skip', Hospital: 'skip' });
+    expect(pkg.utilityFacilities).toMatchObject({ buildings: 2, moving: 0, optedIn: false, types: ['Coal Power Plant', 'Water Intake'] });
+    expect(pkg.report.items.some(i => i.level === 'warning' && /2 power, water and sewage building\(s\).*--utilities-nearby/.test(i.message))).toBe(true);
+    expect(pkg.assetMatches!.filter(m => m.utility).map(m => m.cs1).sort()).toEqual(['Coal Power Plant', 'Water Intake']);
+  });
+
+  it('the opt-in moves only utilities nearby; a per-type choice still wins', () => {
+    const pkg = buildPackage(withUtilities(), { crop: CROP, catalogue: UCAT, utilitiesNearby: true });
+    expect(fb(pkg)).toMatchObject({ 'Coal Power Plant': 'nearby', 'Water Intake': 'nearby', Hospital: 'skip', 'Elementary School': 'skip' });
+    expect(pkg.utilityFacilities).toMatchObject({ buildings: 2, moving: 2, optedIn: true });
+    const own = buildPackage(withUtilities(), { crop: CROP, catalogue: UCAT, utilitiesNearby: true, assetFallbacks: { 'Water Intake': 'skip' } });
+    expect(fb(own)).toMatchObject({ 'Coal Power Plant': 'nearby', 'Water Intake': 'skip' });
+  });
+
+  it('no notice without utilities in the crop', () => {
+    expect(buildPackage(town(), { crop: CROP, catalogue: UCAT }).utilityFacilities).toBeNull();
+  });
+});
+
 describe('slim catalogue', () => {
   it('keeps placeable buildings and the matcher fields, with identical matches', () => {
     const slim = slimCatalogue({ format: 'cs2-catalogue', game: { version: 'x' }, prefabs: [...CATALOGUE.prefabs, { name: 'Unplaceable', kind: 'building', placeable: false }] });

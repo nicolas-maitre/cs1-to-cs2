@@ -176,7 +176,7 @@ export function App() {
   const scene = useMemo(() => (loaded ? buildScene(loaded.city) : null), [loaded]);
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
   const opts: BuildOptions | null = useMemo(() => (loaded ? {
-    crop: committed, overrides, roads, preferVanilla: conv.preferVanilla !== false, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
+    crop: committed, overrides, roads, preferVanilla: conv.preferVanilla !== false, utilitiesNearby: conv.utilitiesNearby === true, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
     buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, depotMode: conv.depotMode, assetOverrides, assetFallbacks, heightModes, lang,
   } : null), [loaded, committed, overrides, roads, conv, assetOverrides, assetFallbacks, heightModes, lang]);
   const { pkg, busy: building, ms, error: buildError, zip: buildZip } = usePackage(loaded, opts, catalogue);
@@ -338,6 +338,16 @@ export function App() {
                 <div className="panel" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0}>
                   {tab === 'overview' && (
                     <div className="overview">
+                      {pkg.utilityFacilities && (
+                        <div className="notice" role="note" aria-label={t('util.title')}>
+                          <p><strong>{t('util.title')}</strong> {pkg.utilityFacilities.optedIn
+                            ? t('util.on', { n: pkg.utilityFacilities.buildings })
+                            : t('util.off', { n: pkg.utilityFacilities.buildings, list: pkg.utilityFacilities.types.join(', ') })}</p>
+                          <button className={pkg.utilityFacilities.optedIn ? '' : 'primary'} onClick={() => setConv({ ...conv, utilitiesNearby: !pkg.utilityFacilities!.optedIn })}>
+                            {t(pkg.utilityFacilities.optedIn ? 'util.undo' : 'util.do')}
+                          </button>
+                        </div>
+                      )}
                       <h3>{t('app.h.converts')}</h3>
                       <ConversionPanel summary={pkg.summary} />
                       <h3>{t('app.h.terrain')}</h3>

@@ -551,3 +551,11 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - **Importer side (worker-3):** it builds `conform` slopes as `walls` and deepens CS1 tunnels too shallow for CS2.
     - **Height modes:** they stay per type. There's no per-kind default in the plan: a slope of a `conform` type simply isn't burned, and the importer treats it as walls, which is what was asked.
     - **Mirroring:** worker-4 mirrors it in `terrain/lib`. Schema §2 has the updated rule.
+98. **One-click opt-in to let utility facilities move nearby** (docs/DECISIONS.md #128, the user's decision; web 0.9.2).
+    - **Default:** utility facilities stay strict like every building (#106).
+    - **What counts as a utility:** matcher families `power`, `waterPump` (towers included) and `sewage` (outlets and treatment). Incinerators are `garbage` and not included. Each `AssetMatch` carries `utility`.
+    - **The opt-in** (`utilitiesNearby`, CLI `--utilities-nearby`): only those types get `fallback: nearby`. A per-type choice still wins, then the opt-in, then the global `--fallback`, then skip.
+    - **Where it shows:** whenever the crop has utility facilities to place (`BuiltPackage.utilityFacilities`). Overview opens with a notice that names them and has one button, "Let them move nearby (≤ 400 m) if they don't fit" (and "Keep them at their CS1 spot" to undo). The report has a warning line saying they stay put and how to opt in, or an info line once opted in.
+    - **Why a notice and not a checkbox in the options:** the user asked for something visible. The options checkboxes all default to on, and this one defaults to off.
+    - **Checked in the browser on Cacao:** 12 utility buildings (water pumping stations, coal and oil plants, water treatment, water tower); the button toggles both ways.
+    - **"What converts" fix:** the pipes and power lines line now counts `plan.utilities` (#115): off-road segments are placed by the importer, the ones along roads are left to CS2. It used to say "not placed".

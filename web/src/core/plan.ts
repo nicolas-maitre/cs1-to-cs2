@@ -88,6 +88,8 @@ export interface BuildOptions {
   roadConform?: boolean;
   /** M3 (#115): the player's power lines and pipes away from the converted roads → plan.utilities (default on). */
   utilities?: boolean;
+  /** M3 (#128): power plants, pumps and sewage buildings may move up to 400 m if they don't fit (default off). */
+  utilitiesNearby?: boolean;
 }
 
 export interface MappingRow {
@@ -131,6 +133,8 @@ export interface BuiltPackage {
   assetMatches?: AssetMatch[];
   /** BuildOptions.roadConform, for completePackage */
   roadConform?: boolean;
+  /** #128: utility facilities placed from the crop (null without any) and whether they may move nearby */
+  utilityFacilities?: { types: string[]; buildings: number; moving: number; optedIn: boolean } | null;
 }
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -376,7 +380,16 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const transit = buildTransit(ctx, opts.transit !== false);
   const traffic = buildTraffic(ctx, opts.traffic !== false);
   const nc = buildNodeController(ctx, ncAlign);
-  const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, fallbacks: opts.assetFallbacks, fallback: opts.assetFallback, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
+  const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, fallbacks: opts.assetFallbacks, fallback: opts.assetFallback, utilitiesNearby: opts.utilitiesNearby, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
+  // #128: utility facilities in the crop, for the Overview notice and the report
+  const utilityMatches = buildings.matches.filter(m => m.utility && m.decision === 'place' && m.countInCrop > 0);
+  const utilityFacilities = utilityMatches.length ? {
+    types: utilityMatches.map(m => m.title), buildings: utilityMatches.reduce((t, m) => t + m.countInCrop, 0),
+    moving: utilityMatches.filter(m => m.fallback !== 'skip').reduce((t, m) => t + m.countInCrop, 0), optedIn: opts.utilitiesNearby === true,
+  } : null;
+  if (utilityFacilities) items.push(utilityFacilities.optedIn
+    ? { level: 'info', kind: 'buildings', message: `${utilityFacilities.buildings} power, water and sewage building(s): ${utilityFacilities.moving} may move up to 400 m if they don't fit at their CS1 spot (utilities opt-in, #128)`, count: utilityFacilities.buildings }
+    : { level: 'warning', kind: 'buildings', message: `${utilityFacilities.buildings} power, water and sewage building(s) (${utilityFacilities.types.join(', ')}) stay at their CS1 spot; CS2's are often bigger, and one that doesn't fit is listed for you to place. Without them the city has no power or water: the web tool's "Let them move nearby" (CLI --utilities-nearby) lets them move up to 400 m`, count: utilityFacilities.buildings });
   const districts = buildDistricts(ctx, opts.districts !== false);
   // CS2 lines get vehicles only from a depot of their type. Bus and tram: a default depot in the city
   // (buildings/lib/plan.mjs). Metro and train: never inside the city (docs/DECISIONS.md #83); the importer puts a yard
@@ -528,6 +541,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     extraSummary: [zoning.summary, water.summary, transit.summary, traffic.summary, nc.summary, buildings.summary, districts.summary, objects.summary],
     assetMatches: buildings.matches,
     roadConform: opts.roadConform !== false,
+    utilityFacilities,
   };
   pkg.summary = conversionSummary(city, pkg);
   return pkg;

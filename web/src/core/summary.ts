@@ -99,12 +99,14 @@ export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategor
   });
   const skippedBuilding = items.filter(i => i.kind === 'not-placeable' && /building/i.test(i.message)).reduce((a, i) => a + (i.count ?? 0), 0);
   const skippedOther = items.filter(i => i.kind === 'not-placeable' && !/building/i.test(i.message)).reduce((a, i) => a + (i.count ?? 0), 0);
+  // #115: power lines and pipes away from the roads go into plan.utilities (placed by the importer)
+  const util = pkg.plan.utilities, offRoad = util ? util.stats.power + util.stats.pipe : 0;
   out.push({
-    id: 'skipped', label: t('cat.skipped'), status: skippedBuilding + skippedOther ? 'not-converted' : 'none',
+    id: 'skipped', label: t('cat.skipped'), status: offRoad ? 'partial' : skippedBuilding + skippedOther ? 'not-converted' : 'none',
     summary: skippedBuilding + skippedOther
       ? t('sum.skipped', { list: listOf(lang, [skippedOther > 0 && t('sum.skipped.other', { n: skippedOther }), skippedBuilding > 0 && t('sum.skipped.building', { n: skippedBuilding })]), n: skippedBuilding + skippedOther })
       : t('sum.skipped.none'),
-    details: [t('sum.skipped.d1'), t('sum.skipped.d2')],
+    details: [...(util && (offRoad || util.stats.alongRoad) ? [t('sum.skipped.utilities', { n: offRoad, along: util.stats.alongRoad })] : []), t('sum.skipped.d1'), t('sum.skipped.d2')],
   });
   const apply = pkg.plan.water?.apply;
   out.push({
