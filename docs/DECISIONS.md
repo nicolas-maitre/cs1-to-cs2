@@ -221,3 +221,4 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - If the line has no track leaving the crop (e.g. a metro entirely inside it), no depot is placed. The import report names the line and asks the user to place one.
     - The web tool offers per type: "Depot at the crop edge" (default for rail/subway) or "I'll place it myself".
     - Bus and tram default depots stay automatic for now (small, road-only); open for the user to change.
+84. **Placed buildings get their own internal networks** (station and depot tracks, internal paths, parking; Claude). They're created as owned sub-nets, the way the game does it, so "Remove imported" deletes them with their building. Verified on 110 Skibidi buildings with none missing. Default depots are now bus and tram only (#83).

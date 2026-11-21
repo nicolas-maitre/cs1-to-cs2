@@ -62,22 +62,23 @@ test('fallback is written only when chosen, per type or for all', () => {
   assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan, { fallback: 'skip', fallbackByType: { Hospital: 'nearby' } }).items[0].fallback, 'nearby');
 });
 
-test('default depots: one per transport type with lines and no depot; rail yards at a station, flagged', () => {
+test('default depots: one bus/tram depot per type with lines and none matched; no metro/train yards (DECISIONS #83)', () => {
   const transit = { lines: [
     { name: 'Bus 1', cs1Type: 'Bus', stops: [{ x: 10, z: 20 }] },
-    { name: 'Metro 1', cs1Type: 'Metro', stops: [{ x: 1, z: 1, cs1Building: 0 }, { x: 50, z: 60, cs1Building: 7 }] },
-    { name: 'Metro 2', cs1Type: 'Metro', stops: [{ x: 5, z: 5 }] },
+    { name: 'Tram 1', cs1Type: 'Tram', stops: [{ x: 50, z: 60 }, { x: 70, z: 60 }] },
+    { name: 'Tram 2', cs1Type: 'Tram', stops: [{ x: 5, z: 5 }] },
+    { name: 'Metro 1', cs1Type: 'Metro', stops: [{ x: 1, z: 1, cs1Building: 7 }] },
     { name: 'Ferry', cs1Type: 'Ship', stops: [{ x: 0, z: 0 }] },
   ] };
   const b = { items: [{ prefab: 'BusDepot01' }], stats: {} };
-  const added = addDefaultDepots(b, transit, { prefabs: [{ name: 'SubwayYard01', size: [44, 20] }] });
-  assert.deepEqual(added.map((d) => d.prefab), ['SubwayYard01']); // the bus depot exists; ships have no mapping
-  const yard = b.items.at(-1);
-  assert.equal(yard.default, true);
-  assert.equal(yard.needsTrackLink, true);
-  assert.equal(yard.fallback, 'nearby');
-  assert.deepEqual([yard.x, yard.z, yard.lot], [50, 60, [44, 20]]); // the station stop, catalogue lot
-  assert.match(yard.reason, /Metro 1, Metro 2/);
+  const added = addDefaultDepots(b, transit, { prefabs: [{ name: 'TramDepot01', lot: [19, 17], size: [150, 12, 134] }] });
+  assert.deepEqual(added.map((d) => d.prefab), ['TramDepot01']); // the bus depot exists; metro yards come from transit/; ships have no mapping
+  const depot = b.items.at(-1);
+  assert.equal(depot.default, true);
+  assert.equal(depot.fallback, 'nearby');
+  assert.equal(depot.needsTrackLink, undefined);
+  assert.deepEqual([depot.x, depot.z, depot.lot], [50, 60, [19, 17]]); // first stop of the first tram line, lot in cells
+  assert.match(depot.reason, /Tram 1, Tram 2/);
   assert.equal(b.stats.defaultDepots, 1);
   assert.deepEqual(addDefaultDepots({ items: [], stats: {} }, { lines: [] }), []);
 });

@@ -127,22 +127,22 @@ export function buildBuildingsPlan(cs1, catalogue, roadPlan, opts = {}) {
 // ------------------------------------------------------------------ default depots for transit lines
 
 /**
- * CS2 lines get their vehicles only from a depot of their own type; CS1 metro and train lines don't need one (the
- * stations spawn the trains), so a converted city often has lines but no depot. CS1 line type → CS2 depot prefab.
- * Rail yards dispatch only over track connected to the line, so they are placed next to a station and reported.
+ * CS2 lines get their vehicles only from a depot of their own type, so a converted city with lines but no depot of
+ * that type gets one: CS1 line type → CS2 depot prefab. Road depots only: bus and tram depots need just a road.
+ * Metro and train yards are NOT added here (DECISIONS.md #83): a yard only dispatches over track connected to the
+ * line, so they go at the crop edge where the line's track leaves, planned in game by transit/'s `yards.plan` (in this
+ * item shape, placed by the same placer) and linked by its `tracklink`.
  */
 export const DEPOT_FOR_LINE = {
-  Bus: { prefab: 'BusDepot01', match: /^BusDepot/, rail: false },
-  Tram: { prefab: 'TramDepot01', match: /^TramDepot/, rail: false },
-  Metro: { prefab: 'SubwayYard01', match: /^SubwayYard/, rail: true, alternatives: ['SubwayYard02'] },
-  Train: { prefab: 'RailYard01', match: /^RailYard/, rail: true, alternatives: ['RailYard02'] },
+  Bus: { prefab: 'BusDepot01', match: /^BusDepot/ },
+  Tram: { prefab: 'TramDepot01', match: /^TramDepot/ },
 };
 
 /**
- * Adds one default depot item to a buildings section (in place) for every transport type that has lines in
- * plan.transit but no depot of that type among the items. Pure; the web tool can call it on its own buildings section.
- * The item sits on the first stop of the first such line (a station for rail) with fallback "nearby", so the placer
- * puts it on the closest free roadside spot. Returns the list of added depots.
+ * Adds one default bus or tram depot item to a buildings section (in place) for every such transport type that has
+ * lines in plan.transit but no depot of that type among the items. Pure; the web tool calls it on its own buildings
+ * section. The item sits on the first stop of the first such line with fallback "nearby", so the placer puts it on
+ * the closest free roadside spot. Returns the list of added depots.
  * @param {{items: object[], stats?: object}} buildings
  * @param {{lines: {name: string, cs1Type: string, stops: {x: number, z: number, cs1Building?: number}[]}[]}} transit
  * @param {object} [catalogue] – for the CS2 lot size (optional)
@@ -160,20 +160,18 @@ export function addDefaultDepots(buildings, transit, catalogue) {
     const d = DEPOT_FOR_LINE[type];
     if (buildings.items.some((it) => d.match.test(it.prefab ?? ''))) continue;
     const first = lines[0];
-    const stop = (d.rail && first.stops.find((s) => s.cs1Building)) || first.stops[0];
+    const stop = first.stops[0];
     const names = lines.map((l) => l.name);
     const cat = catalogue?.prefabs?.find((p) => p.name === d.prefab);
     const item = {
       id: nextId--, cs1Info: null, type: 'BuildingPrefab', prefab: d.prefab, score: null, family: 'depot',
-      x: round(stop.x), z: round(stop.z), cs1Lot: null, lot: cat?.size ?? null,
-      accessSegment: 0, front: null, facing: [1, 0], alternatives: d.alternatives ?? [], fallback: 'nearby',
+      x: round(stop.x), z: round(stop.z), cs1Lot: null, lot: cat?.lot ?? null, // lot in cells, like matched items
+      accessSegment: 0, front: null, facing: [1, 0], alternatives: [], fallback: 'nearby',
       default: true,
-      reason: `no CS1 ${type.toLowerCase()} depot; CS2 needs one for ${names.join(', ')}`
-        + (d.rail ? '. Connect its track to the line by hand: CS2 yards only dispatch over connected track' : ''),
-      ...(d.rail ? { needsTrackLink: true } : {}),
+      reason: `no CS1 ${type.toLowerCase()} depot; CS2 needs one for ${names.join(', ')}`,
     };
     buildings.items.push(item);
-    added.push({ type, prefab: d.prefab, lines: names, needsTrackLink: !!d.rail, at: [item.x, item.z] });
+    added.push({ type, prefab: d.prefab, lines: names, at: [item.x, item.z] });
   }
   if (buildings.stats) buildings.stats.defaultDepots = added.length;
   if (added.length) buildings.defaultDepots = added;

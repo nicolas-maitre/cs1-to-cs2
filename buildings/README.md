@@ -169,7 +169,7 @@ When neither a slide along its own road nor an alternative prefab fits, the plac
 - `buildBuildingsPlan(…, { fallback, fallbackByType: { [cs1Name]: 'nearby' | 'anywhere' | 'skip' } })` writes the field only when one is chosen, so the default plan doesn't change.
 - Run options: `nearbyRadius`, `wideRadius`, `maxNearbyTries` (4000), `maxAnywhereTries`.
 
-**Default depots:** when the plan has transit lines of a type with no depot among the items, `buildBuildingsPlan` (via `addDefaultDepots`, also used by the web tool) adds one `BusDepot01` / `TramDepot01` / `SubwayYard01` / `RailYard01` item at the line's first stop, `default: true`. Rail yards are flagged `needsTrackLink`: their track has to be linked to the line by hand (decision #30).
+**Default depots:** when the plan has transit lines of a type with no depot among the items, `buildBuildingsPlan` (via `addDefaultDepots`, also used by the web tool) adds one `BusDepot01` / `TramDepot01` item at the line's first stop, `default: true`. Metro and train yards are planned in game by transit/'s `yards.plan` at the crop edge where the line's track leaves, in the same item shape, placed by this placer and linked by `tracklink` (decision #30, DECISIONS.md #83).
 
 **Idempotent:** an item whose prefab (or an alternative) already stands within 30 m + the slide range of its spot is `alreadyPlaced`, so re-runs on a saved city don't stack duplicates.
 

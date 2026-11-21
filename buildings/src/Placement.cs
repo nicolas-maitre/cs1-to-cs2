@@ -60,6 +60,7 @@ namespace Cs2Buildings
             public string Status = "pending", Reason;
             public float SnapDistance = -1;
             public Entity Placed;
+            public int SubNetsExpected = -1, SubNetsBuilt = -1; // course definitions written / edges owned by the building
         }
 
         internal sealed class RoadEdge
@@ -290,7 +291,11 @@ namespace Cs2Buildings
 
             // Create the definitions in batches, a few frames apart.
             var ready = items.FindAll(i => i.Status == "ready");
-            int batches = 0, frames = 0;
+            int batches = 0, frames = 0, subNetCourses = 0;
+            // A building definition alone gets no sub-nets (depot / station tracks, internal paths, parking roads): the
+            // object tool, ZoneSpawnSystem and BuildingConstructionSystem write them as separate Permanent course
+            // definitions owned by the building definition. Same here (run option subNets, default on).
+            bool subNets = P.Bool(a, "subNets", true);
             var rnd = new Unity.Mathematics.Random(0x5eed1234u);
             for (int start = 0; start < ready.Count; start += batchSize)
             {
@@ -307,6 +312,7 @@ namespace Cs2Buildings
                     });
                     em.AddComponent<Updated>(e);
                     em.AddComponent<Deleted>(e);
+                    if (subNets) subNetCourses += CreateSubNets(em, it.PrefabEntity, it.Position, it.Rotation, ref rnd);
                     it.Status = "created";
                 }
                 batches++;
@@ -316,7 +322,7 @@ namespace Cs2Buildings
 
             // Verify: the real building with this prefab at this spot, and its road connection.
             var found = FindBuildings(em);
-            int placed = 0, connected = 0, connectedToSnapEdge = 0, usedAlternative = 0, slid = 0;
+            int placed = 0, connected = 0, connectedToSnapEdge = 0, usedAlternative = 0, slid = 0, withSubNets = 0, subNetsMissing = 0;
             foreach (var it in ready)
             {
                 Entity best = Entity.Null;
@@ -329,6 +335,12 @@ namespace Cs2Buildings
                 }
                 if (best == Entity.Null) { Fail(it, failures, "notCreated", "no building appeared at the spot"); continue; }
                 it.Placed = best;
+                if (subNets)
+                {
+                    it.SubNetsExpected = ExpectedSubNets(em, it.PrefabEntity);
+                    it.SubNetsBuilt = em.HasBuffer<Game.Net.SubNet>(best) ? em.GetBuffer<Game.Net.SubNet>(best, true).Length : 0;
+                    if (it.SubNetsExpected > 0) { withSubNets++; if (it.SubNetsBuilt == 0) subNetsMissing++; }
+                }
                 it.Status = "placed";
                 placed++;
                 if (it.Alternative > 0) usedAlternative++;
@@ -349,13 +361,13 @@ namespace Cs2Buildings
                     { "yaw", R(math.degrees(math.atan2(it.Forward.x, it.Forward.y))) },
                     { "lot", new List<object> { it.Lot.x, it.Lot.y } }, { "snapDistance", R(it.SnapDistance) },
                     { "alternative", it.Alternative }, { "slide", R(it.Slide) }, { "moved", R(it.Moved) }, { "distance", R(it.Distance) }, { "fallbackPass", it.FallbackPass }, { "movedToOtherRoad", it.MovedToOtherRoad },
-                    { "entity", it.Placed == Entity.Null ? null : (object)it.Placed.Index },
+                    { "entity", it.Placed == Entity.Null ? null : (object)it.Placed.Index }, { "subNetsExpected", it.SubNetsExpected }, { "subNetsBuilt", it.SubNetsBuilt },
                 });
             var report = new Dictionary<string, object>
             {
                 { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "usedAlternative", usedAlternative }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
-                { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
+                { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "subNetCourses", subNetCourses }, { "buildingsWithSubNets", withSubNets }, { "subNetsMissing", subNetsMissing }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
                 { "offset", new List<object> { ox, oz } }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", list },
             };
             var reportPath = P.Str(a, "report", null);
@@ -696,6 +708,58 @@ namespace Cs2Buildings
                     });
                 }
             return new Dictionary<string, object> { { "count", list.Count }, { "buildings", list }, { "roads", roadsNear }, { "edges", edgesNear } };
+        }
+
+        /// <summary>
+        /// The building prefab's sub-nets (Game.Prefabs.SubNet: depot / station tracks, internal paths and roads) as
+        /// Permanent course definitions owned by the building definition created in the same frame, as
+        /// ZoneSpawnSystem/BuildingConstructionSystem.CreateSubNet do: local curve → world, elevation = local height,
+        /// IsFirst/IsLast | DisableMerge, OwnerDefinition = (building prefab, position, rotation). Upgrade-only sub-nets
+        /// (m_Upgrades set) are skipped: the placed building has no upgrades. Returns the number of courses.
+        /// </summary>
+        static int ExpectedSubNets(EntityManager em, Entity prefab)
+        {
+            if (!em.HasBuffer<Game.Prefabs.SubNet>(prefab)) return 0;
+            var buf = em.GetBuffer<Game.Prefabs.SubNet>(prefab, true);
+            int n = 0;
+            for (int i = 0; i < buf.Length; i++) if (buf[i].m_Prefab != Entity.Null && buf[i].m_Upgrades.Equals(default(CompositionFlags))) n++;
+            return n;
+        }
+
+        static int CreateSubNets(EntityManager em, Entity buildingPrefab, float3 pos, quaternion rot, ref Unity.Mathematics.Random rnd)
+        {
+            if (!em.HasBuffer<Game.Prefabs.SubNet>(buildingPrefab)) return 0;
+            var buf = em.GetBuffer<Game.Prefabs.SubNet>(buildingPrefab, true);
+            var subNets = new List<Game.Prefabs.SubNet>(buf.Length);
+            for (int i = 0; i < buf.Length; i++) subNets.Add(buf[i]); // copy: creating entities invalidates the buffer
+            int n = 0;
+            foreach (var sn in subNets)
+            {
+                if (sn.m_Prefab == Entity.Null || !sn.m_Upgrades.Equals(default(CompositionFlags))) continue;
+                var local = sn.m_Curve;
+                var curve = ObjectUtils.LocalToWorld(pos, rot, local);
+                var start = new CoursePos
+                {
+                    m_Position = curve.a, m_Rotation = NetUtils.GetNodeRotation(MathUtils.StartTangent(curve), rot),
+                    m_CourseDelta = 0f, m_Elevation = new float2(local.a.y), m_ParentMesh = sn.m_ParentMesh.x,
+                    m_Flags = CoursePosFlags.IsFirst | CoursePosFlags.DisableMerge,
+                };
+                var end = new CoursePos
+                {
+                    m_Position = curve.d, m_Rotation = NetUtils.GetNodeRotation(MathUtils.EndTangent(curve), rot),
+                    m_CourseDelta = 1f, m_Elevation = new float2(local.d.y), m_ParentMesh = sn.m_ParentMesh.y,
+                    m_Flags = CoursePosFlags.IsLast | CoursePosFlags.DisableMerge,
+                };
+                if (curve.a.Equals(curve.d)) { start.m_Flags |= CoursePosFlags.IsLast; end.m_Flags |= CoursePosFlags.IsFirst; }
+                var e = em.CreateEntity();
+                em.AddComponentData(e, new CreationDefinition { m_Prefab = sn.m_Prefab, m_RandomSeed = rnd.NextInt(), m_Flags = CreationFlags.Permanent });
+                em.AddComponentData(e, new OwnerDefinition { m_Prefab = buildingPrefab, m_Position = pos, m_Rotation = rot });
+                em.AddComponentData(e, new NetCourse { m_Curve = curve, m_StartPosition = start, m_EndPosition = end, m_Length = MathUtils.Length(curve), m_FixedIndex = -1 });
+                em.AddComponent<Updated>(e);
+                em.AddComponent<Deleted>(e);
+                n++;
+            }
+            return n;
         }
 
         /// <summary>Distance between placed and CS1 lot centres over the placed items: median, p90, max and counts over 50/150/400 m.</summary>
