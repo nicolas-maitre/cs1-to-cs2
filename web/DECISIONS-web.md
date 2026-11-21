@@ -559,3 +559,12 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - **Why a notice and not a checkbox in the options:** the user asked for something visible. The options checkboxes all default to on, and this one defaults to off.
     - **Checked in the browser on Cacao:** 12 utility buildings (water pumping stations, coal and oil plants, water treatment, water tower); the button toggles both ways.
     - **"What converts" fix:** the pipes and power lines line now counts `plan.utilities` (#115): off-road segments are placed by the importer, the ones along roads are left to CS2. It used to say "not placed".
+99. **Walls burn: the ground beside `walls` roads is brought within CS2's retaining-wall range** (docs/DECISIONS.md #129, worker-3; web 0.9.3).
+    - **Why:** CS1's `elevationKind` decides the CS2 composition family, so a CS1 ground road in `walls` mode is never a tunnel or on pillars. Its walls only reach −11.5…+7.5 m, and the importer clamps to that again.
+    - **The rule:** after the conform burn, the ground beside such a road goes to at most 7 m below and 11 m above it. The core is `halfWidth` + 2 m, then a smoothstep blend; conform cores are never touched. The tie, blend and wet rules are the conform burn's, except that the wet cap ("never raised above the water surface") also applies to cores.
+    - **Safety:** segments more than 30 m beyond the range are skipped and reported.
+    - **Contract:** schema §2 "Walls burn".
+    - **Results (3 km crops):**
+      - Skibidi: 117 segments, 9176 pixels, up to +5.9 / −15.8 m (highway trenches become open cuts with walls);
+      - Cacao: 103 segments, 849 pixels, up to +19.3 m (the elevated ramp gets an embankment).
+    - **Until worker-4 mirrors it:** the web identity test compares the conform burn alone (`completePackage(…, { walls: false })`).

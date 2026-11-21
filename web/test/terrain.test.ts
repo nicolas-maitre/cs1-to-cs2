@@ -83,7 +83,8 @@ describe.skipIf(!fs.existsSync(SAMPLE))('Skibidi: same terrain, water and connec
     expect(pkg.plan.segments.filter(s => s.kind === 'slope' && pkg.plan.prefabs[s.prefab].heightMode === 'conform').length).toBeGreaterThan(0);
     const planFile = path.join(tmp, 'skibidi-plan.json');
     fs.writeFileSync(planFile, JSON.stringify(pkg.plan));
-    const files = completePackage(city, pkg, { world: false });
+    // terrain/convert.mjs has no walls burn yet (#129, worker-4 mirrors schema §2): compare the conform burn alone
+    const files = completePackage(city, pkg, { world: false, walls: false });
     const t = theirsWithPlan(SAMPLE, planFile, 'skibidi-conform');
     const ours = JSON.parse(new TextDecoder().decode(files.find(f => f.path === 'terrain/terrain.json')!.data));
     expect(ours.roadConformed).toBe(true);

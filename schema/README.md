@@ -545,6 +545,29 @@ The ground follows the road instead of the road following the ground. Agreed by 
 
 `plan.terrain.roadConformed` mirrors it.
 
+### Walls burn (docs/DECISIONS.md #129, web 0.9.3)
+
+A `walls` ground road keeps its CS1 height, and CS2 can only hold it with retaining walls within −11.5…+7.5 m of the terrain (the importer clamps to that). So the package brings the ground beside it within reach: at most 7 m below the road (embankment side) and at most 11 m above it (trench side), which leaves a 0.5 m margin for bilinear sampling. Both builders (`web/src/core/terrain/conform.ts` `wallsTerrain`, and `terrain/lib`) must stay byte-identical, as for the conform burn.
+
+- **When:** after the conform burn, on the same float32 grid. `n` is the grid value after the conform burn, and `H0` the natural grid from before any burn (used only for the wet rule).
+- **What:** `kind: "ground"` segments whose prefab's `heightMode` is `walls`, in ascending `id`. No slope, tunnel, elevated or bridge segments, and no junction discs.
+- **Per pixel:** the same sampling, nearest point, `d` and road height `h` as the conform burn.
+  - Pixels inside any conform core are skipped.
+  - Target: `t = n < h − 7 ? h − 7 : n > h + 11 ? h + 11 : n`. When `t === n` the pixel is skipped.
+  - Core `d ≤ w + 2` (`w` = `halfWidth`; the 2 m covers the wall footprint): weight 1, target `t`.
+  - Blend `w + 2 < d ≤ w + 2 + b`, with `b = min(40, max(3.5, 2 × |t − n|))`: `tt = (d − w − 2) / b`, weight `1 − tt*tt*(3 − 2*tt)`, target `t`.
+  - Wet pixels (as in the conform burn, from `H0`) get `b = 3.5` for the blend.
+  - Any pixel window that covers `d ≤ w + 2 + 40` gives the same result.
+- **Combining**, as in the conform burn:
+  - the core with the smallest `|t − n|` wins (strict `<`, first in processing order);
+  - otherwise `h' = n + W × (Σ(w4 × t) / Σw4 − n)`, with `w4 = (w*w)*(w*w)` and `W` = max weight.
+  - **Then:** if `h' > n` on a wet pixel and `h' > surface`, `h' = max(n, surface)`: a wet pixel is never raised above the CS1 water surface. Unlike the conform burn, this applies to cores too.
+- **Safety:** a segment is skipped and reported when, at any of its sample points, `|t − n|` at the pixel containing the point is over 30 m. The importer clamps such roads (`walls_short`).
+- **Output:**
+  - `terrain.json` gains `walls: { segments, skipped, pixelsChanged, maxRaise, maxCut }` (after `conform`), present when at least one segment burned;
+  - `plan.terrain.wallsBurned` is `true` then;
+  - water sources are adjusted afterwards against the final grid, by the same rule as for the conform burn.
+
 ### `water.apply` and `water.checkpoints`
 
 Added to the M2 `water` section when the `.cs1x` has `water.json`:

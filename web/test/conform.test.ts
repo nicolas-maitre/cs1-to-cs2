@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPackage } from '../src/core/plan.ts';
 import { BASIC, HIGHWAY } from '../src/core/synthetic.ts';
-import { adjustWaterSources, conformTerrain, samplePoints } from '../src/core/terrain/conform.ts';
+import { adjustWaterSources, conformTerrain, samplePoints, wallsTerrain } from '../src/core/terrain/conform.ts';
 import type { ConformInput } from '../src/core/terrain/conform.ts';
 import type { NetInfo, PlanNode, PlanPrefab, PlanSegment } from '../src/core/types.ts';
 import { city, lane, node, straight } from './fixtures.ts';
@@ -110,6 +110,53 @@ describe('road-conformed terrain (schema §2, #110–113)', () => {
     const src = [{ x: 10, z: 10, height: 5 }, { x: -50, z: -50, height: 3 }];
     expect(adjustWaterSources(src, natural, burned, N, SIZE)).toBe(1);
     expect(src).toEqual([{ x: 10, z: 10, height: 3 }, { x: -50, z: -50, height: 3 }]);
+  });
+});
+
+describe('walls burn (#129)', () => {
+  const walls = (segments: PlanSegment[], o: Partial<ConformInput> = {}) => ({ segments, nodes: [] as PlanNode[], prefabs: prefabs('walls'), ...o });
+  const run = (g: Float32Array, inp: ConformInput, cores = new Set<number>()) => wallsTerrain(g, N, SIZE, inp, g.slice(), cores);
+
+  it('raises the ground to 7 m below a road high above it (embankment), blending back to the terrain', () => {
+    const g = flat();
+    const s = run(g, walls([seg(1, 125, 125, 0)]))!;
+    expect(s).toMatchObject({ segments: 1, skipped: 0, maxRaise: 18 });
+    expect(at(g, 0, 1.75)).toBe(118); // core (d ≤ w + 2): 125 − 7
+    expect(at(g, 0, 8.75)).toBe(118);
+    expect(at(g, 0, 15.75)).toBeLessThan(118); expect(at(g, 0, 15.75)).toBeGreaterThan(100);
+    expect(at(g, 0, 70)).toBe(100);
+  });
+
+  it('lowers the ground to 11 m above a road deep below it (trench with walls, not a tunnel)', () => {
+    const g = flat();
+    run(g, walls([seg(1, 80, 80, 0)]));
+    expect(at(g, 0, 1.75)).toBe(91);
+  });
+
+  it('changes nothing when the road is already within the wall range', () => {
+    const g = flat();
+    expect(run(g, walls([seg(1, 104, 104, 0)]))).toMatchObject({ segments: 1, pixelsChanged: 0 });
+    expect(g.every(h => h === 100)).toBe(true);
+  });
+
+  it('skips a segment more than 30 m beyond the range, and only walls ground segments burn', () => {
+    expect(run(flat(), walls([seg(1, 150, 150, 0)]))).toMatchObject({ segments: 0, skipped: 1, skippedIds: [1] });
+    expect(run(flat(), walls([seg(1, 125, 125, 0, { kind: 'elevated' })]))).toBeNull();
+    expect(run(flat(), input([seg(1, 125, 125, 0)]))).toBeNull(); // conform prefab
+  });
+
+  it('never touches conform core pixels', () => {
+    const g = flat();
+    const cores = new Set<number>([Math.floor((1.75 + SIZE / 2) / CELL) * N + Math.floor((0 + SIZE / 2) / CELL)]);
+    run(g, walls([seg(1, 125, 125, 0)]), cores);
+    expect(at(g, 0, 1.75)).toBe(100);
+    expect(at(g, 0, -1.75)).toBe(118);
+  });
+
+  it('never raises a wet pixel above the water surface', () => {
+    const g = flat();
+    run(g, walls([seg(1, 125, 125, 0)], { water: { seaLevel: 101, dx: 0, dz: 0 } }));
+    expect(at(g, 0, 1.75)).toBe(101);
   });
 });
 

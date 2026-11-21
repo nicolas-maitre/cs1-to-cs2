@@ -5,7 +5,7 @@
 import type { Lang } from './i18n/index.ts';
 import { DOCS_FR } from './docs.fr.ts';
 
-export const APP_VERSION = '0.9.2';
+export const APP_VERSION = '0.9.3';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }

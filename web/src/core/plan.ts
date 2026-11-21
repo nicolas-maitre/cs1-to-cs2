@@ -582,9 +582,9 @@ export function compactJson(v: unknown): string {
  * plan.terrain pointer. Call it once before writing / zipping a package (CLI, download), not on every crop change.
  * Returns the extra files; pkg.plan.terrain and the terrain summary are updated in place.
  */
-export function completePackage(city: Cs1City, pkg: BuiltPackage, opts: { terrain?: boolean; world?: boolean; conform?: boolean } = {}): { path: string; data: Uint8Array }[] {
+export function completePackage(city: Cs1City, pkg: BuiltPackage, opts: { terrain?: boolean; world?: boolean; conform?: boolean; walls?: boolean } = {}): { path: string; data: Uint8Array }[] {
   if (opts.terrain === false || !city.terrain) return [];
-  const t = terrainFiles(city, pkg.plan, { world: opts.world, conform: opts.conform ?? pkg.roadConform });
+  const t = terrainFiles(city, pkg.plan, { world: opts.world, conform: opts.conform ?? pkg.roadConform, walls: opts.walls });
   if (!t) return [];
   pkg.plan.terrain = t.terrain;
   const c = t.conform;
@@ -592,6 +592,9 @@ export function completePackage(city: Cs1City, pkg: BuiltPackage, opts: { terrai
     pkg.report.items.push({ level: 'info', kind: 'terrain', message: `road-conformed terrain: ${c.segments} ground road segment(s) and ${c.nodes} junction(s) burned into the heightmap (${c.pixelsChanged} pixels, up to +${c.maxRaise} / −${c.maxCut} m)${t.waterSourcesAdjusted ? `; ${t.waterSourcesAdjusted} water source(s) adjusted to keep their level` : ''}`, count: c.segments });
     if (c.skipped) pkg.report.items.push({ level: 'warning', kind: 'terrain', message: `${c.skipped} ground segment(s) more than ${c.maxDifference} m from the natural terrain were not burned in (segments ${(c.skippedIds ?? []).join(', ')})`, count: c.skipped, cs1: { segments: c.skippedIds ?? [] } });
   }
+  const w = t.walls;
+  if (w?.segments) pkg.report.items.push({ level: 'info', kind: 'terrain', message: `walls: the ground beside ${w.segments} ground segment(s) with retaining walls was brought within CS2's wall range (${w.pixelsChanged} pixels, up to +${w.maxRaise} / −${w.maxCut} m), so those roads keep their CS1 height`, count: w.segments });
+  if (w?.skipped) pkg.report.items.push({ level: 'warning', kind: 'terrain', message: `walls: ${w.skipped} ground segment(s) more than 30 m beyond CS2's wall range were left as they are; the importer clamps them (segments ${(w.skippedIds ?? []).join(', ')})`, count: w.skipped, cs1: { segments: w.skippedIds ?? [] } });
   const s = pkg.summary.find(c => c.id === 'terrain');
   if (s) {
     s.summary = terrainSummary(pkg.plan, pkg.lang);

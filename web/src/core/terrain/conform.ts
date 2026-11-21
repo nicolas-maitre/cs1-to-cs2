@@ -66,7 +66,7 @@ interface Acc { core: boolean; coreH: number; coreAbsD: number; sumW4: number; s
  * Burns the conform roads into `grid` (float32 metres, N², row 0 = minimum z) in place. Returns the stats, or null
  * when nothing burns.
  */
-export function conformTerrain(grid: Float32Array, N: number, size: number, input: ConformInput): ConformStats | null {
+export function conformTerrain(grid: Float32Array, N: number, size: number, input: ConformInput, out?: { cores?: Set<number> }): ConformStats | null {
   const cell = size / N, half = size / 2;
   const H0 = grid; // read before writing: results are written only at the end
   const pix = (v: number) => { let i = Math.floor((v + half) / cell); if (i < 0) i = 0; else if (i > N - 1) i = N - 1; return i; };
@@ -181,11 +181,11 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
 
   // write
   let changed = 0, maxRaise = 0, maxCut = 0;
-  const out = new Map<number, number>();
+  const res = new Map<number, number>();
   for (const [idx, a] of acc) {
     const h0 = H0[idx];
     let h: number;
-    if (a.core) { h = a.coreH; if (sea != null && h < sea) belowSea++; }
+    if (a.core) { h = a.coreH; if (sea != null && h < sea) belowSea++; out?.cores?.add(idx); }
     else if (a.maxW > 0 && a.sumW4 > 0) {
       const target = a.sumW4H / a.sumW4;
       h = h0 + a.maxW * (target - h0);
@@ -193,9 +193,9 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
       const wi = wetOf(idx, -half + (col + 0.5) * cell, -half + (row + 0.5) * cell);
       if (wi.wet && h > wi.surface) h = wi.surface;
     } else continue;
-    out.set(idx, h);
+    res.set(idx, h);
   }
-  for (const [idx, h] of out) {
+  for (const [idx, h] of res) {
     const h0 = H0[idx];
     grid[idx] = h;
     const diff = grid[idx] - h0;
@@ -208,6 +208,116 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
     before: { min: r3(before.min), max: r3(before.max) },
     skippedIds,
   };
+}
+
+/** Walls burn (docs/DECISIONS.md #129, schema §2 "Walls burn"): constants. */
+export const WALLS = Object.freeze({ below: 7, above: 11, footprint: 2, blendFactor: 2, minBlend: 3.5, maxBlend: 40, maxDifference: 30 });
+
+export interface WallsStats { segments: number; skipped: number; pixelsChanged: number; maxRaise: number; maxCut: number; skippedIds?: number[] }
+
+/**
+ * Walls burn (#129): a `walls` ground road keeps its CS1 height, and CS2 can only hold it with retaining walls up to
+ * 7.5 m above and 11.5 m below the terrain. So the ground beside it is brought to at most WALLS.below (7 m) below
+ * the road and at most WALLS.above (11 m) above it. Runs after conformTerrain on the same grid (`n` = the
+ * conform-burned height); `natural` is the grid before any burn (for the wet rule); `cores` = conformTerrain's core
+ * pixels, which the walls burn never changes.
+ */
+export function wallsTerrain(grid: Float32Array, N: number, size: number, input: ConformInput, natural: Float32Array, cores: Set<number>): WallsStats | null {
+  const cell = size / N, half = size / 2;
+  const pix = (v: number) => { let i = Math.floor((v + half) / cell); if (i < 0) i = 0; else if (i > N - 1) i = N - 1; return i; };
+  const water = input.water ?? null;
+  const sea = water?.seaLevel ?? null;
+  const depthAt = (x: number, z: number) => (water?.depth && water.depthMeta ? sampleCs1(water.depthMeta, water.depth, x - water.dx, z - water.dz) : 0);
+  const wetInfo = new Map<number, { wet: boolean; surface: number }>();
+  const wetOf = (idx: number, x: number, z: number) => {
+    let w = wetInfo.get(idx);
+    if (!w) {
+      const h0 = natural[idx], dep = depthAt(x, z);
+      w = { wet: dep > 0 || (sea != null && h0 < sea), surface: Math.max(sea ?? -Infinity, h0 + dep) };
+      wetInfo.set(idx, w);
+    }
+    return w;
+  };
+  const target = (n: number, h: number) => { const lo = h - WALLS.below, hi = h + WALLS.above; return n < lo ? lo : n > hi ? hi : n; };
+  const acc = new Map<number, Acc>();
+  const segs = input.segments.filter(s => s.kind === 'ground' && input.prefabs[s.prefab]?.heightMode === 'walls').sort((a, b) => a.id - b.id);
+  let burned = 0, skipped = 0;
+  const skippedIds: number[] = [];
+  for (const s of segs) {
+    const wc = (s.halfWidth ?? 0) + WALLS.footprint;
+    const P = samplePoints(s.bezier as unknown as number[][]);
+    if (P.some(p => { const n = grid[pix(p[2]) * N + pix(p[0])]; return Math.abs(target(n, p[1]) - n) > WALLS.maxDifference; })) { skipped++; if (skippedIds.length < 50) skippedIds.push(s.id); continue; }
+    burned++;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of P) { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[2] < minZ) minZ = p[2]; if (p[2] > maxZ) maxZ = p[2]; }
+    const R = wc + WALLS.maxBlend + cell;
+    const c0 = Math.max(0, Math.floor((minX - R + half) / cell)), c1 = Math.min(N - 1, Math.floor((maxX + R + half) / cell));
+    const r0 = Math.max(0, Math.floor((minZ - R + half) / cell)), r1 = Math.min(N - 1, Math.floor((maxZ + R + half) / cell));
+    for (let row = r0; row <= r1; row++) {
+      const pz = -half + (row + 0.5) * cell;
+      for (let col = c0; col <= c1; col++) {
+        const idx = row * N + col;
+        if (cores.has(idx)) continue;
+        const px = -half + (col + 0.5) * cell;
+        let best = Infinity, bestH = 0;
+        for (let k = 0; k < P.length - 1; k++) {
+          const p0 = P[k], p1 = P[k + 1];
+          const ex = p1[0] - p0[0], ez = p1[2] - p0[2];
+          const len2 = ex * ex + ez * ez;
+          let u = len2 > 0 ? ((px - p0[0]) * ex + (pz - p0[2]) * ez) / len2 : 0;
+          if (u < 0) u = 0; else if (u > 1) u = 1;
+          const qx = p0[0] + u * ex, qz = p0[2] + u * ez;
+          const ddx = px - qx, ddz = pz - qz;
+          const d = Math.sqrt(ddx * ddx + ddz * ddz);
+          if (d < best) { best = d; bestH = p0[1] + u * (p1[1] - p0[1]); }
+        }
+        if (best > wc + WALLS.maxBlend) continue;
+        const n = grid[idx], t = target(n, bestH);
+        if (t === n) continue;
+        const ad = Math.abs(t - n);
+        let b = Math.min(WALLS.maxBlend, Math.max(WALLS.minBlend, WALLS.blendFactor * ad));
+        if (best > wc) {
+          if (wetOf(idx, px, pz).wet) b = WALLS.minBlend;
+          if (best > wc + b) continue;
+        }
+        let a = acc.get(idx);
+        if (!a) { a = { core: false, coreH: 0, coreAbsD: Infinity, sumW4: 0, sumW4H: 0, maxW: 0 }; acc.set(idx, a); }
+        if (best <= wc) {
+          if (!a.core || ad < a.coreAbsD) { a.core = true; a.coreH = t; a.coreAbsD = ad; }
+          continue;
+        }
+        const tt = (best - wc) / b;
+        const sm = tt * tt * (3 - 2 * tt);
+        const wt = 1 - sm;
+        const w4 = (wt * wt) * (wt * wt);
+        a.sumW4 += w4;
+        a.sumW4H += w4 * t;
+        if (wt > a.maxW) a.maxW = wt;
+      }
+    }
+  }
+  if (!burned) return skipped ? { segments: 0, skipped, pixelsChanged: 0, maxRaise: 0, maxCut: 0, skippedIds } : null;
+  const res = new Map<number, number>();
+  for (const [idx, a] of acc) {
+    const n = grid[idx];
+    let h: number;
+    if (a.core) h = a.coreH;
+    else if (a.maxW > 0 && a.sumW4 > 0) h = n + a.maxW * (a.sumW4H / a.sumW4 - n);
+    else continue;
+    // a wet pixel is never raised above the CS1 water surface
+    const col = idx % N, row = Math.floor(idx / N);
+    if (h > n) { const wi = wetOf(idx, -half + (col + 0.5) * cell, -half + (row + 0.5) * cell); if (wi.wet && h > wi.surface) h = Math.max(n, wi.surface); }
+    res.set(idx, h);
+  }
+  let changed = 0, maxRaise = 0, maxCut = 0;
+  for (const [idx, h] of res) {
+    const n = grid[idx];
+    grid[idx] = h;
+    const diff = grid[idx] - n;
+    if (diff !== 0) { changed++; if (diff > maxRaise) maxRaise = diff; if (-diff > maxCut) maxCut = -diff; }
+  }
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  return { segments: burned, skipped, pixelsChanged: changed, maxRaise: r3(maxRaise), maxCut: r3(maxCut), skippedIds };
 }
 
 /** Keeps each water source's absolute level on the conformed terrain (schema §2): height += H0 − H at its pixel. */

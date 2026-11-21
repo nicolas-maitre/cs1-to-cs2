@@ -441,6 +441,8 @@ export interface PlanTerrainRef {
   seaLevelDry: number; min: number; max: number; world: boolean;
   /** the heightmap has the conform roads burned in (terrain.json conform) */
   roadConformed?: boolean;
+  /** the walls burn (#129) changed the ground beside walls roads (terrain.json walls) */
+  wallsBurned?: boolean;
 }
 
 /** Outside connections where the imported network leaves the crop (terrain/lib/connections.mjs). */
