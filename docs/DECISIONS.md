@@ -381,3 +381,11 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - Only shifts over 5 cm on nodes that aren't free-form are applied. Node Controller offsets, slopes, twists and deltaHeight stay report-only.
      - 3 km crops: 17 / 39 / 18 shifted ends, up to 10 m.
      - Older importers snap the ends (the old result), so this is backward compatible. Importer support and in-game verification are with worker-5.
+123. **`walls` mode keeps CS1 heights even beyond CS2's wall limits** (Claude). The −11.5 … +7.5 m clamp from #24 must not apply in `walls` mode. A segment beyond what CS2 can build as walls or embankments keeps its CS1 height, and CS2 picks the composition (elevated with pillars, or a cut). Found on CacaoCity's worst ramp, 25 m above the terrain, which would otherwise stay 17 m low.
+     Height baseline before the conform change, ground roads:
+
+     | | Skibidi | CacaoCity | Westfield |
+     | --- | --- | --- | --- |
+     | Median error | 0.88 m | 0.26 m | 0 m |
+     | p90 | 3.05 m | 0.95 m | 5.0 m |
+     | Segments over 2 m | 408 | 44 | 90 |
