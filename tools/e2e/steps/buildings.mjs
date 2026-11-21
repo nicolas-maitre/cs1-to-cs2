@@ -40,8 +40,15 @@ export default {
     if (roadPlan.utilities?.segments?.length) {
       const t0 = t();
       const r = await exec({ op: 'utilities', plan: ctx.planFile, offsetX, offsetZ });
-      out.utilities = { ...pick(r, ['items', 'placed', 'byUtility', 'ends', 'endsSnapped', 'snappedTo', 'prefabsMissing', 'elevation', 'notSnappedSample']), ms: t() - t0 };
+      out.utilities = { ...pick(r, ['ok', 'roadGuard', 'items', 'placed', 'byUtility', 'ends', 'endsSnapped', 'innerNodesToMarkers', 'snappedTo', 'prefabsMissing', 'elevation', 'notSnappedSample']), ms: t() - t0 };
     } else out.utilities = { skipped: 'no utilities section in the plan' };
+
+    // 1c. power plants and wind turbines joined to the grid: transformers, high- and low-voltage links (buildings #44)
+    {
+      const t0 = t();
+      const r = await exec({ op: 'powerhook' });
+      out.powerhook = { ...pick(r, ['ok', 'roadGuard', 'producers', 'withHighVoltage', 'transformers', 'needTransformer', 'transformersLinked', 'hvLines', 'lvMarkers', 'lvLines', 'log']), ms: t() - t0 };
+    }
 
     // 2. objects plan from the .cs1x: trees/rocks, districts, surfaces
     const catalogueFile = path.join(LOCAL_DIR, 'samples', 'cs2-catalogue.json');

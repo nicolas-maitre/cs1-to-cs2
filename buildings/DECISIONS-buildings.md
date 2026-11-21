@@ -219,6 +219,7 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
       - **Why markers first:** the first run snapped 0 of 65 ends, because it looked only at nodes with edges, and at the roads' `required` layers.
     - **Inner nodes** (shared by two segments) snap only to a marker within `snapRadius`, and every segment at that node moves the same way. CacaoCity's CS1 pipe runs through the treatment plant's lot, 31 m from its centre, with no end there, so the plant stayed unconnected (`waterPipeNotConnected`, `sewagePipeNotConnected`).
     - **Verified** on CacaoCity (`.gamectl/e2e/20261121-165929`, save `cs1conv-util-cacao2`): 147 of 147 segments (62 power, 85 pipe); 45 of 65 ends snapped (38 to road pipe layers, 3 to road LV, 4 to pump water markers).
+      - **Built right-hand:** CacaoCity drives on the left, but the e2e path set no driving side before #138, and the saves `cs1conv-util-cacao`…`cacao4` read `left_hand: false` (importer op `drivingside`, 2026-11-21). Utility nets have no direction, so the numbers should hold; they are re-measured on a left-hand city in #42.
       - **The 20 that don't snap:** about 8 end at buildings #106 didn't place (2 treatment plants, a crematorium, police stations); 4 power ends at pumps and a treatment plant with no road edge (no LV marker on those prefabs); the rest in the open, at buildings that were never in CS1's plan.
       - **Supply** (`tools/qa` utilities, 3 min simulated): homes with water 45 % supplied (43 % connected; 0 % in the release-candidate run, when no pipes were built); water capacity 9928 for 37 155 consumption. Electricity 0 %: no plant placed (#106) and no outside connection on this map (worker-2's map-prep work). Sewage 0 %: the treatment plant wasn't connected (inner nodes above). 2 pumps flagged `notEnoughSurfaceWater` (#42).
     - **New read-only ops for this:** `netlayers` (a net prefab's required / connect / localConnect layers and its edges in the city) and `instance` (a placed building's road edge and sub-net nodes).
@@ -239,6 +240,7 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
     - **Report:** a slid pump's reason says whether the placed lot reaches water; `pumps {slidToWater, groundwater, dry, noWaterData, samples}` counts them, and `samples` gives what each pump's spot read. `connectRoad` lists every placed power / water / sewage building with no road edge: "… is not connected to a road, so it gets no electricity: connect a road to it". In CS2 power reaches a pump through its road edge; pumps have no LV marker.
     - **Tests:** `PumpWaterAction`, `NeedsRoad` and `ConnectRoad` in RulesTests.
     - **Verified** on CacaoCity, together with #40's inner nodes and worker-2's outside connections (`.gamectl/e2e/20261121-190400`, save `cs1conv-util-cacao4`, `tools/qa` utilities 3 min):
+      - **Built right-hand:** CacaoCity drives on the left, but the e2e path set no driving side before #138, and the saves `cs1conv-util-cacao`…`cacao4` read `left_hand: false` (importer op `drivingside`, 2026-11-21). Utility nets have no direction, so the numbers should hold; they are re-measured on a left-hand city below.
       - homes: electricity 97 % supplied, water 98 %, sewage 98 %. Water is 100 % fulfilled: capacity 19 833, consumption 37 850.
       - Electricity is imported through 1 outside connection (56 497 of 71 950); no plant was placed (#106).
       - The treatment plant is connected now (1 inner node to its marker).
@@ -248,3 +250,34 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
     - **Fix:** a CS2 pump whose `WaterPumpingStation.m_AllowedWaterTypes` is `Groundwater` only is kind `tower`. GroundwaterPumpingStation01 works away from water, as a CS1 tower does. Its lot is larger ([6, 6] against the tower's), so under #106 it may not fit, and then it gets "place it yourself".
     - **Web:** the web tool's slim catalogue keeps that field, so web plans get the same match.
     - **Tests:** matcher test "a water tower becomes the groundwater pump". Not yet run in game.
+44. **Placed power plants and wind turbines are joined to the grid: a new `powerhook` step** (coordinator, after worker-3's 14 km Skibidi stress run: 10 placed producers unconnected).
+    - **Why:** in CS1, power flows between touching buildings, so a plant beside the city needs no line, and these 10 had none. CS2 needs a link at the plant's marker:
+      - coal, gas and incineration plants feed the **high-voltage** grid (`highVoltageNotConnected` otherwise), and only a transformer turns that into the roads' low voltage;
+      - wind turbines feed **low voltage** (`lowVoltageNotConnected`). A road next to the turbine isn't enough; the marker needs a line.
+      This is the connection CS1 made implicitly, not a new network (DECISIONS.md #115).
+    - **What:** op and mod step `powerhook` (after `utilities`; e2e step 1c; options `powerhook.<option>`):
+      - **Transformers (opt-in, `powerhook.transformers`, default off; coordinator: the importer invents no buildings by default, #83 / #106 / #128):** off, each high-voltage plant gets a `needTransformer` line ("… feeds only the high-voltage grid: place a transformer station near it"), and the city keeps its power through the outside connection. On, a producer with a high-voltage marker gets TransformerStation01 by the nearest non-highway road within `hvReach` (600) m, placed by the placer (fallback `nearby`, `requireRoad`). A high-voltage line then runs from the plant's marker to the transformer's.
+      - **Low-voltage markers** of producers get a low-voltage line to the nearest non-highway road node within `lvReach` (200) m, or to an already linked marker. Closest to a road first, so a wind farm chains outward from the road. One link per building.
+      - **Road ends:** 3 m short of the road node with `DisableMerge` (#45).
+    - **Verified** on `cs1conv-stress-full` (loaded, not saved; 2 min simulated):
+      - 3 transformers placed and linked (median 60 m, max 398 m from the plant), 10 low-voltage links;
+      - every `high/lowVoltageNotConnected` notification is gone, and the road guard shows 4428 road edges, 0 changed;
+      - the 2 road-side wind turbines produce 40 000 each, and import fell by 80 000.
+      - **Still 0 production: the 8 producers with no road edge.** CS2 puts a producer into the electricity graph only through its own road connection (`ElectricityBuildingConnection`): the 5 off-road wind-farm turbines kept `noConnection` even with their markers linked. That held after excluding highways and after marking the producers `Updated` (2 more runs). The 3 coal and incineration plants show `disconnected`, and no fuel or garbage reaches them either.
+      - **Off and on** (same save, 3 min simulated; road guard 4428 edges, 0 changed, and 19 road edges with a mid-edge line node regenerated in both runs):
+        - **off (default):** 3 `needTransformer` lines; homes electricity 99.7 % through the outside connection; the 3 high-voltage plants keep `highVoltageNotConnected`.
+        - **on:** 3 transformers and high-voltage lines; homes 100 %; no high-voltage notification left.
+      - **Lanes after reload:** roads a line or pipe joins mid-edge are marked `Updated` after the step (`roadsTouched`), so the session regenerates their lanes as a reload would. Worker-3's one reload difference (segment 3712) wasn't ours (no line within 45 m); the touch is kept as harmless.
+      - These 8 are CS1 spots without a road. CS2 needs one, so the report's `connectRoad` lines name them, and the player connects a road. The step doesn't invent roads (#115).
+45. **Utility line ends stop 3 m short of a road node, and a road guard checks every road edge** (DECISIONS.md #145).
+    - **Report:** worker-3 saw "split junctions" in the stress run: a Low-voltage Line or pipe node at a road node's position that lists one of its road edges.
+    - **By endpoints there was no split.** The line node lists the road edge only as a CS2 *local connection*, which is how a line or pipe end joins a road mid-edge; the edge's `m_Start`/`m_End` were unchanged. Worker-3's resolver walked `ConnectedEdge` and took that for a rewire. They've fixed it: endpoints only, and road nodes win the position lookup.
+    - **Measured in game** (`linetest`, tool phase, `cs1conv-util-cacao4`), for LV lines and pipes:
+      - ending on the node, with `DisableMerge`, 4 m back with `DisableMerge`, and `m_Entity` = the road node: every junction kept its road edges;
+      - the line end joined the graph (`ElectricityNodeConnection` / `WaterPipeNodeConnection`, local connection, no warning icon); a free end got a warning icon.
+      - Only the set-back variant leaves no second node at the junction's position.
+      - Both prefabs have `LocalConnectData` (`ExplicitNodes, ChooseBest`, layers Road plus their own, search distance 0).
+    - **Change:** a road-snapped end goes `roadSetback` (3) m from the road node toward the line, still on the road surface, with `CoursePosFlags.DisableMerge`. The same applies to `powerhook`'s low-voltage road links. Highways are no longer snap targets: they carry no utilities.
+    - **Guard:** `utilities` and `powerhook` snapshot every road edge's start and end node before building and compare after; the result has `roadGuard {roadEdges, gone, rewired, sample}` and `ok`.
+    - **Verified:** CacaoCity left-hand (`cs1conv-util-cacao6-lht`, `left_hand: true`; QA with worker-2's outside connections): homes electricity 99.6 %, water 98.7 %, sewage 98.7 %.
+    - **Diagnostic ops:** `linetest` (the variants above), `nodes {x, z, r}` (each edge's role: start / end / local) and `water {points}`. Bridge execs that create nets need `phase: "tool"`; without it CS2 creates nothing.

@@ -95,6 +95,7 @@ namespace RulesTests
             Eq("dry", PlacementRules.PumpWaterAction(60, 24, 30, false), "no water, dry ground: placed as planned, reported");
             Eq(true, PlacementRules.NeedsRoad("waterPump") && PlacementRules.NeedsRoad("sewage") && !PlacementRules.NeedsRoad("park"), "families");
             Eq("Water Pump at CS2 (1, 2) is not connected to a road, so it gets no electricity: connect a road to it", PlacementRules.ConnectRoad("Water Pump", "(1, 2)"), "line");
+            Eq(true, PlacementRules.NeedsTransformer("CoalPowerPlant01", "(1, 2)").StartsWith("CoalPowerPlant01 at CS2 (1, 2) feeds only the high-voltage grid: place a transformer station near it"), "transformer line");
         }
 
         // The web report's wording: CS1 = plan − transform, CS2 = plan + import offset.

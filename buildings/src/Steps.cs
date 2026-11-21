@@ -30,7 +30,7 @@ namespace Cs2Buildings
     {
         public const string Version = "0.3.3";
 
-        /// <summary>Registers "buildings", "objects", "districts", "surfaces" and "utilities" (in that order) with a step hook.</summary>
+        /// <summary>Registers "buildings", "objects", "districts", "surfaces", "utilities" and "powerhook" (in that order) with a step hook.</summary>
         public static void RegisterAll(Action<string, Func<Dictionary<string, object>, IEnumerator>> register)
         {
             register("buildings", Buildings);
@@ -39,6 +39,7 @@ namespace Cs2Buildings
             register("surfaces", Surfaces);
             // after the buildings: CS1 power lines and pipes end at plants, pumps and outlets, and snap to their markers
             register("utilities", UtilityNets);
+            register("powerhook", PowerHookStep);
         }
 
         /// <summary>Places plan.buildings.items (or a standalone cs1conv-buildings.json given as `buildingsPlan`).</summary>
@@ -66,6 +67,12 @@ namespace Cs2Buildings
             if (file == null || !HasSection(file, "utilities", false)) return Skipped("none in this package");
             a["plan"] = file;
             return (IEnumerator)Utilities.Place(a);
+        }
+
+        /// <summary>Connects placed power plants and wind turbines to the grid (decision #44): transformers + lines.</summary>
+        public static IEnumerator PowerHookStep(Dictionary<string, object> args)
+        {
+            return (IEnumerator)PowerHook.Start(Prefixed(args, "powerhook."));
         }
 
         public static IEnumerator Surfaces(Dictionary<string, object> args)

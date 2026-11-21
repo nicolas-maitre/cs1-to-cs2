@@ -41,8 +41,44 @@ namespace Cs2Buildings
                 case "netlayers": return NetLayersOp(args);
                 case "instance": return InstanceOp(args);
                 case "water": return WaterOp(args);
+                case "powerhook": return PowerHook.Start(args);
+                case "linetest": return LineTest.Start(args);
+                case "nodes": return NodesOp(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (catalogue, place, inspect, list, objects, areas, prefab, utilities, netlayers, instance, water)");
             }
+        }
+
+        // nodes {x, z, r=4}: every node within r m, with each connected edge's prefab and whether this node is that edge's
+        // start / end ("end") or only connected to it in the middle ("local"). Read only; for split-junction checks (#145).
+        static object NodesOp(Dictionary<string, object> a)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            var em = world.EntityManager;
+            var ps = world.GetOrCreateSystemManaged<PrefabSystem>();
+            float x = (float)P.Num(a, "x", 0), z = (float)P.Num(a, "z", 0), r = (float)P.Num(a, "r", 4);
+            var list = new List<object>();
+            using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Net.Node>(), ComponentType.ReadOnly<PrefabRef>()))
+            using (var es = q.ToEntityArray(Unity.Collections.Allocator.Temp))
+                foreach (var n in es)
+                {
+                    var p = em.GetComponentData<Game.Net.Node>(n).m_Position;
+                    float d = (float)Math.Sqrt((p.x - x) * (p.x - x) + (p.z - z) * (p.z - z));
+                    if (d > r || em.HasComponent<Game.Common.Deleted>(n)) continue;
+                    var edges = new List<object>();
+                    if (em.HasBuffer<Game.Net.ConnectedEdge>(n))
+                    {
+                        var buf = em.GetBuffer<Game.Net.ConnectedEdge>(n, true);
+                        for (int i = 0; i < buf.Length; i++)
+                        {
+                            var e = buf[i].m_Edge;
+                            var ed = em.GetComponentData<Game.Net.Edge>(e);
+                            string role = ed.m_Start == n ? "start" : ed.m_End == n ? "end" : "local";
+                            edges.Add(e.Index + " " + ps.GetPrefabName(em.GetComponentData<PrefabRef>(e).m_Prefab) + " (" + role + "; " + ed.m_Start.Index + "-" + ed.m_End.Index + ")");
+                        }
+                    }
+                    list.Add(new Dictionary<string, object> { { "node", n.Index }, { "prefab", ps.GetPrefabName(em.GetComponentData<PrefabRef>(n).m_Prefab) }, { "d", Math.Round(d, 2) }, { "owned", em.HasComponent<Game.Common.Owner>(n) }, { "edges", edges } });
+                }
+            return new Dictionary<string, object> { { "x", x }, { "z", z }, { "nodes", list } };
         }
 
         // water {points: "x,z;…", r=60}: what the placer's pump rule (decision #42) sees at each point. Read only.

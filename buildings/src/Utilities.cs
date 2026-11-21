@@ -11,7 +11,9 @@
 //      Marker" on plants and transformers, "Small Water Marker" on pumps, "Small Sewage Marker" on outlets, "Small
 //      Combined Marker" on treatment plants); the course attaches to it;
 //   2. otherwise a road node (roads take low-voltage lines and pipes through NetData.m_LocalConnectLayers): the end is
-//      put there and keeps its own depth, and CS2 connects it locally; or a node of another line of the same kind.
+//      put roadSetback (3) m short of it on the road, keeps its own depth, gets DisableMerge, and CS2 connects it
+//      locally (its node lists the road edge as a local connection; the road's own edges never change, see the road
+//      guard, #145); or a node of another line of the same kind.
 //   The layer test is the net's m_ConnectLayers against the node's layers. An inner node (shared by two segments)
 //   snaps only to a marker, when one is within snapRadius: a CS1 line that runs through the building.
 // - CS1 has one pipe type for water and sewage: "Combined Small Pipe" (10 m underground, the prefab's range). CS1 power
@@ -63,6 +65,9 @@ namespace Cs2Buildings
             var heights = world.GetOrCreateSystemManaged<TerrainSystem>().GetHeightData(true);
             float ox = (float)P.Num(a, "offsetX", 0), oz = (float)P.Num(a, "offsetZ", 0);
             float snapRadius = (float)P.Num(a, "snapRadius", 40);
+            // #145: a road-snapped end stops roadSetback m short of the road node (on the road surface, toward the line),
+            // with DisableMerge: CS2 joins it to the road by local connection, and no utility node sits on a road node.
+            float roadSetback = (float)P.Num(a, "roadSetback", 3);
             int batchSize = (int)P.Num(a, "batchSize", 200);
             var kinds = new HashSet<string>(P.Str(a, "kinds", "power,pipe").Split(','));
             var prefabNames = new Dictionary<string, KeyValuePair<string, string>>
@@ -97,6 +102,7 @@ namespace Cs2Buildings
                 elevation[kv.Key] = el;
             }
 
+            var guard = RoadGuard.Take(em);
             var nodes = SnapNodes(em);
             var grid = new Dictionary<long, List<SnapNode>>();
             const float Cell = 32f;
@@ -126,6 +132,7 @@ namespace Cs2Buildings
                     b[i].y = TerrainUtils.SampleHeight(ref heights, b[i]) + elevation[s.Utility];
                 }
                 Entity startNode = Entity.Null, endNode = Entity.Null;
+                bool startNoMerge = false, endNoMerge = false;
                 // A line end (a CS1 node used by one segment) snaps to a marker, a road or a line node; an inner node only to
                 // a marker (a CS1 line running through the building, as at CacaoCity's treatment plant). One decision per
                 // CS1 node, so every segment at an inner node moves the same way.
@@ -170,36 +177,48 @@ namespace Cs2Buildings
                     // Move the end onto the node and its inner control point with it (keeps the tangent).
                     // A road node: only the position (xz; the end keeps its own height and depth), no attachment.
                     var target = best.Position;
-                    if (best.Kind == 1) target.y = p.y;
+                    if (best.Kind == 1)
+                    {
+                        target.y = p.y;
+                        var inward = math.normalizesafe((side == 0 ? b[3] : b[0]).xz - best.Position.xz, new float2(1, 0));
+                        target.x += inward.x * roadSetback;
+                        target.z += inward.y * roadSetback;
+                        if (side == 0) startNoMerge = true; else endNoMerge = true;
+                    }
                     var node = best.Kind == 1 ? Entity.Null : best.Entity;
                     if (side == 0) { var dlt = target - b[0]; b[0] += dlt; b[1] += dlt; startNode = node; }
                     else { var dlt = target - b[3]; b[3] += dlt; b[2] += dlt; endNode = node; }
                 }
-                CreateCourse(em, pe, new Bezier4x3(b[0], b[1], b[2], b[3]), startNode, endNode, elevation[s.Utility], ref rnd);
+                CreateCourse(em, pe, new Bezier4x3(b[0], b[1], b[2], b[3]), startNode, endNode, elevation[s.Utility], startNoMerge, endNoMerge, ref rnd);
                 created++;
                 int cu; byUtility.TryGetValue(s.Utility, out cu); byUtility[s.Utility] = cu + 1;
                 if (++inBatch >= batchSize) { inBatch = 0; yield return null; frames++; }
             }
-            for (int i = 0; i < 3; i++) { yield return null; frames++; }
+            for (int i = 0; i < 10; i++) { yield return null; frames++; }
+            // roads a line or pipe joins mid-edge: regenerated now, as a reload would (worker-3, reload lane check)
+            int roadsTouched = RoadGuard.TouchLocallyConnected(em, new HashSet<Entity>(prefab.Values));
+            for (int i = 0; i < 5; i++) { yield return null; frames++; }
+            int roadsChanged;
+            var roadCheck = guard.Check(em, out roadsChanged);
 
             yield return new Dictionary<string, object>
             {
                 { "items", segs.Count }, { "placed", created }, { "byUtility", ToObj(byUtility) }, { "skippedKind", skippedKind },
                 { "prefabs", PrefabList(prefabNames, kinds) }, { "prefabsMissing", missing }, { "elevation", ToObjF(elevation) },
                 { "ends", ends }, { "endsSnapped", endsSnapped }, { "innerNodesToMarkers", innerToMarker }, { "snappedTo", ToObj(snapped) }, { "notSnappedSample", notSnapped },
-                { "snapRadius", snapRadius }, { "snapNodes", nodes.Count }, { "frames", frames }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) },
+                { "roadGuard", roadCheck }, { "roadsTouched", roadsTouched }, { "ok", roadsChanged == 0 }, { "snapRadius", snapRadius }, { "roadSetback", roadSetback }, { "snapNodes", nodes.Count }, { "frames", frames }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) },
             };
         }
 
-        static void CreateCourse(EntityManager em, Entity prefab, Bezier4x3 curve, Entity startNode, Entity endNode, float elevation, ref Unity.Mathematics.Random rnd)
+        static void CreateCourse(EntityManager em, Entity prefab, Bezier4x3 curve, Entity startNode, Entity endNode, float elevation, bool startNoMerge, bool endNoMerge, ref Unity.Mathematics.Random rnd)
         {
             var e = em.CreateEntity();
             em.AddComponentData(e, new CreationDefinition { m_Prefab = prefab, m_RandomSeed = rnd.NextInt(), m_Flags = CreationFlags.Permanent | CreationFlags.SubElevation });
             em.AddComponentData(e, new NetCourse
             {
                 m_Curve = curve,
-                m_StartPosition = Pos(curve, curve.a, startNode, 0f, elevation, CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight),
-                m_EndPosition = Pos(curve, curve.d, endNode, 1f, elevation, CoursePosFlags.IsLast | CoursePosFlags.IsLeft | CoursePosFlags.IsRight),
+                m_StartPosition = Pos(curve, curve.a, startNode, 0f, elevation, CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight | (startNoMerge ? CoursePosFlags.DisableMerge : 0)),
+                m_EndPosition = Pos(curve, curve.d, endNode, 1f, elevation, CoursePosFlags.IsLast | CoursePosFlags.IsLeft | CoursePosFlags.IsRight | (endNoMerge ? CoursePosFlags.DisableMerge : 0)),
                 m_Elevation = new float2(elevation),
                 m_Length = MathUtils.Length(curve),
                 m_FixedIndex = -1,
@@ -250,7 +269,13 @@ namespace Cs2Buildings
                             var pr = em.HasComponent<PrefabRef>(edges[i].m_Edge) ? em.GetComponentData<PrefabRef>(edges[i].m_Edge).m_Prefab : Entity.Null;
                             if (pr == Entity.Null || !em.HasComponent<NetData>(pr)) continue;
                             var nd = em.GetComponentData<NetData>(pr);
-                            if ((nd.m_RequiredLayers & Layer.Road) != 0) { kind = 1; layers |= nd.m_LocalConnectLayers; }
+                            if ((nd.m_RequiredLayers & Layer.Road) != 0)
+                            {
+                                kind = 1;
+                                // highways carry no utilities (UseHighwayRules): only the other roads' local layers count
+                                bool highway = em.HasComponent<RoadData>(pr) && (em.GetComponentData<RoadData>(pr).m_Flags & Game.Prefabs.RoadFlags.UseHighwayRules) != 0;
+                                if (!highway) layers |= nd.m_LocalConnectLayers;
+                            }
                             else layers |= nd.m_RequiredLayers;
                         }
                         // Building-owned road paths (Invisible …) are not the road network.

@@ -230,7 +230,7 @@ The same C# runs inside the CS2 importer mod (Cs2ImporterMod) as import steps, a
 
 ```csharp
 // Mod.OnLoad
-Cs2Buildings.Steps.RegisterAll(ImportSteps.Register);   // registers buildings, objects, districts, surfaces, utilities (in that order)
+Cs2Buildings.Steps.RegisterAll(ImportSteps.Register);   // registers buildings, objects, districts, surfaces, utilities, powerhook (in that order)
 ```
 
 | Arg | Meaning |
@@ -250,4 +250,16 @@ Each step yields once per frame batch and ends with a result dictionary (the sam
 - **Report:** `endsSnapped`, `innerNodesToMarkers`, `snappedTo` (by target and layer) and `notSnappedSample`.
 - **Where it runs:** the mod step `utilities` (options `utilities.<option>`) and the e2e step `buildings`.
 
-CacaoCity (`cs1conv-util-cacao2`): 147 of 147 segments, 45 of 65 ends snapped; homes with water went from 0 to 43 %. Electricity stays at 0 % there: none of the 7 power plants could be placed at its CS1 spot (#106), and the map had no outside connections yet.
+CacaoCity (`cs1conv-util-cacao2`, built right-hand by mistake; CacaoCity drives on the left, see decision #42): 147 of 147 segments, 45 of 65 ends snapped; homes with water went from 0 to 43 %. Electricity stays at 0 % there: none of the 7 power plants could be placed at its CS1 spot (#106), and the map had no outside connections yet.
+
+**Road ends and the road guard (decision #45):** a road-snapped end stops 3 m short of the road node (`roadSetback`) with `DisableMerge`, so CS2 joins it to the road by local connection and no utility node sits on a road node. Highways aren't targets. The result's `roadGuard` compares every road edge's start and end node before and after the step; `ok` is false on any change.
+
+## 9. Power plants onto the grid: op / step `powerhook` (decision #44)
+
+`powerhook {lvReach=200, hvReach=600, transformers=false, transformer="TransformerStation01"}` runs after `utilities`.
+- **High-voltage plants** (coal, gas, incineration), opt-in `transformers` (default off; mod setting "Add a transformer station next to each imported power plant"): a transformer by the nearest road, plus a high-voltage line from the plant's marker to the transformer's. Off, the report's `needTransformer` names each such plant.
+- **Low-voltage markers** (wind turbines, the plants' own) get a low-voltage line to the nearest non-highway road node, or chain to an already linked marker.
+- **Report:** `needTransformer`, `transformersLinked`, `hvLines`, `lvLines`, `roadGuard`, `ok`.
+- **Limit:** CS2 only puts a producer into the grid through its own road connection, so off-road producers still need a road; the placer's `connectRoad` lines name them.
+
+Full-city Skibidi (`cs1conv-stress-full`): 3 transformers and 10 links, every not-connected notification gone, the road-side turbines produce. 8 off-road producers still need a road.

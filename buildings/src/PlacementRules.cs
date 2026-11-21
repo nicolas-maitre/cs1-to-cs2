@@ -94,6 +94,14 @@ namespace Cs2Buildings
         /// <summary>Families whose buildings need a road edge to work: power reaches them (and leaves plants) through it.</summary>
         public static bool NeedsRoad(string family) { return family == "power" || family == "waterPump" || family == "sewage"; }
 
+        /// <summary>
+        /// Decision #44: with transformers off (the default), a plant that feeds only the high-voltage grid gets this line.
+        /// </summary>
+        public static string NeedsTransformer(string name, string cs2Position)
+        {
+            return (string.IsNullOrEmpty(name) ? "Power plant" : name) + " at CS2 " + cs2Position + " feeds only the high-voltage grid: place a transformer station near it, or re-import with 'Add a transformer station next to each imported power plant'";
+        }
+
         /// <summary>A "connect a road" line for a utility building placed without a road connection.</summary>
         public static string ConnectRoad(string name, string cs2Position)
         {
