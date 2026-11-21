@@ -66,8 +66,28 @@ describe('terrain converter port', () => {
   });
 });
 
+/** terrain/convert.mjs with a plan: road-conformed terrain (schema §2, #110–113). */
+function theirsWithPlan(cs1x: string, planFile: string, name: string) {
+  const out = path.join(tmp, name);
+  execFileSync(process.execPath, [CONVERT, '--cs1x', cs1x, '--plan', planFile, '--out', out, '--no-png', '--no-world'], { stdio: 'pipe' });
+  return { heightmap: fs.readFileSync(path.join(out, 'heightmap.r16')), meta: JSON.parse(fs.readFileSync(path.join(out, 'terrain-cs2.json'), 'utf8')) };
+}
+
 const SAMPLE = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2', 'samples', 'skibidi.cs1x');
 describe.skipIf(!fs.existsSync(SAMPLE))('Skibidi: same terrain, water and connections as the terrain scripts', () => {
+  it('road-conformed heightmap identical to terrain/convert.mjs --plan', async () => {
+    const city = await readCityFile(new Uint8Array(fs.readFileSync(SAMPLE)), { hash: false });
+    const pkg = buildPackage(city, { crop: { centerX: 3750, centerZ: -1250, size: 3000 } });
+    const planFile = path.join(tmp, 'skibidi-plan.json');
+    fs.writeFileSync(planFile, JSON.stringify(pkg.plan));
+    const files = completePackage(city, pkg, { world: false });
+    const t = theirsWithPlan(SAMPLE, planFile, 'skibidi-conform');
+    const ours = JSON.parse(new TextDecoder().decode(files.find(f => f.path === 'terrain/terrain.json')!.data));
+    expect(ours.roadConformed).toBe(true);
+    expect(t.meta.conform).toEqual(ours.conform);
+    expect(Buffer.from(files.find(f => f.path === 'terrain/heightmap.r16')!.data).equals(t.heightmap)).toBe(true);
+  }, 120_000);
+
   it('heightmap, world map, water.set sources, checkpoints and outside connections', async () => {
     const buf = fs.readFileSync(SAMPLE);
     const city = await readCityFile(new Uint8Array(buf), { hash: false });

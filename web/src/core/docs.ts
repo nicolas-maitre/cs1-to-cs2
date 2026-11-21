@@ -5,7 +5,7 @@
 import type { Lang } from './i18n/index.ts';
 import { DOCS_FR } from './docs.fr.ts';
 
-export const APP_VERSION = '0.7.0';
+export const APP_VERSION = '0.8.0';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }
@@ -205,7 +205,8 @@ export const DOCS_EN: Docs = {
     { area: 'Buildings', cs1: 'Libraries, taxi stands, cable car stops', cs2: '–', status: 'no', notes: 'No CS2 equivalent.' },
     { area: 'Districts', cs1: 'District names and outlines; policies', cs2: 'CS2 districts and policies', status: 'approx', notes: 'Policies with a CS2 equivalent (heavy traffic ban, recycling, …); zone specialisations are reported.' },
     { area: 'Districts', cs1: 'Parks, industry areas, campuses, airports', cs2: '–', status: 'report', notes: 'Their buildings are placed as single buildings.' },
-    { area: 'Other', cs1: 'Pipes, power lines', cs2: 'Built by CS2 along roads', status: 'no', notes: 'CS2 lays water and electricity with the roads.' },
+    { area: 'Other', cs1: 'Pipes and power lines along roads', cs2: 'Built by CS2 with the roads', status: 'yes', notes: 'CS2 roads carry water, sewage and low-voltage power themselves.' },
+    { area: 'Other', cs1: 'Pipes and power lines away from roads', cs2: 'CS2 pipes and power lines at the same place', status: 'approx', notes: 'Placed by the importer\'s buildings step; a line that runs along a converted road for most of its length is left to the road.' },
     { area: 'Other', cs1: 'Free-standing trees and rocks', cs2: 'CS2 trees (same species, or same kind and closest height) and boulders', status: 'yes', notes: 'Trees on a road are moved just past its edge; trees inside building lots are left out.' },
     { area: 'Other', cs1: 'Other free-standing props (benches, lamps, decorations)', cs2: '–', status: 'no', notes: 'No sensible CS2 equivalent; counted in the report.' },
   ],

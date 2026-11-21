@@ -370,3 +370,6 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - utilities: no power or water service (#115, #117).
 
      **RC3 runs once those land, with a utilities and heights check added to acceptance.** RC builds come from a clean export of a commit, not the shared working tree.
+119. **Web 0.8.0 implements #114 and the plan side of #115** (Claude).
+     - **Medians:** a gap between the directions is a median only with props between them (trees, lights, signs) or when it's at least 2 m. Every real median in the three cities is ≥ 3.2 m with props. The 0.75 m prop-less gaps on Two Lane Highway (Twoway) are no longer kerbed. Changed configs: Skibidi 1/26, CacaoCity 5/32, Westfield 0.
+     - **Utilities:** `plan.utilities` lists CS1 power lines and pipes that don't run along a converted road (≥ 70% of samples within the road's half-width + 4 m count as "along"). Skibidi has 6 power + 70 pipe segments off-road, CacaoCity 62 + 85, Westfield 64 + 42.

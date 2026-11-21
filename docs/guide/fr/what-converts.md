@@ -86,6 +86,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Tuyaux, lignes électriques | Posés par CS2 le long des routes | non converti | CS2 pose l'eau et l'électricité avec les routes. |
+| Tuyaux et lignes électriques le long des routes | Posés par CS2 avec les routes | converti | Les routes CS2 transportent elles-mêmes l'eau, les eaux usées et la basse tension. |
+| Tuyaux et lignes électriques hors des routes | Tuyaux et lignes électriques CS2 au même endroit | converti, approché | Posés par l'étape bâtiments de l'importeur ; une ligne qui longe une route convertie sur la plus grande partie de sa longueur est laissée à la route. |
 | Arbres et rochers isolés | Arbres CS2 (même espèce, ou même genre et hauteur la plus proche) et rochers | converti | Les arbres sur une route sont déplacés juste après son bord ; ceux dans le terrain d'un bâtiment sont laissés de côté. |
 | Autres décorations isolées (bancs, lampadaires, ornements) | – | non converti | Pas d'équivalent CS2 raisonnable ; comptées dans le rapport. |

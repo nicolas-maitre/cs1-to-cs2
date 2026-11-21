@@ -513,3 +513,25 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - **What it reads:** CS2's own signals (consumer flags, infoview statistics, facility flow edges, notification icons) rather than a model of the networks, so the numbers are what the player sees.
     - **Results:** see docs/QA.md §9. Fixes went to their owners: utility outside connections to worker-4; HV lines, transformers, pipe links and pumps on water to the buildings worker; the import report to worker-3.
     - **Acceptance:** the step reaches `tools/release/acceptance.mjs` as a patch (`tools/qa/acceptance-utilities.patch`), because that file is the buildings worker's.
+94. **Medians only where the CS1 road has one** (docs/DECISIONS.md #114; web 0.8.0). `rb.ts` used to turn any gap over 0.6 m between adjacent drive lanes into a Road Builder median of at least 1 m.
+    - **Now a gap is a physical median only when:** a decoration lane between the two lanes carries props (trees, avenue lights, signs and traffic lights stand on medians), or the gap is at least 2 m (`MEDIAN_MIN_GAP`).
+    - **Otherwise:** flat asphalt (`EmptyGroupPrefab`) from 1 m (`EMPTY_MIN_GAP`), where it shifts the lanes noticeably. Below that it's dropped, the lanes absorb it (CS1 3.85 m lanes → RB 4 m), and CS2 draws its own centre line.
+    - **Why these thresholds:** measured on every Road Builder NetInfo used in Skibidi, Cacao and Westfield. Every real median is 3.2 m or more and has props on its decoration lane, including the 32 m "Medium Road" with avenue lights on a 6 m centre lane. The only narrow gaps are 0.75 m with no props, on Two Lane Highway and Two Lane Highway Twoway: a painted divider.
+    - **What changes:**
+      - Skibidi: 1 of 26 Road Builder configs (`r2191e11d…`, a Two Lane Highway variant);
+      - Cacao: 5 of 32 (four Two Lane Highway variants and `rb87f58a7…`, a Two Lane Highway Twoway variant);
+      - Westfield: none.
+      - Config ids don't change: they are name-based, so the importer replaces the files.
+    - **"Greenwood Highway":** the export carries no street names, so it's identified by elimination. It's Cacao's Two Lane Highway Twoway: two-way, with a dashed centre line in CS1. Its base type already used the vanilla "Highway Twoway - 2 lanes" (no median) since 0.6.0, so the raised median was on its TM:PE / IMT variants, which are Road Builder roads.
+    - **Vanilla matcher:** stays consistent. A dropped gap gives no median, as the matcher already treats ≤ 1 m; a 1–2 m asphalt gap counts as a gap > 1 m and keeps the road on Road Builder (conservative).
+    - **IMT lines:** the exporter writes only IMT fills (`imt.json` fillers), and nothing in the web pipeline reads IMT lines.
+    - **Tests:** the spike-parity test skips the roads #114 changes. New tests cover a 0.75 m gap (no median, noted), a 1.5 m gap (asphalt) and medians from props or from a gap of 2 m or more.
+95. **`plan.utilities`: the player's power lines and pipes away from the roads** (docs/DECISIONS.md #115, the buildings worker's request; web 0.8.0).
+    - **What's in it:** `PowerLineAI` / `WaterPipeAI` segments with both nodes in the crop, minus building sub-networks, minus segments along a converted road (≥ 70 % of 10 samples within the road's half-width + 4 m). Fields as in `segments`, with CS1 node ids for chaining. Schema §2 has the section.
+    - **Placement:** the buildings worker maps power → CS2 power line and pipe → CS2 pipe in their placer.
+    - **Results:**
+      - Skibidi: 6 power + 70 pipe off-road, 1054 along roads;
+      - Cacao: 62 + 85, 254 along roads;
+      - Westfield: 64 + 42, 181 along roads.
+    - **Off switch:** `--no-utilities` on the CLI. There's no UI toggle yet, because the section only lists lines and the importer decides.
+    - **Docs:** the matrix now has two rows, along roads (yes, CS2 builds them) and away from roads (approx, placed by the importer).

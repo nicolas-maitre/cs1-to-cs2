@@ -327,6 +327,7 @@ export const EN = {
   'kind.speed-limit': 'speed limit',
   'kind.zoning': 'zoning',
   'kind.terrain': 'terrain',
+  'kind.utilities': 'power lines and pipes',
   'kind.water': 'water',
   'kind.transit': 'transit',
   'kind.traffic': 'traffic',

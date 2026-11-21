@@ -682,6 +682,25 @@ Added to the M2 `water` section when the `.cs1x` has `water.json`:
   The names are CS2 PolicyTogglePrefab / PolicySliderPrefab names listed from the running game (`CS2_POLICIES` in `web/src/core/m3/districts.ts`, checked by a test). CS2 has no small-business or smoke-detector policy: `SmallBusiness` and `SmokeDetectors` are reported, not converted. `cityPolicies` maps the CS1 city-wide policies the same way. The importer applies each policy where CS2 allows it (district or city).
 - **Not converted, reported:** zone specialisations (Leisure, Tourist, Organic, Hightech, SelfSufficient, specialised industry), other policies, and park areas (parks, industry areas, campuses, airports).
 
+### `utilities` (M3, web 0.8.0, docs/DECISIONS.md #115)
+
+The player's own CS1 power lines and water pipes **away from the converted roads**, for the buildings worker's placer (CS2 power line / CS2 pipe). CS2 roads carry low voltage, water and sewage themselves, so lines along a road are left out.
+
+```json
+"utilities": { "formatVersion": 1,
+  "segments": [ { "id": 714, "utility": "pipe", "cs1Info": "Water Pipe", "start": 24249, "end": 13965,
+                  "bezier": [[515.1, 311.9, -261.5], …], "elevationStart": 0, "elevationEnd": 0, "kind": "ground" } ],
+  "stats": { "power": 6, "pipe": 70, "alongRoad": 1054, "alongRoadPower": 0, "alongRoadPipe": 1054, "buildingNet": 0, "crossingCrop": 43 } }
+```
+
+- **Selection:** CS1 segments with ai `PowerLineAI` (`power`) or `WaterPipeAI` (`pipe`) with both nodes in the crop. Building sub-networks (`Untouchable`) are counted in `buildingNet` and left out, and segments with one node outside are counted in `crossingCrop`.
+- **Along a road:** a segment counts as along a road when at least 70 % of its 10 sample points (`t = (k + 0.5) / 10`) lie within a plan road segment's `halfWidth` + 4 m. Plan road segments are those whose prefab is a `RoadPrefab` or `RoadBuilderPrefab`, of any kind. Such segments are counted in `alongRoad` and left out.
+- **Fields** are as in `segments`, in plan coordinates:
+  - `start` / `end` are the CS1 node ids, never reversed, so segments chain and their ends can snap to plants, pumps and outlets;
+  - `kind` is `ground`, `elevated` (CS1 elevated or bridge) or `tunnel`;
+  - `elevationStart` / `elevationEnd` follow the `segments` rule.
+- **Order:** sorted by id. The section is absent when the crop has no power lines or pipes, or with `--no-utilities`.
+
 ### `objects` and `surfaces` (M3)
 
 Both sections are built by `buildings/lib/objects.mjs` (`buildObjectsSection`, `buildSurfacesSection`), the same code the scripted flow uses for `cs1conv-objects.json` (`buildings/README.md` §6). The web tool calls it unchanged, so the rows are the same in both. The importer reads them from the plan, or from `cs1conv-objects.json` next to it.

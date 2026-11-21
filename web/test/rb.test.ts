@@ -6,7 +6,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sha1Hex } from '../src/core/hash.ts';
 import { fromM0Dump, parseJson } from '../src/core/cs1x.ts';
-import { analyse, convert, rbConfigId } from '../src/core/rb.ts';
+import { analyse, convert, rbConfigId, MEDIAN_MIN_GAP } from '../src/core/rb.ts';
 import type { NetInfo } from '../src/core/types.ts';
 import { fiveLane, lane } from './fixtures.ts';
 
@@ -74,6 +74,40 @@ describe('RB generator', () => {
 });
 
 // Byte-level parity with the M0 spike generator on every road NetInfo of the real dump.
+/** A gap between adjacent drive lanes that the spike turned into a median but #114 doesn't (no props, under MEDIAN_MIN_GAP). */
+function paintedGap(info: NetInfo): boolean {
+  const a = analyse(info);
+  return a.slots.some((s, i) => {
+    if (!i) return false;
+    const p = a.slots[i - 1], gap = (s.pos - s.width / 2) - (p.pos + p.width / 2);
+    return gap > 0.25 && gap < MEDIAN_MIN_GAP && !a.decor.some(d => d.pos > p.pos && d.pos < s.pos && d.props > 0);
+  });
+}
+
+describe('medians only where CS1 has one (#114)', () => {
+  const road = (gap: number, decor: ReturnType<typeof lane>[] = []): NetInfo => ({
+    name: 'Gap ' + gap, ai: 'RoadAI', service: 'Road', fields: { m_halfWidth: 8 + gap / 2, m_pavementWidth: 2 }, aiFields: { m_highwayRules: true, m_enableZoning: false },
+    lanes: [lane(-(gap / 2 + 1.925), 3.85, 'Vehicle', 'Car', 'Backward'), lane(gap / 2 + 1.925, 3.85, 'Vehicle', 'Car', 'Forward'), ...decor],
+  });
+  const groups = (i: NetInfo) => convert(i)!.config.Lanes.map(l => l.GroupPrefabName?.replace(/^.*\./, ''));
+  const medianProp = { fields: { m_position: 0, m_width: 1, m_laneType: 'None', m_vehicleType: 'None', m_direction: 'None', m_speedLimit: 0 }, props: [{ prop: 'Avenue Light', tree: null, finalProp: 'Avenue Light', finalTree: null }] };
+  it('a narrow gap without props is a painted divider: no median, noted', () => {
+    const r = convert(road(0.75))!;
+    expect(groups(road(0.75)).some(g => /Median/.test(g ?? ''))).toBe(false);
+    expect(r.report.notes.join(';')).toMatch(/painted divider/);
+  });
+  it('a 1–2 m gap without props is flat asphalt', () => {
+    const g = groups(road(1.5));
+    expect(g.some(x => /Median/.test(x ?? ''))).toBe(false);
+    expect(g.some(x => /Empty/.test(x ?? ''))).toBe(true);
+  });
+  it('props on a decoration lane between the directions, or a gap of 2 m or more, make a median', () => {
+    expect(groups(road(0.75, [medianProp as never])).some(g => /Median/.test(g ?? ''))).toBe(true);
+    expect(groups(road(2.5)).some(g => /Median/.test(g ?? ''))).toBe(true);
+    expect(groups(road(3.2, [lane(0, 3, 'None', 'None', 'None', ['Tree2variant'])])).some(g => /Median/.test(g ?? ''))).toBe(true);
+  });
+});
+
 describe.skipIf(!fs.existsSync(DUMP))('parity with spikes/m0-roadbuilder-configs/wq-to-rb.mjs (M0 dump)', () => {
   it('produces the same configs as the spike for all non-highway roads', () => {
     const dump = parseJson<{ netInfos: NetInfo[] }>(fs.readFileSync(DUMP, 'utf8'));
@@ -84,6 +118,7 @@ describe.skipIf(!fs.existsSync(DUMP))('parity with spikes/m0-roadbuilder-configs
     try {
       execFileSync(process.execPath, [SPIKE, DUMP, '--out', out, ...withLanes.map(i => i.name)], { encoding: 'utf8', maxBuffer: 64 << 20 });
       for (const info of withLanes) {
+        if (paintedGap(info)) continue; // #114: a painted divider no longer becomes a median (tested below)
         const { config } = convert(info)!;
         const spike = JSON.parse(fs.readFileSync(path.join(out, `${config.ID}.json`), 'utf8'));
         expect(config, info.name).toEqual(spike);

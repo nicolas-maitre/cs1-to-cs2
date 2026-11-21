@@ -22,6 +22,16 @@ const SIDEWALK_WIDTHS: Record<string, number[]> = {
   B: [3.5, 4.5, 5, 5.5, 6, 7],
 };
 const MEDIAN_WIDTHS = [1, 2, 5];
+/**
+ * A gap between two drive lanes is a physical median only when the CS1 road has one (docs/DECISIONS.md #114): a
+ * decoration lane between them carrying props (trees, avenue lights, signs and traffic lights stand on medians), or a
+ * gap of at least MEDIAN_MIN_GAP. In Skibidi, Cacao and Westfield every real median is ≥ 3.2 m with props on its
+ * decoration lane; the only narrow gaps (0.75 m on the Two Lane Highways) have none: a painted divider.
+ * Otherwise the gap is flat asphalt when it shifts the lanes noticeably (≥ EMPTY_MIN_GAP), else dropped, and CS2
+ * draws its own centre line.
+ */
+export const MEDIAN_MIN_GAP = 2;
+export const EMPTY_MIN_GAP = 1;
 const SHOULDER_WIDTHS = [1, 2];
 
 export interface RbLane {
@@ -65,7 +75,7 @@ export interface Slot {
   absorbedParking?: number;
 }
 
-interface DecorLane { pos: number; trees: string[] }
+interface DecorLane { pos: number; trees: string[]; props: number }
 
 export interface Analysis {
   halfWidth: number;
@@ -125,6 +135,7 @@ export function analyse(info: NetInfo, overrides: Map<number, LaneOverrideKind> 
     laneType: str(l.fields.m_laneType), vehicleType: str(l.fields.m_vehicleType),
     direction: str(l.fields.m_direction), speed: Number(l.fields.m_speedLimit) || 0,
     trees: (l.props ?? []).filter(p => p.tree || p.finalTree).map(p => (p.tree ?? p.finalTree) as string),
+    props: (l.props ?? []).length,
   }));
   const drive = lanes
     .filter(l => /Vehicle|TransportVehicle|Parking/.test(l.laneType) && l.vehicleType !== 'None')
@@ -263,18 +274,22 @@ export function convert(info: NetInfo, overrides: Map<number, LaneOverrideKind> 
     if (i > 0) {
       const p = slots[i - 1];
       const gap = (s.pos - s.width / 2) - (p.pos + p.width / 2);
-      if (gap > 0.6) {
-        const trees = a.decor.some(d => d.trees.length && d.pos > p.pos && d.pos < s.pos);
+      const between = a.decor.filter(d => d.pos > p.pos && d.pos < s.pos);
+      const physical = gap > 0.25 && (between.some(d => d.props > 0) || gap >= MEDIAN_MIN_GAP);
+      if (physical) {
+        const trees = between.some(d => d.trees.length);
         const grassHint = /grass/i.test(info.name) || /median/i.test(info.name);
         const mw = trees ? 5 : nearest(gap, MEDIAN_WIDTHS);
         if (trees) { addons.add('TreesCenter'); addons.add('GrassCenter'); }
         else if (mw === 5 && grassHint) addons.add('GrassCenter');
         if (Math.abs(mw - gap) > 0.01) notes.push(`median: CS1 gap ${gap.toFixed(2)}m → RB ${mw}m${trees ? ' (5m forced: only 5m medians carry trees)' : ''}`);
         out.push({ lane: { Version: 5, SectionPrefabName: null, GroupPrefabName: RB + 'MedianGroupPrefab', GroupOptions: { 'Median Width': fmtM(mw) }, Invert: false }, width: mw });
-      } else if (gap > 0.25) {
+      } else if (gap >= EMPTY_MIN_GAP) {
         const ew = Math.round(gap * 2) / 2;
         out.push({ lane: { Version: 5, SectionPrefabName: null, GroupPrefabName: RB + 'EmptyGroupPrefab', GroupOptions: { 'Ground Type': 'Asphalt', 'Lane Width': fmtM(ew) }, Invert: false }, width: ew });
-        notes.push(`gap ${gap.toFixed(2)}m between lanes → RB Empty ${ew}m`);
+        notes.push(`gap ${gap.toFixed(2)}m between lanes, no median in CS1 (no props) → RB flat asphalt ${ew}m`);
+      } else if (gap > 0.25) {
+        notes.push(`gap ${gap.toFixed(2)}m between lanes is a painted divider in CS1 (no props) → no median; CS2 draws the line`);
       }
     }
     const lw = s.width >= 3.5 ? 4 : 3;

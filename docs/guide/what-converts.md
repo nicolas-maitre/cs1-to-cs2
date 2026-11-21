@@ -86,6 +86,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Pipes, power lines | Built by CS2 along roads | not converted | CS2 lays water and electricity with the roads. |
+| Pipes and power lines along roads | Built by CS2 with the roads | converts | CS2 roads carry water, sewage and low-voltage power themselves. |
+| Pipes and power lines away from roads | CS2 pipes and power lines at the same place | converts, approximated | Placed by the importer's buildings step; a line that runs along a converted road for most of its length is left to the road. |
 | Free-standing trees and rocks | CS2 trees (same species, or same kind and closest height) and boulders | converts | Trees on a road are moved just past its edge; trees inside building lots are left out. |
 | Other free-standing props (benches, lamps, decorations) | – | not converted | No sensible CS2 equivalent; counted in the report. |

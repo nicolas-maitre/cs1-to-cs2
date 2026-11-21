@@ -329,6 +329,8 @@ export interface Plan {
   transit?: PlanTransit;
   traffic?: PlanTraffic;
   terrain?: PlanTerrainRef;
+  /** M3 (#115): the player's power lines and pipes away from the roads (m3/utilities.ts) */
+  utilities?: import('./m3/utilities.ts').PlanUtilities;
   outsideConnections?: PlanOutsideConnections;
 }
 
@@ -501,6 +503,7 @@ export interface PlanStats {
 
 export type PackageReportKind =
   | 'terrain'
+  | 'utilities'
   | 'imt-node-fill'
   | 'imt-partial-fill'
   | 'imt-paint'

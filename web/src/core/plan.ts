@@ -30,6 +30,7 @@ import { buildDistricts } from './m3/districts.ts';
 import { addDefaultDepots } from '../../../buildings/lib/plan.mjs';
 import { buildObjects, buildSurfaces, SURFACE_MAP } from './m3/objects.ts';
 import { matchVanilla } from './vanilla.ts';
+import { buildUtilities } from './m3/utilities.ts';
 import type { Cs2RoadCatalogue, VanillaMatch } from './vanilla.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
@@ -84,6 +85,8 @@ export interface BuildOptions {
   heightMode?: HeightMode;
   /** Burn the conform roads into the heightmap when the package is written (default on; #110). */
   roadConform?: boolean;
+  /** M3 (#115): the player's power lines and pipes away from the converted roads → plan.utilities (default on). */
+  utilities?: boolean;
 }
 
 export interface MappingRow {
@@ -405,7 +408,10 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   }
   const objects = buildObjects(ctx, { enabled: opts.objects !== false, catalogue: opts.catalogue ?? null, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const surfaces = buildSurfaces(ctx, opts.surfaces !== false);
-  for (const r of [zoning, water, transit, traffic, nc, buildings, districts, objects, surfaces]) items.push(...r.items);
+  const utilities = opts.utilities === false ? { section: null, items: [] } : buildUtilities({
+    segments: city.segments, nodes, infos, inCrop: (x, z) => inCrop(crop, x, z), dx, dz, planSegments, prefabs, segmentKind, nodeElevation,
+  });
+  for (const r of [zoning, water, transit, traffic, nc, buildings, districts, objects, surfaces, utilities]) items.push(...r.items);
   if (city.manifest.traffic?.leftHand === true) items.push({ level: 'info', kind: 'traffic', message: 'the CS1 city drives on the left (plan.source.leftHandTraffic): its lanes are mirrored, so lane connections and lane arrows refer to mirrored lanes' });
   for (const [k, n] of speedGroups) {
     const [base, kmh] = k.split('|');
@@ -481,6 +487,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     ...(water.section ? { water: water.section } : {}),
     ...(transit.section ? { transit: transit.section } : {}),
     ...(traffic.section ? { traffic: traffic.section } : {}),
+    ...(utilities.section ? { utilities: utilities.section } : {}),
   };
   // Water as the scripted flow applies it (mapprep water.set), outside connections (mapprep connections).
   if (plan.water && city.water) {

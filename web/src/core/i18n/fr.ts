@@ -329,6 +329,7 @@ export const FR: Record<MessageKey, string> = {
   'kind.speed-limit': 'limite de vitesse',
   'kind.zoning': 'zonage',
   'kind.terrain': 'terrain',
+  'kind.utilities': 'lignes électriques et canalisations',
   'kind.water': 'eau',
   'kind.transit': 'transports',
   'kind.traffic': 'circulation',
