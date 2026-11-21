@@ -312,3 +312,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Station fixes:** elevated CS1 metro stations match elevated CS2 stations; through stations never become a terminus; stations are placed only at their CS1 spot, otherwise reported. That places 10/11 stations on Skibidi 6 km.
      - **Tests:** placer rules are a game-free test project, now run in CI.
 109. **Acceptance includes a utilities check** (user, 2026-11-21). After the simulation it measures the share of buildings with electricity, water and sewage service. It also flags water pumps and sewage outlets that aren't on water, and power plants or pumps with no network link. Utility networks (pipes, power lines) stay unconverted, because CS2 roads carry them. Fixes for the gaps found (e.g. linking remote plants, electricity/water outside connections) are decided from the measurements.
+110. **Road heights must follow CS1's profile; the snapping in #44 is to be revisited** (user report, 2026-11-21). On CacaoCity, a highway ramp that is a straight slope in CS1 follows the terrain's bumps in CS2. Planned fix, being measured first:
+     - ramps, highways and roads without building frontage keep their CS1 heights, with an embankment or retaining wall;
+     - only roads that need building access snap to the terrain;
+     - ground curves follow CS1's vertical profile.
+
+     The crash in "exact" heights (#66) gets a time-boxed second look.
