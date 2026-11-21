@@ -398,3 +398,4 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **The check:** every written connection's target arm must match the CS1 target segment's direction at that node. It becomes part of acceptance.
      - **Junctions that can't be mapped confidently** get no written connections and are reported.
      - **The default (on) stays until the check's numbers are in;** if they're bad, it flips to off until fixed.
+127. **Node Controller off-node ends stay OFF in the importer until they build reliably** (Claude). With offNode on, a Skibidi crop lost 67 of 1328 roads, because CS2 creates the node at the shifted curve end while the importer looks for it at the centre. `ImportOptions.ApplyOffNode` defaults to off, so ends snap as before web 0.9.0. Worker-5 fixes node creation and lookup, and the default flips only with 100% of roads built in all three cities and the user's ramp and split cases verified.
