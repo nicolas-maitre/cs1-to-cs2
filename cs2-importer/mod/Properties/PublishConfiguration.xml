@@ -45,12 +45,13 @@ Known limits:
   <Thumbnail Value="Properties/Thumbnail.png" />
   <Tag Value="Code Mod" />
   <Tag Value="Tools" />
-  <ModVersion Value="0.3.1" />
+  <ModVersion Value="0.3.2" />
   <GameVersion Value="1.*" />
   <!-- Road Builder [BETA] (Paradox Mods 87190) is required. Traffic (80095) is optional: the publish format has no
        optional dependencies, so it is only named in the description. -->
   <Dependency Id="87190" />
   <ChangeLog>
+* Imports packages that use the game's own roads where they match the CS1 road (web tool 0.6.0): fewer Road Builder roads to install.
 * Cities that drove on the left: Prepare map sets the same side, and one-way and asymmetric roads now run as in CS1.
 * TM:PE lane connections, lane arrows and U-turn rules are applied by default through the Traffic mod, exactly at junctions.
 * Check warns when the city drives on the other side than the CS1 city.

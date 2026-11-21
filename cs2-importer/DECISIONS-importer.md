@@ -303,4 +303,24 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
       - roads 684 of 684; one-way 141 of 141 and asymmetric 16 of 16 the same as in CS1, nothing reversed or mirrored;
       - lane connections 125 of 127 explicit sources as in CS1 (**98.4 %**), U-turn rules 17 of 17, outside connections 4 of 4.
     - **Left:** 212 of Cacao's 764 lane references don't resolve because the CS2 road has a different lane count. CS1 counts bicycle lanes as driving lanes (e.g. "One-Lane One-Way Rd w/Bike Lanes": 3 in CS1, 1 in CS2). That is a plan-side refinement: count only the lanes CS2 builds as car lanes, or give each lane reference its vehicle type.
+56. **Vanilla CS2 roads where they match** (DECISIONS.md #100; the web tool picks the target, the importer builds it).
+    - **The road list** (op `roadlayouts`, `src/Game/RoadLayouts.cs`): every vanilla road and highway prefab (not Road Builder's `r<uuid>-…` prefabs) is built as a straight 60 m segment in a throwaway city and read back from its edge composition. The data: lanes left → right with type, direction, width and offset; width, sidewalks, median, speed, zoning, highway rules, UI group.
+      - Written to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-roads.json`; the web tool bundles a slim copy.
+      - CS2 1.6.4f1: 64 prefabs, all built; 63 placeable from a roads menu.
+      - `RoadPrefab.m_SpeedLimit` is twice the km/h the game shows (Highway 240 → 120 km/h), so `speedKmh` is half of it and `speedPrefab` keeps the raw value.
+    - **Importer support:** nothing in the import special-cases Road Builder roads.
+      - Prefabs are looked up by type and name; the only Road Builder-specific code is the "config not loaded" hint.
+      - The left-hand reversal (#55), traffic settings, priority signs, zoning and verify work from edges and nodes.
+      - Lane matching (#52, #54) counts the CS2 car lanes at the node (car, car+tram and bus lanes; not tram-only or bike), whatever the prefab. The web tool's lane ordinals and counts follow the same rule.
+      - Core test: `VanillaRoadTests`, a mixed vanilla + Road Builder left-hand plan.
+    - **Measured with web 0.6.0 packages** (vanilla where matched; tram-only and bicycle lanes out of the counts, DECISIONS.md #102):
+
+      | City | Vanilla road types | Roads | Lane references resolved | Lane connections as in CS1 | After save/load |
+      | --- | --- | --- | --- | --- | --- |
+      | Skibidi (right-hand) | 7 | 2035/2035 | 685/685 | 162/176 (92 %), every junction lane exact | 93.8 % |
+      | Westfield (right-hand) | 5 | 648/648 | 299/301 | 88/92 (95.7 %) | 95.7 % |
+      | CacaoCity (left-hand) | 8 | 684/684 | 727/729 | 206/208 (99 %) | n/a |
+
+      The same as with the Road Builder-only packages. What's left is lane splits or shifts at nodes without a junction (#54). Cacao's one-way and asymmetric roads still all run as in CS1.
+    - **The dump's median, corrected after the web worker's check:** `medianWidth` is now the gap between the innermost backward and forward driving lanes (Large Road 0, Large Road Divided 2). The composition's median pieces (kept as `medianPieces`) add up to 2 m on Large Road although its lanes meet at the centre line.
 

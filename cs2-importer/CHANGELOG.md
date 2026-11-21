@@ -2,6 +2,14 @@
 
 The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The version is `Mod.Version` in `mod/Mod.cs` (the `<Version>` in `mod/Cs2ImporterMod.csproj` must match; `node tools/release/build.mjs --check` verifies both).
 
+## 0.3.2 (2026-11-21)
+
+- **Vanilla CS2 roads:** packages from web tool 0.6.0 use the game's own roads where they match the CS1 road (same driving lanes per side, widths and sidewalks), and Road Builder roads only where nothing matches (DECISIONS.md #100). The import treats both kinds alike: traffic settings, priority signs, lane connections, zoning, the left-hand reversal and verify. Measured with vanilla-road packages (DECISIONS-importer.md #56):
+  - Skibidi, 7 road types vanilla: 2035/2035 roads; lane connections 162 of 176 as in CS1 (every junction lane exact), the same after save/load;
+  - Westfield, 5 vanilla: 648/648 roads, 88 of 92 (95.7 %);
+  - CacaoCity, left-hand, 8 vanilla: 684/684 roads, 206 of 208 (99 %).
+- **For the web tool:** op `roadlayouts` (exec library) writes `cs2-roads.json`, the lane layout of every vanilla road and highway (lanes left → right with type, direction, width and offset; sidewalks, median, speed, zoning). The web tool matches CS1 roads against it.
+
 ## 0.3.1 (2026-11-21)
 
 - **Fix: left-hand cities.** In a city that drove on the left in CS1, one-way roads were built running backwards, and asymmetric roads mirrored. Roads of a left-hand plan (`plan.source.leftHandTraffic`) are now built end → start, which is exactly CS1's layout. CacaoCity: 141 of 141 one-way and 16 of 16 asymmetric roads as in CS1 (DECISIONS-importer.md #55).

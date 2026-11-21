@@ -289,3 +289,10 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      | Road types matched to vanilla | 7 | 8 | 5 |
      | Segments on vanilla roads | 341 | 117 | 402 of 647 |
      | Road Builder configs | 26, down from 33 | 32 | 10 |
+105. **Importer 0.3.2: vanilla road targets need no special handling** (Claude). Every step works from edges, nodes and CS2 car lanes. The new `roadlayouts` exec op dumps the vanilla layouts the web tool matches against.
+
+     | | Skibidi | Westfield | CacaoCity (left-hand) |
+     | --- | --- | --- | --- |
+     | Lane connections matched (web 0.6.0 packages) | 92% | 95.7% | 99% |
+
+     That's the same as with all Road Builder roads, and connections persist through save/load.

@@ -48,6 +48,7 @@ namespace Cs2Importer
                 case "trafficmod": return M2Ops.TrafficMod(args);
                 case "lanes": return LaneOps.Apply(args);
                 case "lanedirs": return LaneDirs.Dump(args);
+                case "roadlayouts": return RoadLayouts.Dump(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify, zoning, traffic, trafficmod, terrain, inspect, mod)");
             }
         }

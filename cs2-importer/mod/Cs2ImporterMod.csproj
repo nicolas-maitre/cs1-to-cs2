@@ -11,7 +11,7 @@
     <LangVersion>9.0</LangVersion>
     <AssemblyName>Cs2ImporterMod</AssemblyName>
     <RootNamespace>Cs2ImporterMod</RootNamespace>
-    <Version>0.3.1</Version>
+    <Version>0.3.2</Version>
     <Nullable>disable</Nullable>
     <NoStdLib>true</NoStdLib>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
