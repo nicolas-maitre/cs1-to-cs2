@@ -318,3 +318,4 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - ground curves follow CS1's vertical profile.
 
      The crash in "exact" heights (#66) gets a time-boxed second look.
+111. **The ground snaps to the road, not the road to the ground** (user, 2026-11-21; refines #110 and supersedes the snapping in #44). When the package is built, every ground-level road's CS1 vertical profile is burned into the converted heightmap: the road's height across its width, blended out to the natural terrain with side slopes, giving embankments and cuts made of ground like CS1. The importer then places ground roads at their real CS1 heights. Elevated roads, bridges and tunnels don't modify the terrain. Worker-3 leads the design; worker-2 implements it in the web terrain step, mirrored in `terrain/convert.mjs` by worker-4.
