@@ -143,3 +143,11 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 47. **Default base map: Sunshine Peninsula**, chosen after surveying all 12 built-in maps in game (Claude).
 48. **Web M3: the buildings worker's matcher is reused as is, and the plan's `buildings` section shares its item shape** (Claude). The zoning theme breaks ties between equally good CS2 buildings. The site bundles a slim CS2 catalogue. Growables are counted, not placed.
 49. **One source for the user docs** (Claude): `docs/guide/` is also shown in the web app's Help. The README states each feature's real status and says plainly that the mods aren't published yet.
+50. **Oversized CS2 service lots: "nearby free land" fallback** (Claude). It runs after the slides and alternatives: it searches imported roads within 150 m, closest first, and can be set per type (`nearby` | `skip`).
+    - Skibidi 3 km: 96/108 placed, 94 connected; buildings moved a median of 56 m.
+    - Still refused: 6 combustion plants, 2 cargo centres, 2 crematories, a prison and a university, whose CS2 lots are huge.
+    - Placement is idempotent.
+51. **Trees: a small tested species matcher, placed as adult objects, 2000 per frame** (Claude). In the crop, 2744 of 4216 were created in 0.6 s. 1359 were skipped because they fall on Road Builder roads, which are wider than CS1 roads.
+52. **Districts: traced from the raster into polygons and created as CS2 "District Area"s, with names and the policies CS2 supports** (Claude). Verified only on a synthetic plan, since Skibidi has no districts. Park, industry and campus areas have no CS2 counterpart and are reported.
+53. **IMT junction fills are not converted** (Claude). CS2 draws its junction surface over any surface area placed there, and its decals are fixed images with no colour fill. They stay in the import report. Off-road pavement/grass fills keep their surface mapping.
+54. **Known bridge limit:** the first tool-phase `exec` after `save.load` fails with "EntityCommandBuffer not allowed". Drivers retry once, and exec code must not call game methods that rely on end-of-frame command buffers.

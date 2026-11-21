@@ -18,6 +18,7 @@
     <!-- exec hot reload needs a new assembly version on every build (tools/PROTOCOL.md) -->
     <Deterministic>false</Deterministic>
     <AssemblyVersion>1.0.*</AssemblyVersion>
+    <NoWarn>$(NoWarn);CS7035</NoWarn>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
   <ItemGroup>

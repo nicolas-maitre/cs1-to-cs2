@@ -34,5 +34,11 @@ export function readCs1x(file) {
     network: ok('network') ? json('network.json') : null,
     buildings: ok('buildings') ? json('buildings.json') : null,
     assets: ok('assets') ? json('assets.json') : null,
+    trees: ok('trees') ? json('trees.json') : null,
+    props: ok('props') ? json('props.json') : null,
+    imt: ok('imt') ? json('imt.json') : null,
+    districts: ok('districts') ? json('districts.json') : null,
+    districtRaster: ok('districts') && z.has('districts.u8') ? new Uint8Array(z.get('districts.u8')) : null,
+    parkRaster: ok('districts') && z.has('parks.u8') ? new Uint8Array(z.get('parks.u8')) : null,
   };
 }

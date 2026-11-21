@@ -79,3 +79,47 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
 - **Capacity units differ between the games** (CS1 garbage per week vs CS2 per month, electricity in different units, …), so capacity closeness ranks but doesn't mean equal service. The CS2 buildings are generally bigger and stronger, so cities get more coverage than in CS1.
 - **Themes:** the matcher prefers a theme only to break ties. Most CS2 service buildings have no theme; signature buildings do (EU_/NA_). The plan doesn't pass a theme yet; the web tool could pass the CS2 city's theme.
 - **DLC prefabs** are in the catalogue only if they're loaded in the game that generated it, so a catalogue from another machine could name prefabs this game doesn't have. The placer then reports `prefabMissing` and tries the alternatives.
+
+15. **Interface with the web tool (agreed with worker-2):**
+    - **Imports:** the web core imports `matchAssets` and `MATCHER_VERSION` from `match/match.mjs`, and `closestOnBezier` from `lib/plan.mjs`, by relative path, from both Vite and Node. These exports and the match result shape (`cs2`, `cs2Lot`, `noEquivalent`) stay stable; both files stay pure, without Node APIs.
+    - **Overrides:** per-type user overrides ("pick another prefab / skip") are applied in the web adapter on top of `matchAssets`, so the matcher has no override option.
+    - **Plan section:** the web core builds the plan's `buildings` section with the same rules as `buildBuildingsPlan` and checks that with a vitest comparison; its items add `type: "BuildingPrefab"`. `types` and `notPlaced` go to the UI and report.json, not into the plan section.
+    - **Placer:** reads `type` (default `BuildingPrefab`) and accepts either `plan.buildings.items` or a standalone `cs1conv-buildings.json`.
+    - **Slim catalogue:** `cs2-catalogue.slim.json` (the name worker-2 asked for) is bundled into the static site.
+
+# M3, round 2 (2026-11-21 ~05:35)
+
+16. **Oversized lots get a "nearby free land" fallback, after the slides and alternatives.**
+    - **Search:** road edges within 150 m, both sides, every 6 m, closest first, with the same fit test.
+    - **Excluded:** spots near the edge ends (unconnectable), and road sides with `Raised` / `Lowered` walls. Also requiring the `Side.Sidewalk` flag left no candidates: the road compositions don't carry it.
+    - **Choosing per building type:** item field `fallback` (`nearby` | `skip`), with the run option `fallback` as the default. The plan builder writes the field only when asked, so worker-2's comparison of default items doesn't change.
+    - **Result on Skibidi:** placed went from 77 to 96 of 108. The moved ones went 8–124 m (median 56 m), 14 onto another road.
+
+17. **Placement is idempotent.** An item already standing near its spot (same prefab or an alternative, within 30 m + the slide range) is `alreadyPlaced`.
+    - **Why:** worker-3 re-imported roads into my saved city, so its buildings were already there, and a second run would have scattered duplicates via the fallback.
+    - **Caveat:** buildings that a previous run moved by more than that can't be recognised.
+
+18. **Vegetation:** a small separate matcher (`match/vegetation.mjs`), with a fixed rule order (kind → species → height → theme).
+    - **Rocks:** CS1 and CS2 both ship 8 rocks/boulders, mapped one-to-one.
+    - **Trees:** placed adult (`m_Age` 0.3–0.55, deterministic) with a random but deterministic rotation.
+    - **Skipped:** trees on a CS2 road surface or inside an imported lot. CS2's Road Builder roads are wider than CS1's, which is why 1359 of 4216 go.
+
+19. **Districts are polygons traced from the raster:** the outer boundary of each 4-connected component (holes dropped and reported, specks under 4 cells dropped), restricted to the crop.
+    - **Prefab:** CS2 has a single district prefab, "District Area".
+    - **Policies:** mapped by a small table (`DISTRICT_POLICY_MAP`, CS2 names from the game's prefab list): heavy traffic ban, combustion engine ban, speed bumps, recycling, power saving → energy consumption awareness, encourage biking → urban cycling initiative, bike ban → bicycle traffic restriction, parking fees → roadside parking fee. Everything else is counted as unmapped.
+    - **Park, industry, campus and airport areas** have no CS2 district counterpart and are listed under `parksNotConverted`.
+    - **Verification:** Skibidi has no districts, so the check used a synthetic input in the exporter's own format (`run.mjs objects-plan --synthetic-districts`).
+
+20. **IMT junction fills: stopped after one test, as allowed.**
+    - **Surfaces:** a CS2 surface area at a CS1 junction fill is created but invisible; CS2 draws the road and junction surface over terrain surfaces (screenshot `.gamectl/buildings/objects-20261121-053449/surface-0.png`). Pavement and grass islands on junctions would be hidden the same way.
+    - **Decals:** CS2's paintable decals are fixed images (parking icons, "no parking" stripes, letters), with no colour fill. So there's nothing for red bus paint or grey paint.
+    - **What stays:** `buildSurfacesSection` keeps the mapping (pavement → "Pavement Surface 01", grass → "Grass Surface 01") for fills off the road surface, which do render.
+    - **Skibidi:** the crop holds only 2 junction fills, both red paint, so nothing is converted there. Segment fills remain the bus / median lane overrides (M1).
+
+21. **End-of-frame command buffers can't be used from exec.**
+    - **What happens:** `NameSystem.SetCustomName` and `PoliciesUISystem.SetPolicy` throw "Trying to create EntityCommandBuffer when it's not allowed!". The same error hits the first tool-phase exec after every `save.load`, before the op does anything.
+    - **Names and policies:** done with the EntityManager instead (the name dictionary by reflection plus `CustomName` / `BatchesUpdated`; a `Modify` event entity).
+    - **First exec after a load:** the driver retries it once. Reported to worker-3, who owns the bridge.
+
+22. **Embankments:** fixed by worker-3 in the importer (embankments now snap to the terrain). In its re-imported save, 94 of 96 placed buildings connect, against 71 of 77 before.
+    - **The 2 left:** one faces a trench wall (`Lowered`). One was moved onto a road side with no flags, probably a ramp; the fallback can't tell such sides apart yet.

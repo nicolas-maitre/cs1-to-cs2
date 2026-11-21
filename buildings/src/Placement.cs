@@ -36,14 +36,17 @@ namespace Cs2Buildings
         sealed class Item
         {
             public int Id;
-            public string Prefab, Cs1Info;
+            public string Prefab, Cs1Info, Type = "BuildingPrefab"; // Type: the plan item's prefab type (web plans set "BuildingPrefab")
             public double X, Z, Score;
             public double[] Front, Facing;
             public List<string> Alternatives;
             public int Alternative;
             public float Slide;
             public bool NearJunction;
-            public string RoadSide; // flags of the road side the lot faces, e.g. "Sidewalk" or "Raised"
+            public string RoadSide;
+            public string Fallback;          // "nearby" | "skip" | null (run option)
+            public float Moved = -1;         // metres from the CS1 position when the nearby fallback placed it
+            public bool MovedToOtherRoad; // flags of the road side the lot faces, e.g. "Sidewalk" or "Raised"
             public int AccessSegment;
             // resolved
             public Entity PrefabEntity;
@@ -57,7 +60,7 @@ namespace Cs2Buildings
             public Entity Placed;
         }
 
-        sealed class RoadEdge
+        internal sealed class RoadEdge
         {
             public Entity Entity;
             public Bezier4x3 Curve;
@@ -86,18 +89,28 @@ namespace Cs2Buildings
             float maxSlide = (float)P.Num(a, "maxSlide", 24);
             float endMargin = (float)P.Num(a, "endMargin", 12);
             bool useAlternatives = P.Bool(a, "alternatives", true);
+            string defaultFallback = P.Str(a, "fallback", "nearby");
+            float nearbyRadius = (float)P.Num(a, "nearbyRadius", 150);
+            int maxNearbyTries = (int)P.Num(a, "maxNearbyTries", 4000);
+            if (defaultFallback != "nearby" && defaultFallback != "skip") throw new ArgumentException("fallback must be \"nearby\" or \"skip\"");
+            int moved = 0;
 
             var items = LoadItems(P.Required(a, "plan"), limit);
             var roads = RoadEdges(em);
             var existing = ExistingLots(em);
+            var already = FindBuildings(em); // for idempotency: an item already built near its spot is not placed again
+            int alreadyPlaced = 0;
             var placedLots = new List<float2[]>();
             var heights = terrain.GetHeightData(true);
             var failures = new Dictionary<string, int>();
 
             // Resolve prefab, position and rotation; check collisions. On a collision the lot first slides along its road
-            // (±4 … ±maxSlide m, staying on the same side), then the next alternative prefab is tried the same way.
+            // (±4 … ±maxSlide m, staying on the same side), then the next alternative prefab is tried the same way, and
+            // finally (fallback "nearby", the default) the closest free, connectable spot along any imported road within
+            // nearbyRadius m of the CS1 position is searched. Fallback "skip" (per item or run option) stops after the slides.
             var slides = new List<float> { 0f };
             for (float s = 4f; s <= maxSlide + 0.01f; s += 4f) { slides.Add(s); slides.Add(-s); }
+            var grid = new RoadGrid(roads);
             foreach (var it in items)
             {
                 // Snap the front point to the nearest real road edge once; every attempt reuses it.
@@ -108,9 +121,8 @@ namespace Cs2Buildings
                 {
                     var fp = new float2((float)(it.Front[0] + ox), (float)(it.Front[1] + oz));
                     float bestD = float.MaxValue;
-                    foreach (var r in roads)
+                    foreach (var r in grid.Query(fp - snap - 32f, fp + snap + 32f))
                     {
-                        if (fp.x < r.Bounds.x - snap || fp.x > r.Bounds.z + snap || fp.y < r.Bounds.y - snap || fp.y > r.Bounds.w + snap) continue;
                         float t;
                         float d = MathUtils.Distance(r.Curve.xz, fp, out t) - r.HalfWidth;
                         if (d < bestD) { bestD = d; road = r; roadT = t; }
@@ -135,75 +147,116 @@ namespace Cs2Buildings
                     it.RoadSide = sf.ToString() + ((road.Flags.m_General & CompositionFlags.General.Elevated) != 0 ? ", Elevated" : "");
                 }
 
+                // Candidate prefabs: the match, then its alternatives.
                 var names = new List<string> { it.Prefab };
                 if (useAlternatives && it.Alternatives != null) names.AddRange(it.Alternatives);
-                string lastHit = null;
-                bool done = false, anyPrefab = false;
-                // Pass 0 keeps the lot's front centre at least endMargin m from the ends of its road edge: CS2 connects a
-                // building only along an edge, and a front inside a junction stays unconnected. Pass 1 drops that rule.
-                for (int pass = 0; pass < (road != null ? 2 : 1) && !done; pass++)
-                for (int ni = 0; ni < names.Count && !done; ni++)
+                var prefabs = new List<KeyValuePair<string, Entity>>();
+                foreach (var nm in names)
                 {
                     PrefabBase prefab;
                     Entity pe;
-                    if (string.IsNullOrEmpty(names[ni]) || !ps.TryGetPrefab(new PrefabID("BuildingPrefab", names[ni]), out prefab) || !ps.TryGetEntity(prefab, out pe) || !em.HasComponent<BuildingData>(pe)) continue;
-                    anyPrefab = true;
-                    var lot = em.GetComponentData<BuildingData>(pe).m_LotSize;
-                    float depth = lot.y * 4f;
-                    foreach (var slide in road != null ? slides : new List<float> { 0f })
-                    {
-                        float2 forward, pos2, frontPoint;
-                        float roadY = float.NaN;
-                        if (road != null)
-                        {
-                            float t = roadT + slide / roadLen;
-                            if (t < 0f || t > 1f) continue;
-                            if (pass == 0 && (t * roadLen < endMargin || (1f - t) * roadLen < endMargin)) continue;
-                            var c = MathUtils.Position(road.Curve, t).xz;
-                            var tan = math.normalizesafe(MathUtils.Tangent(road.Curve, t).xz, new float2(1, 0));
-                            var n = new float2(-tan.y, tan.x) * side;
-                            frontPoint = c + n * road.HalfWidth;
-                            roadY = MathUtils.Position(road.Curve, t).y;
-                            pos2 = frontPoint + n * depth;
-                            forward = -n;
-                        }
-                        else
-                        {
-                            forward = it.Facing != null ? math.normalizesafe(new float2((float)it.Facing[0], (float)it.Facing[1]), new float2(0, 1)) : new float2(0, 1);
-                            pos2 = centre;
-                            frontPoint = centre + forward * depth;
-                        }
-                        float2[] corners = null;
-                        if (checkCollisions)
-                        {
-                            corners = Corners(pos2, forward, lot, 0.6f);
-                            string hit = null;
-                            foreach (var r in roads)
-                                if (LotHitsRoad(pos2, forward, lot, r)) { hit = "road"; break; }
-                            if (hit == null) foreach (var l in existing) if (Overlap(corners, l)) { hit = "existing building"; break; }
-                            if (hit == null) foreach (var l in placedLots) if (Overlap(corners, l)) { hit = "another imported building"; break; }
-                            if (hit != null) { lastHit = hit; continue; }
-                            placedLots.Add(corners);
-                        }
-                        it.Prefab = names[ni];
-                        it.Alternative = ni;
-                        it.Slide = slide;
-                        it.NearJunction = pass == 1;
-                        it.PrefabEntity = pe;
-                        it.Lot = lot;
-                        it.Forward = forward;
-                        // At the road's level when snapped, like the game's own tool (the lot terraforms to it): a front below an
-                        // embanked road leaves the building unconnected. Otherwise the terrain height at the front.
-                        float y = !float.IsNaN(roadY) ? roadY : TerrainUtils.SampleHeight(ref heights, new float3(frontPoint.x, 0, frontPoint.y));
-                        it.Position = new float3(pos2.x, y, pos2.y);
-                        it.Rotation = quaternion.LookRotationSafe(new float3(forward.x, 0, forward.y), new float3(0, 1, 0));
-                        it.Status = "ready";
-                        done = true;
-                        break;
-                    }
+                    if (!string.IsNullOrEmpty(nm) && ps.TryGetPrefab(new PrefabID(it.Type, nm), out prefab) && ps.TryGetEntity(prefab, out pe) && em.HasComponent<BuildingData>(pe))
+                        prefabs.Add(new KeyValuePair<string, Entity>(nm, pe));
                 }
-                if (!anyPrefab) Fail(it, failures, "prefabMissing", "CS2 prefab '" + it.Prefab + "' (and its alternatives) not found");
-                else if (!done) Fail(it, failures, "collision", "lot overlaps a " + lastHit + " (tried " + names.Count + " prefab(s), slides up to ±" + maxSlide + " m)");
+                if (prefabs.Count == 0) { Fail(it, failures, "prefabMissing", "CS2 prefab '" + it.Prefab + "' (and its alternatives) not found"); continue; }
+                // Already in the city (an earlier run, or a save that already has it): the same prefab (or an alternative)
+                // within 30 m + the slide range of the CS1 spot. Keeps re-runs from stacking duplicates.
+                Found dup = null;
+                foreach (var b in already)
+                {
+                    bool same = false;
+                    foreach (var pf in prefabs) if (pf.Value == b.Prefab) { same = true; break; }
+                    if (same && math.distance(b.Position.xz, centre) < 30f + maxSlide) { dup = b; break; }
+                }
+                if (dup != null)
+                {
+                    it.Status = "alreadyPlaced";
+                    it.Reason = "already in the city (entity " + dup.Entity.Index + ")";
+                    it.Position = dup.Position;
+                    alreadyPlaced++;
+                    continue;
+                }
+
+                string lastHit = null;
+                bool done = false;
+                if (road == null)
+                {
+                    // No road to snap to: the CS1 position and facing, as is.
+                    var forward = it.Facing != null ? math.normalizesafe(new float2((float)it.Facing[0], (float)it.Facing[1]), new float2(0, 1)) : new float2(0, 1);
+                    for (int ni = 0; ni < prefabs.Count && !done; ni++)
+                        done = TryAt(it, prefabs[ni], ni, centre, forward, float.NaN, grid, existing, placedLots, checkCollisions, ref heights, ref lastHit);
+                }
+                else
+                {
+                    // Pass 0 keeps the lot's front centre at least endMargin m from the ends of its road edge: CS2 connects a
+                    // building only along an edge, and a front inside a junction stays unconnected. Pass 1 drops that rule.
+                    for (int pass = 0; pass < 2 && !done; pass++)
+                        for (int ni = 0; ni < prefabs.Count && !done; ni++)
+                            foreach (var slide in slides)
+                            {
+                                float t = roadT + slide / roadLen;
+                                if (t < 0f || t > 1f) continue;
+                                if (pass == 0 && (t * roadLen < endMargin || (1f - t) * roadLen < endMargin)) continue;
+                                if (TryOnRoad(it, prefabs[ni], ni, road, t, side, grid, existing, placedLots, checkCollisions, ref heights, ref lastHit))
+                                {
+                                    it.Slide = slide;
+                                    it.NearJunction = pass == 1;
+                                    done = true;
+                                    break;
+                                }
+                            }
+                }
+
+                // Nearby free land: every road edge within the radius, both sides, every 6 m away from the edge ends,
+                // tried closest-first (distance between the would-be lot centre and the CS1 centre).
+                string fallback = it.Fallback ?? defaultFallback;
+                if (!done && fallback == "nearby" && nearbyRadius > 0)
+                {
+                    float depth0 = em.GetComponentData<BuildingData>(prefabs[0].Value).m_LotSize.y * 4f;
+                    var cands = new List<KeyValuePair<float, float4>>(); // distance → (edge index, t, side, unused)
+                    var near = grid.Query(centre - nearbyRadius - 64f, centre + nearbyRadius + 64f);
+                    for (int ri = 0; ri < near.Count; ri++)
+                    {
+                        var r = near[ri];
+                        float len = MathUtils.Length(r.Curve.xz);
+                        for (float s = endMargin; s <= len - endMargin; s += 6f)
+                        {
+                            float t = s / len;
+                            var c = MathUtils.Position(r.Curve, t).xz;
+                            var tan = math.normalizesafe(MathUtils.Tangent(r.Curve, t).xz, new float2(1, 0));
+                            for (int sd = -1; sd <= 1; sd += 2)
+                            {
+                                // Only sides a building can connect to: no embankment / trench wall. (Requiring the Side.Sidewalk
+                                // flag as well left no candidates at all: the road compositions don't carry it.)
+                                var sideFlags = sd > 0 ? r.Flags.m_Left : r.Flags.m_Right;
+                                if ((sideFlags & (CompositionFlags.Side.Raised | CompositionFlags.Side.Lowered)) != 0) continue;
+                                var n = new float2(-tan.y, tan.x) * sd;
+                                float d = math.distance(c + n * (r.HalfWidth + depth0), centre);
+                                if (d <= nearbyRadius) cands.Add(new KeyValuePair<float, float4>(d, new float4(ri, t, sd, 0)));
+                            }
+                        }
+                    }
+                    cands.Sort((x, y) => x.Key.CompareTo(y.Key));
+                    int tries = 0;
+                    foreach (var cand in cands)
+                    {
+                        if (done || ++tries > maxNearbyTries) break;
+                        var r = near[(int)cand.Value.x];
+                        for (int ni = 0; ni < prefabs.Count && !done; ni++)
+                            if (TryOnRoad(it, prefabs[ni], ni, r, cand.Value.y, cand.Value.z, grid, existing, placedLots, checkCollisions, ref heights, ref lastHit))
+                            {
+                                done = true;
+                                it.Moved = math.distance(it.Position.xz, centre);
+                                it.RoadEdge = r.Entity;
+                                it.MovedToOtherRoad = road == null || r.Entity != road.Entity;
+                                var sf = cand.Value.z > 0 ? r.Flags.m_Left : r.Flags.m_Right;
+                                it.RoadSide = sf.ToString();
+                            }
+                    }
+                    if (done) moved++;
+                }
+                if (!done) Fail(it, failures, "collision", "lot overlaps a " + lastHit + " (tried " + prefabs.Count + " prefab(s), slides up to ±" + maxSlide + " m"
+                    + (fallback == "nearby" && nearbyRadius > 0 ? ", free land within " + nearbyRadius + " m" : ", fallback " + fallback) + ")");
             }
 
             // Create the definitions in batches, a few frames apart.
@@ -254,7 +307,8 @@ namespace Cs2Buildings
                 var road = em.GetComponentData<Building>(best).m_RoadEdge;
                 if (road != Entity.Null) { connected++; if (road == it.RoadEdge) connectedToSnapEdge++; }
                 it.Reason = (road != Entity.Null ? "connected" : "placed, not connected to a road" + (it.RoadSide != null ? " (road side: " + it.RoadSide + ")" : ""))
-                    + (it.Alternative > 0 ? "; alternative #" + it.Alternative : "") + (it.Slide != 0 ? "; slid " + it.Slide + " m along the road" : "") + (it.NearJunction ? "; front near a junction" : "");
+                    + (it.Alternative > 0 ? "; alternative #" + it.Alternative : "") + (it.Slide != 0 ? "; slid " + it.Slide + " m along the road" : "") + (it.NearJunction ? "; front near a junction" : "")
+                    + (it.Moved >= 0 ? "; moved " + it.Moved.ToString("F0") + " m to free land" + (it.MovedToOtherRoad ? " on another road" : " on the same road") : "");
             }
 
             var list = new List<object>();
@@ -265,13 +319,13 @@ namespace Cs2Buildings
                     { "x", R(it.Position.x) }, { "y", R(it.Position.y) }, { "z", R(it.Position.z) },
                     { "yaw", R(math.degrees(math.atan2(it.Forward.x, it.Forward.y))) },
                     { "lot", new List<object> { it.Lot.x, it.Lot.y } }, { "snapDistance", R(it.SnapDistance) },
-                    { "alternative", it.Alternative }, { "slide", R(it.Slide) },
+                    { "alternative", it.Alternative }, { "slide", R(it.Slide) }, { "moved", R(it.Moved) }, { "movedToOtherRoad", it.MovedToOtherRoad },
                     { "entity", it.Placed == Entity.Null ? null : (object)it.Placed.Index },
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "usedAlternative", usedAlternative }, { "slid", slid }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
-                { "failed", items.Count - placed }, { "failuresByReason", ToObj(failures) },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "usedAlternative", usedAlternative }, { "slid", slid }, { "movedToFreeLand", moved }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
+                { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
                 { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames },
                 { "offset", new List<object> { ox, oz } }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", list },
             };
@@ -298,6 +352,85 @@ namespace Cs2Buildings
             failures[kind] = n + 1;
         }
 
+        /// <summary>Lot on a road side at curve parameter t: front edge on the road side, facing the road, at the road's height.</summary>
+        static bool TryOnRoad(Item it, KeyValuePair<string, Entity> prefab, int ni, RoadEdge road, float t, float side, RoadGrid grid,
+            List<float2[]> existing, List<float2[]> placedLots, bool checkCollisions, ref TerrainHeightData heights, ref string lastHit)
+        {
+            var lot = World.DefaultGameObjectInjectionWorld.EntityManager.GetComponentData<BuildingData>(prefab.Value).m_LotSize;
+            var c = MathUtils.Position(road.Curve, t);
+            var tan = math.normalizesafe(MathUtils.Tangent(road.Curve, t).xz, new float2(1, 0));
+            var n = new float2(-tan.y, tan.x) * side;
+            var frontPoint = c.xz + n * road.HalfWidth;
+            // At the road's level, like the game's own tool (the lot terraforms to it): a front below an embanked road
+            // leaves the building unconnected.
+            return TryAt(it, prefab, ni, frontPoint + n * (lot.y * 4f), -n, c.y, grid, existing, placedLots, checkCollisions, ref heights, ref lastHit);
+        }
+
+        /// <summary>Checks a lot at pos2 facing `forward`; on success records it on the item and reserves the lot.</summary>
+        static bool TryAt(Item it, KeyValuePair<string, Entity> prefab, int ni, float2 pos2, float2 forward, float y, RoadGrid grid,
+            List<float2[]> existing, List<float2[]> placedLots, bool checkCollisions, ref TerrainHeightData heights, ref string lastHit)
+        {
+            var lot = World.DefaultGameObjectInjectionWorld.EntityManager.GetComponentData<BuildingData>(prefab.Value).m_LotSize;
+            if (checkCollisions)
+            {
+                var corners = Corners(pos2, forward, lot, 0.6f);
+                float reach = math.length(new float2(lot.x, lot.y)) * 4f + 2f;
+                string hit = null;
+                foreach (var r in grid.Query(pos2 - reach - 32f, pos2 + reach + 32f))
+                    if (LotHitsRoad(pos2, forward, lot, r)) { hit = "road"; break; }
+                if (hit == null) foreach (var l in existing) if (Overlap(corners, l)) { hit = "existing building"; break; }
+                if (hit == null) foreach (var l in placedLots) if (Overlap(corners, l)) { hit = "another imported building"; break; }
+                if (hit != null) { lastHit = hit; return false; }
+                placedLots.Add(corners);
+            }
+            var frontPoint = pos2 + forward * (lot.y * 4f);
+            if (float.IsNaN(y)) y = TerrainUtils.SampleHeight(ref heights, new float3(frontPoint.x, 0, frontPoint.y));
+            it.Prefab = prefab.Key;
+            it.Alternative = ni;
+            it.PrefabEntity = prefab.Value;
+            it.Lot = lot;
+            it.Forward = forward;
+            it.Position = new float3(pos2.x, y, pos2.y);
+            it.Rotation = quaternion.LookRotationSafe(new float3(forward.x, 0, forward.y), new float3(0, 1, 0));
+            it.Status = "ready";
+            return true;
+        }
+
+        /// <summary>Road edges in 64 m cells, for the many nearby queries of the fit tests.</summary>
+        internal sealed class RoadGrid
+        {
+            const float Cell = 64f;
+            readonly Dictionary<long, List<RoadEdge>> m_Cells = new Dictionary<long, List<RoadEdge>>();
+            static long Key(int x, int z) { return ((long)x << 32) ^ (uint)z; }
+
+            public RoadGrid(List<RoadEdge> roads)
+            {
+                foreach (var r in roads)
+                    for (int x = (int)math.floor(r.Bounds.x / Cell); x <= (int)math.floor(r.Bounds.z / Cell); x++)
+                        for (int z = (int)math.floor(r.Bounds.y / Cell); z <= (int)math.floor(r.Bounds.w / Cell); z++)
+                        {
+                            List<RoadEdge> l;
+                            if (!m_Cells.TryGetValue(Key(x, z), out l)) m_Cells[Key(x, z)] = l = new List<RoadEdge>();
+                            l.Add(r);
+                        }
+            }
+
+            /// <summary>Distinct edges whose bounds touch the cells of [min, max].</summary>
+            public List<RoadEdge> Query(float2 min, float2 max)
+            {
+                var seen = new HashSet<RoadEdge>();
+                var list = new List<RoadEdge>();
+                for (int x = (int)math.floor(min.x / Cell); x <= (int)math.floor(max.x / Cell); x++)
+                    for (int z = (int)math.floor(min.y / Cell); z <= (int)math.floor(max.y / Cell); z++)
+                    {
+                        List<RoadEdge> l;
+                        if (!m_Cells.TryGetValue(Key(x, z), out l)) continue;
+                        foreach (var r in l) if (seen.Add(r)) list.Add(r);
+                    }
+                return list;
+            }
+        }
+
         // ---------------------------------------------------------------- plan
 
         static List<Item> LoadItems(string path, int limit)
@@ -319,6 +452,8 @@ namespace Cs2Buildings
                 {
                     Id = (int)P.Num(d, "id", 0),
                     Prefab = P.Str(d, "prefab", null),
+                    Type = P.Str(d, "type", "BuildingPrefab"),
+                    Fallback = P.Str(d, "fallback", null),
                     Cs1Info = P.Str(d, "cs1Info", null),
                     X = P.Num(d, "x", 0), Z = P.Num(d, "z", 0), Score = P.Num(d, "score", 0),
                     Front = Pair(d, "front"), Facing = Pair(d, "facing"),
@@ -349,7 +484,7 @@ namespace Cs2Buildings
 
         // ---------------------------------------------------------------- world queries
 
-        static List<RoadEdge> RoadEdges(EntityManager em)
+        internal static List<RoadEdge> RoadEdges(EntityManager em)
         {
             var list = new List<RoadEdge>();
             using (var q = em.CreateEntityQuery(new EntityQueryDesc
@@ -395,7 +530,7 @@ namespace Cs2Buildings
             return list;
         }
 
-        static List<float2[]> ExistingLots(EntityManager em)
+        internal static List<float2[]> ExistingLots(EntityManager em)
         {
             var lots = new List<float2[]>();
             foreach (var b in FindBuildings(em))

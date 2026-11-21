@@ -4,6 +4,9 @@
 //   place     {plan, offsetX=0, offsetZ=0, …} [phase tool, pump tool]  place the plan's buildings, then verify;
 //                                                           returns the report (and writes it to {report} if given)
 //   inspect   {x, z, r=60}                    [phase main]  real buildings near a point (prefab, lot, road edge)
+//   list      {type=regex, name=regex}         [phase main]  prefabs by class name (areas, policies, …)
+//   objects   {plan, offsetX, offsetZ, batchSize=2000} [phase tool, pump tool]  trees / props of plan.objects
+//   areas     {plan, section=districts|surfaces, offsetX, offsetZ} [phase tool, pump tool]  districts (name, policies) or surfaces
 //
 // Statics never survive between calls (the bridge loads a fresh copy of the DLL every time).
 using System;
@@ -26,7 +29,10 @@ namespace Cs2Buildings
                 case "catalogue": return CatalogueOp(args);
                 case "place": return Placement.Place(args);
                 case "inspect": return Placement.Inspect(args);
-                default: throw new ArgumentException("unknown op '" + op + "' (catalogue, place, inspect)");
+                case "list": return Objects.List(args);
+                case "objects": return Objects.Place(args);
+                case "areas": return Objects.Areas(args);
+                default: throw new ArgumentException("unknown op '" + op + "' (catalogue, place, inspect, list, objects, areas)");
             }
         }
 

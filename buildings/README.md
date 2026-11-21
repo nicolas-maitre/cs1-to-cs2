@@ -23,7 +23,7 @@ node buildings/run.mjs catalogue          # starts CS2 if needed (cs2.lock), wri
 node buildings/run.mjs match --cs1x $env:LOCALAPPDATA\cs1-to-cs2\samples\skibidi.cs1x
 node buildings/run.mjs plan  --cs1x $env:LOCALAPPDATA\cs1-to-cs2\samples\skibidi.cs1x --plan <package dir> --out .gamectl\buildings\b.json
 node buildings/run.mjs place --buildings .gamectl\buildings\b.json --save <cs2 save with the roads> --offset 0,0 --shots --write-save cs1conv-m3-buildings
-node --test buildings/match/match.test.mjs buildings/lib/plan.test.mjs
+node --test buildings/match/match.test.mjs buildings/match/vegetation.test.mjs buildings/lib/plan.test.mjs buildings/lib/objects.test.mjs
 ```
 
 `--offset` is the importer's own offset (cs2-importer `run.mjs` defaults to `2000,-4000`; the e2e flow uses `0,0`). Every command that drives CS2 takes `%LOCALAPPDATA%\cs1-to-cs2\cs2.lock` and waits while another owner holds a fresh one.
@@ -48,7 +48,7 @@ node --test buildings/match/match.test.mjs buildings/lib/plan.test.mjs
 
 **On this machine** (CS2 1.6.4f1): 3571 buildings and 14 146 objects, 10 MB. 314 of the buildings are placeable once upgrades are removed.
 
-**`cs2-catalogue-buildings.json`** is the slim copy for the web tool: only placeable buildings, and only the components the matcher reads. It's 263 buildings and 116 KiB, and gives the same matches as the full catalogue. `slimCatalogue()` in `match.mjs` makes it.
+**`cs2-catalogue.slim.json`** is the slim copy that the web tool bundles: only placeable buildings, and only the components the matcher reads, with the game version in its header (`game.version`). It's 263 buildings, 116 KiB, about 11 KB gzipped, and gives the same matches as the full catalogue. `slimCatalogue()` in `match.mjs` makes it; `node buildings/run.mjs slim` rewrites it from an existing catalogue.
 
 ## 2. Matching: `match/match.mjs`
 
@@ -123,6 +123,8 @@ Runs in phase tool with pump tool: `node buildings/run.mjs place …`, or `gamec
 3. **Create:** one `CreationDefinition` (Permanent) + `ObjectDefinition` + `Updated` + `Deleted` per building, created in ToolUpdate. This is the game's own recipe, from the zone spawner. CS2 generates the lot's sub-objects and areas itself.
 4. **Verify:** each building is looked up in the city; `connected` means CS2 linked it to a road edge.
 
+**Plan items** may carry `type` (the prefab type, default `BuildingPrefab`); the web tool's plans set it.
+
 **Report:** `.gamectl/buildings/<ts>/report.json`, with per item `status` (`placed` / `collision` / `noRoad` / `prefabMissing` / `notCreated`), reason, position, yaw, lot, alternative and slide.
 
 **Other ops:** `catalogue`, and `inspect {x, z, r}` (buildings, road edges with lanes and heights, and all edges near a point).
@@ -152,3 +154,58 @@ This is the e2e city (Plains, converted CS1 terrain and water, 2035 roads), save
 | garbage, cargo, prison | 0 | 6, 2, 1 |
 
 Screenshots are in `.gamectl/buildings/<ts>/` (git-ignored).
+
+## 5. Oversized lots: the nearby fallback
+
+When neither a slide along its own road nor an alternative prefab fits, the placer searches for **free land nearby**:
+- **Candidates:** every imported road edge within `nearbyRadius` m (default 150) of the CS1 position, both sides, every 6 m. It skips spots within `endMargin` m of the edge's ends, and road sides with an embankment or trench wall (`Raised` / `Lowered`).
+- **Order:** closest first, measured as the distance of the lot centre to the CS1 centre. The match and its alternatives are tried at each spot, with the same fit test.
+
+Per item, the report gives `moved` (m) and `movedToOtherRoad`.
+
+**Choosing per building type:** a plan item's `fallback` is `"nearby"` or `"skip"`. The run option `fallback` (default `"nearby"`) applies when an item has none.
+- `buildBuildingsPlan(…, { fallback, fallbackByType: { [cs1Name]: 'nearby' | 'skip' } })` writes the field only when one is chosen, so the default plan doesn't change.
+- Run options: `nearbyRadius`, `maxNearbyTries` (4000).
+
+**Idempotent:** an item whose prefab (or an alternative) already stands within 30 m + the slide range of its spot is `alreadyPlaced`, so re-runs on a saved city don't stack duplicates.
+
+## 6. Trees, props, districts, IMT surfaces: `cs1conv-objects.json`
+
+```powershell
+node buildings/run.mjs objects-plan --cs1x <file> --plan <road plan> --out .gamectl\buildings\o.json [--synthetic-districts]
+node buildings/run.mjs objects --objects .gamectl\buildings\o.json --buildings .gamectl\buildings\b.json --save <cs2 save> --offset 0,0 --shots --write-save cs1conv-m3-objects
+```
+
+`lib/objects.mjs` (pure, tested) builds three sections. Coordinates are plan coordinates.
+
+| Section | Content |
+| --- | --- |
+| `objects` | `{ prefabs: [CS2 names], items: [[prefabIndex, x, z, angleDeg, age], …] }`: the crop's trees and props, mapped by `match/vegetation.mjs`. `age` is CS2 `ObjectDefinition.m_Age`; 0.3–0.55 = adult, deterministic per tree. |
+| `districts` | `{ items: [{ name, type: "DistrictPrefab", prefab: "District Area", polygon: [[x, z], …], policies: [CS2 names], cs1Policies, cs1Id, cells }], parksNotConverted }`: the outer boundary of each 4-connected component of each district in `districts.u8`, inside the crop. |
+| `surfaces` | `{ items: [{ type: "SurfacePrefab", prefab, polygon, cs1Node, styleType }], notConverted }`: IMT junction fills whose style has a CS2 surface. |
+
+**Vegetation matching** (`match/vegetation.mjs`, pure, tested):
+- The kind (bush / conifer / palm / deciduous) is a filter; then the species by name; then the closest height, with the theme prefix (EU_ / NA_) breaking near-ties.
+- Fruit trees and flowering bushes are used only when the CS1 name asks for them.
+- CS1 `Rock 0N` → CS2 `Boulder0N`. Other props are skipped and reported.
+- **Skibidi:** Tree2variant → NA_LondonPlaneTree01, Tree3variant → EU_PoplarTree01, Beech01low → OakTree01, Bush01 → GreenBushWild01, the 8 rocks → the 8 boulders.
+
+**Placer ops:**
+- **`objects`:** a Permanent object definition per tree or prop, 2000 per frame. Trees on a road surface (+1.5 m) or inside a building lot are skipped.
+- **`areas`:** one area definition per district or surface (CreationDefinition + `Node` polygon).
+  - Districts are then named the way `NameSystem.SetCustomName` does it, and get their policies as a `Game.Policies.Modify` event, the way `PoliciesUISystem.SetPolicy` does it.
+  - Both are done with the EntityManager: those methods use end-frame command buffers, which exec code may not create.
+- **`list`:** prefabs by class name, for example `node buildings/run.mjs list --type "AreaPrefab|PolicyPrefab"`.
+
+### Result: Skibidi 3 km, save `cs1conv-e2e-embank-fix` → **`cs1conv-m3-objects`**
+
+That save is worker-3's re-import with embanked roads snapped to the terrain.
+
+| | |
+| --- | --- |
+| buildings | **96 / 108 placed**: 36 slid, 11 alternatives, **20 moved to free land** (median 56 m, max 124 m, 14 onto another road). **94 connected.** 12 still refused (6 combustion plants, 2 cargo centres, 2 crematories, a prison, a university: their CS2 lots are 25 × 27 cells and similar). |
+| trees and rocks | 4216 in the crop → **2744 created in 0.6 s** (fit checks 0.29 s, creation 13 ms, 2 frames). 1359 skipped on a CS2 road surface, 113 inside a new building lot. |
+| districts | Skibidi has none, so 2 synthetic districts were used (an L shape and a rectangle, through the same raster → polygon path). **Both created and named; "Heavy Traffic Ban" set.** `HighriseBan` has no CS2 counterpart and is reported. |
+| IMT junction fills | Not converted (see decisions 20–21). |
+
+Screenshots are in `.gamectl/buildings/objects-20261121-053717/`.
