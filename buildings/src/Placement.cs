@@ -47,7 +47,8 @@ namespace Cs2Buildings
             public string Fallback;          // "nearby" | "anywhere" | "skip" | null (run option)
             public float MaxDistance;        // > 0: no fallback spot farther than this from the CS1 spot
             public bool RequireRoad;         // only spots whose lot faces a road a building can connect to (no highway)
-            public float Distance = -1;      // metres between the placed lot centre and the CS1 lot centre (every placed item)
+            public bool Station;             // plan family "station": stays at its CS1 spot (no slide, no fallback move)
+            public float Distance = -1;     // metres between the placed lot centre and the CS1 lot centre (every placed item)
             public string FallbackPass;      // "nearby" | "wide" | "anywhere" when a fallback pass placed it
             public float Moved = -1;         // metres from the CS1 position when the nearby fallback placed it
             public bool MovedToOtherRoad; // flags of the road side the lot faces, e.g. "Sidewalk" or "Raised"
@@ -95,7 +96,9 @@ namespace Cs2Buildings
             float maxSlide = (float)P.Num(a, "maxSlide", 24);
             float endMargin = (float)P.Num(a, "endMargin", 12);
             bool useAlternatives = P.Bool(a, "alternatives", true);
-            string defaultFallback = P.Str(a, "fallback", "nearby");
+            // Decision 106 (user): never moved to free land by default. Exact spot, a short slide, a smaller alternative;
+            // "nearby" / "anywhere" only when the plan item (or the run) asks for it.
+            string defaultFallback = P.Str(a, "fallback", PlacementRules.DefaultFallback);
             float nearbyRadius = (float)P.Num(a, "nearbyRadius", 150);
             int maxNearbyTries = (int)P.Num(a, "maxNearbyTries", 4000);
             double frameBudgetMs = P.Num(a, "frameBudgetMs", 20);
@@ -108,6 +111,16 @@ namespace Cs2Buildings
             int moved = 0;
 
             var items = LoadItems(P.Required(a, "plan"), limit);
+            // Stations first: they must take their CS1 spot (their tracks continue the imported track), while other
+            // buildings can slide or move. A wide CS2 police station had taken the Large Trainstation's spot.
+            float stationMaxSlide = (float)P.Num(a, "stationMaxSlide", PlacementRules.DefaultStationMaxSlide);
+            {
+                var ordered = new List<Item>(items.Count);
+                foreach (var x in items) if (x.Station) ordered.Add(x);
+                foreach (var x in items) if (!x.Station) ordered.Add(x);
+                items = ordered;
+            }
+            int skippedAttached = 0;
             var roads = RoadEdges(em);
             var existing = ExistingLots(em);
             // for idempotency: an item already built near its spot is not placed again (run option idempotent=false turns it off, for stress tests)
@@ -175,9 +188,30 @@ namespace Cs2Buildings
                     PrefabBase prefab;
                     Entity pe;
                     if (!string.IsNullOrEmpty(nm) && ps.TryGetPrefab(new PrefabID(it.Type, nm), out prefab) && ps.TryGetEntity(prefab, out pe) && em.HasComponent<BuildingData>(pe))
+                    {
+                        // A net-attached building (SubwayStationElevated01: NetObject.m_Attached) is built onto an existing
+                        // track and has no tracks of its own; placed free-standing, its stops attach to nothing. Skipped
+                        // here, so the next alternative (SubwayStationElevated02, with its own elevated tracks) is used.
+                        if (em.HasComponent<PlaceableObjectData>(pe) && (em.GetComponentData<PlaceableObjectData>(pe).m_Flags & Game.Objects.PlacementFlags.Attached) != 0) { skippedAttached++; continue; }
                         prefabs.Add(new KeyValuePair<string, Entity>(nm, pe));
+                    }
                 }
                 if (prefabs.Count == 0) { Fail(it, failures, "prefabMissing", "CS2 prefab '" + it.Prefab + "' (and its alternatives) not found"); continue; }
+                // Stations never move to free land: a moved station would not continue the CS1 track (DECISIONS-buildings #36).
+                string fallback = PlacementRules.Fallback(it.Station, it.Fallback, defaultFallback);
+                // Without a free-land fallback only a smaller alternative (lot area, of the first usable prefab) is tried:
+                // one that fits where the match didn't (decision 106). A larger one would only fit by covering more.
+                if (prefabs.Count > 1)
+                {
+                    var l0 = em.GetComponentData<BuildingData>(prefabs[0].Value).m_LotSize;
+                    var kept = new List<KeyValuePair<string, Entity>> { prefabs[0] };
+                    for (int pi = 1; pi < prefabs.Count; pi++)
+                    {
+                        var l = em.GetComponentData<BuildingData>(prefabs[pi].Value).m_LotSize;
+                        if (PlacementRules.TryAlternative(fallback, l0.x * l0.y, l.x * l.y)) kept.Add(prefabs[pi]);
+                    }
+                    prefabs = kept;
+                }
                 // Already in the city (an earlier run, or a save that already has it): the same prefab (or an alternative)
                 // within 30 m + the slide range of the CS1 spot. Keeps re-runs from stacking duplicates.
                 Found dup = null;
@@ -213,6 +247,9 @@ namespace Cs2Buildings
                         for (int ni = 0; ni < prefabs.Count && !done; ni++)
                             foreach (var slide in slides)
                             {
+                                // A station's platform tracks must continue the imported CS1 track: only a short slide along
+                                // the road (a CS2 lot wider than CS1's next to a side road), which the track link absorbs.
+                                if (!PlacementRules.SlideAllowed(it.Station, slide, maxSlide, stationMaxSlide)) continue;
                                 float t = roadT + slide / roadLen;
                                 if (t < 0f || t > 1f) continue;
                                 if (pass == 0 && (t * roadLen < endMargin || (1f - t) * roadLen < endMargin)) continue;
@@ -228,7 +265,6 @@ namespace Cs2Buildings
 
                 // Nearby free land: every road edge within the radius, both sides, every 6 m away from the edge ends,
                 // tried closest-first (distance between the would-be lot centre and the CS1 centre).
-                string fallback = it.Fallback ?? defaultFallback;
                 var passes = new List<KeyValuePair<string, float>>();
                 if (fallback == "nearby" || fallback == "anywhere")
                 {
@@ -298,8 +334,12 @@ namespace Cs2Buildings
                     if (done) { moved++; int c0; movedByPass.TryGetValue(pass.Key, out c0); movedByPass[pass.Key] = c0 + 1; }
                 }
                 if (done) it.Distance = math.distance(it.Position.xz, centre);
-                if (!done) Fail(it, failures, "collision", "lot overlaps a " + lastHit + " (tried " + prefabs.Count + " prefab(s), slides up to ±" + maxSlide + " m"
-                    + (passes.Count > 0 ? ", free land " + (fallback == "anywhere" ? "anywhere in the crop" : "within " + passes[passes.Count - 1].Value + " m") : ", fallback " + fallback) + ")");
+                if (!done && it.Station) Fail(it, failures, "stationCollision", "station kept at its CS1 spot, where the lot overlaps " + Article(lastHit) + " (tried " + prefabs.Count
+                    + " prefab(s), slides up to ±" + stationMaxSlide + " m); not moved, because a moved station would not continue the imported track: place it yourself at its CS1 position " + Cs1Pos(it));
+                else if (!done && passes.Count == 0) Fail(it, failures, "collision", "not placed: at its CS1 spot the lot overlaps " + Article(lastHit) + " (tried " + prefabs.Count
+                    + " prefab(s), slides up to ±" + maxSlide + " m); not moved to free land: place it yourself at its CS1 position " + Cs1Pos(it));
+                else if (!done) Fail(it, failures, "collision", "lot overlaps " + Article(lastHit) + " (tried " + prefabs.Count + " prefab(s), slides up to ±" + maxSlide + " m"
+                    + ", free land " + (fallback == "anywhere" ? "anywhere in the crop" : "within " + passes[passes.Count - 1].Value + " m") + "): place it yourself at its CS1 position " + Cs1Pos(it));
             }
 
             // Create the definitions in batches, a few frames apart.
@@ -370,6 +410,7 @@ namespace Cs2Buildings
                 list.Add(new Dictionary<string, object>
                 {
                     { "id", it.Id }, { "prefab", it.Prefab }, { "cs1Info", it.Cs1Info }, { "status", it.Status }, { "reason", it.Reason },
+                    { "cs1", new List<object> { R((float)it.X), R((float)it.Z) } }, // the CS1 position (plan frame), e.g. for "place it yourself"
                     { "x", R(it.Position.x) }, { "y", R(it.Position.y) }, { "z", R(it.Position.z) },
                     { "yaw", R(math.degrees(math.atan2(it.Forward.x, it.Forward.y))) },
                     { "lot", new List<object> { it.Lot.x, it.Lot.y } }, { "snapDistance", R(it.SnapDistance) },
@@ -378,7 +419,7 @@ namespace Cs2Buildings
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "usedAlternative", usedAlternative }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
                 { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "subNetCourses", subNetCourses }, { "buildingsWithSubNets", withSubNets }, { "subNetsMissing", subNetsMissing }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
                 { "offset", new List<object> { ox, oz } }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", list },
@@ -406,6 +447,10 @@ namespace Cs2Buildings
             failures[kind] = n + 1;
         }
 
+        static string Cs1Pos(Item it) { return PlacementRules.Position(it.X, it.Z); }
+
+        static string Article(string what) { return what == null ? "something" : (what.StartsWith("another") ? "" : "a ") + what; }
+
         /// <summary>Lot on a road side at curve parameter t: front edge on the road side, facing the road, at the road's height.</summary>
         static bool TryOnRoad(Item it, KeyValuePair<string, Entity> prefab, int ni, RoadEdge road, float t, float side, RoadGrid grid,
             List<float2[]> existing, List<float2[]> placedLots, bool checkCollisions, ref TerrainHeightData heights, ref string lastHit)
@@ -431,7 +476,12 @@ namespace Cs2Buildings
                 float reach = math.length(new float2(lot.x, lot.y)) * 4f + 2f;
                 string hit = null;
                 foreach (var r in grid.Query(pos2 - reach - 32f, pos2 + reach + 32f))
+                {
+                    // Tunnels run under the lot. Elevated roads pass over a station: CS1 stations sit under road
+                    // bridges, and the station must stay at its spot (DECISIONS-buildings #37).
+                    if (!PlacementRules.RoadCanBlock(it.Station, (r.Flags.m_General & CompositionFlags.General.Tunnel) != 0, (r.Flags.m_General & CompositionFlags.General.Elevated) != 0)) continue;
                     if (LotHitsRoad(pos2, forward, lot, r)) { hit = "road"; break; }
+                }
                 if (hit == null) foreach (var l in existing) if (Overlap(corners, l)) { hit = "existing building"; break; }
                 if (hit == null) foreach (var l in placedLots) if (Overlap(corners, l)) { hit = "another imported building"; break; }
                 if (hit != null) { lastHit = hit; return false; }
@@ -510,6 +560,7 @@ namespace Cs2Buildings
                     Fallback = P.Str(d, "fallback", null),
                     RequireRoad = P.Bool(d, "requireRoad", false),
                     MaxDistance = (float)P.Num(d, "maxDistance", 0),
+                    Station = P.Str(d, "family", null) == "station",
                     Cs1Info = P.Str(d, "cs1Info", null),
                     X = P.Num(d, "x", 0), Z = P.Num(d, "z", 0), Score = P.Num(d, "score", 0),
                     Front = Pair(d, "front"), Facing = Pair(d, "facing"),

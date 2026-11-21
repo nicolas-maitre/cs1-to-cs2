@@ -155,9 +155,11 @@ This is the e2e city (Plains, converted CS1 terrain and water, 2035 roads), save
 
 Screenshots are in `.gamectl/buildings/<ts>/` (git-ignored).
 
-## 5. Oversized lots: the nearby, wide and anywhere fallbacks
+## 5. When a lot doesn't fit: place it yourself, or the opt-in nearby, wide and anywhere fallbacks
 
-When neither a slide along its own road nor an alternative prefab fits, the placer searches for **free land nearby**:
+**Default (user decision, DECISIONS.md #106, buildings decision #38): never moved to free land.** The placer tries the exact CS1 spot, a slide along the same road (±4 … ±`maxSlide` m), then a **smaller** alternative of the same kind (lot area at most the match's). If none fits, the item fails as `collision` with "not placed … place it yourself at its CS1 position (x, z)", and the report gives `cs1` (the plan position). Stations always work this way, with slides of at most ±`stationMaxSlide` (8) m (decisions #36, #37).
+
+**Opt-in, per plan item (`fallback: "nearby"` or `"anywhere"`):** when neither a slide nor an alternative fits, the placer searches for **free land nearby**, and alternatives of any size are tried:
 - **Candidates:** every imported road edge within `nearbyRadius` m (default 150) of the CS1 position, both sides, every 6 m. It skips spots within `endMargin` m of the edge's ends, and road sides with an embankment or trench wall (`Raised` / `Lowered`).
 - **Order:** closest first, measured as the distance of the lot centre to the CS1 centre. The match and its alternatives are tried at each spot, with the same fit test.
 
@@ -165,7 +167,7 @@ When neither a slide along its own road nor an alternative prefab fits, the plac
 
 **Report:** every placed item has `distance` (m between the placed and the CS1 lot centre) and, when a pass moved it, `fallbackPass` and `moved`. The summary has `movedByPass` and `distanceStats` (median, p90, max, over 50/150/400 m). On Skibidi with `anywhere`: 108/108 placed, max 1222 m (the University, Prison, Cargo Center and Combustion Plants; decision #28).
 
-**Choosing per building type:** a plan item's `fallback` is `"nearby"`, `"anywhere"` or `"skip"`. The run option `fallback` (default `"nearby"`) applies when an item has none.
+**Choosing per building type:** a plan item's `fallback` is `"nearby"`, `"anywhere"` or `"skip"`. The run option `fallback` (default `"skip"`, since 0.3.1) applies when an item has none; the default depots below carry an explicit `"nearby"`, because the converter adds them and they have no CS1 spot.
 - `buildBuildingsPlan(…, { fallback, fallbackByType: { [cs1Name]: 'nearby' | 'anywhere' | 'skip' } })` writes the field only when one is chosen, so the default plan doesn't change.
 - Run options: `nearbyRadius`, `wideRadius`, `maxNearbyTries` (4000), `maxAnywhereTries`.
 - Per item: `requireRoad: true` skips highways (no building access) everywhere; `maxDistance: <m>` caps every pass, so the item fails rather than landing farther away (decision #35).

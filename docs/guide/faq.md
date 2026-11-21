@@ -54,9 +54,9 @@ Start a new city and press **Prepare map** before importing. To build on the map
 
 Zoned (growable) buildings are not placed: CS2 grows its own on the converted zones. Pillars, pipe junctions and poles are rebuilt by CS2. A few CS1 building types have no CS2 equivalent (libraries, taxi stands, cable car stops), and buildings on roads outside the square are left out. The Assets tab shows each type.
 
-## Why did a building end up somewhere else?
+## A building is missing, or ended up somewhere else (my hospital moved). Why?
 
-CS2 buildings often need more room than their CS1 counterparts. When one doesn't fit at its CS1 spot, the importer tries the next-best CS2 buildings, then free land along an imported road nearby (up to 400 m). Very large buildings may go anywhere in the square. In the Assets tab you can change this per type, or leave the building out instead.
+CS2 buildings often need more room than their CS1 counterparts. When one doesn't fit at its CS1 spot, the importer slides it a little or tries a smaller CS2 alternative. If it still doesn't fit, it is **not moved** elsewhere: the import report lists it as "place it yourself" with its CS1 position, and you place it by hand. A building only goes somewhere else if you set its type to look for free land nearby (up to 400 m) or anywhere in the square in the Assets tab.
 
 ## My metro or train line has no vehicles.
 

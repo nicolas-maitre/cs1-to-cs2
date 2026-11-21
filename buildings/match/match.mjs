@@ -24,7 +24,7 @@
 // 0.35 − the name weight. For depots, stations, cargo terminals and schools the kind is strict: no prefab of that kind
 // means noEquivalent (a ferry depot is not a subway yard).
 
-export const MATCHER_VERSION = '1.0.0';
+export const MATCHER_VERSION = '1.1.0'; // 1.1: stations keep their height (elevated / ground) and match by platform length
 
 // ------------------------------------------------------------------ CS1 classification
 
@@ -216,6 +216,12 @@ export function nameSimilarity(a, b) {
   return inter / (x.size + y.size - inter);
 }
 
+const isElevated = (...names) => names.some((n) => /elevated/i.test(n ?? ''));
+const isTerminus = (...names) => names.some((n) => /terminus|terminal/i.test(n ?? ''));
+function stationLot(a, b) {
+  const len = ratio(a?.[0], b?.[0]), depth = ratio(a?.[1], b?.[1]);
+  return len == null ? null : depth == null ? len : 0.8 * len + 0.2 * depth;
+}
 const ratio = (a, b) => (a > 0 && b > 0 ? Math.min(a, b) / Math.max(a, b) : null);
 const lotArea = (l) => (Array.isArray(l) && l.length === 2 ? l[0] * l[1] : null);
 
@@ -246,6 +252,17 @@ export function matchAsset(asset, index, opts = {}) {
       return { ...base, decision: 'noEquivalent', cs2: null, score: 0, reason: `no CS2 ${c1.family} of kind ${c1.sub}`, family: c1.family };
     } else kindFallback = !!c1.sub;
   }
+  // Stations: an elevated CS1 station stays elevated (its platforms sit at the elevated track's height) and a ground
+  // one stays on the ground. This is a filter too, so the alternatives keep the same height. Both compete only when
+  // the catalogue has no station of that height.
+  // The same for a terminus: its tracks end inside the lot, so a through station must not become one (and vice versa).
+  if (c1.family === 'station') {
+    for (const test of [isElevated, isTerminus]) {
+      const want = test(asset.name, asset.title);
+      const same = candidates.filter((c) => test(c.prefab.name) === want);
+      if (same.length) candidates = same;
+    }
+  }
 
   const area1 = lotArea(asset.footprint);
   const scored = candidates.map((c) => {
@@ -256,7 +273,9 @@ export function matchAsset(asset, index, opts = {}) {
       else parts.push(`kind ${c1.sub ?? '-'} vs ${c.sub ?? '-'}`);
     } else score += 0.10;
     const capR = ratio(c1.metric, c.metric);
-    const lotR = ratio(area1, lotArea(c.prefab.lot));
+    // A station's platforms run along its front, so its length (lot width) is what must fit the CS1 track; the depth
+    // counts a little. Other buildings compare lot areas.
+    const lotR = c1.family === 'station' ? stationLot(asset.footprint, c.prefab.lot) : ratio(area1, lotArea(c.prefab.lot));
     if (capR != null) { score += 0.25 * capR; parts.push(`${c1.metricName} ${c1.metric} vs ${c.metric}`); }
     const nameW = NAME_WEIGHT[c1.family] ?? 0.08;
     if (lotR != null) {

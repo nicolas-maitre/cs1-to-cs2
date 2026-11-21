@@ -75,3 +75,6 @@ jobs:
 
       - name: CS2 importer core – tests (no game DLLs)
         run: dotnet run --project cs2-importer/tests/CoreTests
+
+      - name: Buildings placer rules – tests (no game DLLs)
+        run: dotnet run --project buildings/tests/RulesTests

@@ -306,3 +306,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - The plan applies each road end's shift and offset.
      - The importer builds them the way CS2's lane alignment does, after research on how the road tool stores it.
      - Free-form slope and twist stay report-only unless CS2 has an equivalent.
+108. **Web 0.6.1 + buildings 0.3.1 implement #106** (Claude).
+     - **Default fallback** is "skip" for every type, in the web plan and in the placer for plans without a `fallback`.
+     - **Report wording:** unplaced buildings read "place it yourself at CS1 (x, z) = CS2 (x, z)".
+     - **Station fixes:** elevated CS1 metro stations match elevated CS2 stations; through stations never become a terminus; stations are placed only at their CS1 spot, otherwise reported. That places 10/11 stations on Skibidi 6 km.
+     - **Tests:** placer rules are a game-free test project, now run in CI.

@@ -64,12 +64,12 @@ export const PLACEMENT_FALLBACKS: PlacementFallback[] = ['nearby', 'anywhere', '
 export type FallbackOverrides = Record<string, PlacementFallback>;
 
 /**
- * CS2 lots over this many cells (more than 20 × 20 cells, about 160 m square) rarely find free land near home: universities,
- * power plants, incinerators, prisons, cargo terminals, harbours, airports. Most CS2 service lots are bigger than 6 × 6
- * (a clinic is 11 × 6), so a side-length rule would send most buildings "anywhere".
+ * Buildings are never moved to free land by default (docs/DECISIONS.md #106, the user's decision): exact spot, a small
+ * slide, a smaller alternative, and that's all. A building that still doesn't fit is listed for the player to place.
+ * "nearby" and "anywhere" stay as explicit per-type choices. (Until web 0.6.0, lots over 400 cells got "anywhere" and the
+ * rest "nearby".) The lot argument is kept so callers needn't change if a size rule ever comes back.
  */
-export const BIG_LOT_AREA = 400;
-export const defaultFallback = (lot: number[] | null | undefined): PlacementFallback => (lot && lot[0] * lot[1] > BIG_LOT_AREA ? 'anywhere' : 'nearby');
+export const defaultFallback = (_lot?: number[] | null): PlacementFallback => 'skip';
 
 const THEME_NAME: Record<string, string> = { EU: 'European', NA: 'North American' };
 
@@ -88,7 +88,7 @@ export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opt
       decision, prefab: ((r.prefab ?? r.cs2) as string | null) ?? null, lot: ((r.lot ?? r.cs2Lot) as number[] | null) ?? null,
       score: decision === 'place' ? (r.score as number) : null, reason: r.reason as string, family: (r.family as string | null) ?? null,
       alternatives: ((r.alternatives as { prefab?: string; cs2?: string; score: number }[] | undefined) ?? []).map(x => ({ prefab: (x.prefab ?? x.cs2)!, score: x.score })),
-      fallback: 'nearby', fallbackAuto: 'nearby',
+      fallback: 'skip', fallbackAuto: 'skip',
     };
     const o = opts.overrides?.[out.cs1];
     if (o === 'skip') Object.assign(out, { decision: 'skip', prefab: null, lot: null, score: null, reason: 'skipped by you', override: o });
@@ -119,7 +119,7 @@ export interface BuildingsOptions {
   theme?: string;
   /** per-type placement fallback chosen by the user */
   fallbacks?: FallbackOverrides;
-  /** fallback for every type without its own (default: defaultFallback by lot size) */
+  /** fallback for every type without its own (default: skip, docs/DECISIONS.md #106) */
   fallback?: PlacementFallback;
 }
 
@@ -148,6 +148,10 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
   const conventions = Object.fromEntries(CONVENTIONS.map(c => [c, 0])) as Record<string, number>;
   const notPlaced = new Map<string, number>();
   const noRoad = new Map<string, number>();
+  // where the buildings left for the player stood: CS1 position and the same spot in the plan (CS2) frame
+  const notPlacedAt = new Map<string, number[][]>(), noRoadAt = new Map<string, number[][]>();
+  const at = (m: Map<string, number[][]>, k: string, x: number, z: number) => { const l = m.get(k) ?? []; l.push([x, z]); m.set(k, l); };
+  const spots = (l: number[][]) => `${l.slice(0, 5).map(([x, z]) => `CS1 (${Math.round(x)}, ${Math.round(z)}) = CS2 (${Math.round(x + ctx.dx)}, ${Math.round(z + ctx.dz)})`).join(', ')}${l.length > 5 ? `, … (${l.length - 5} more)` : ''}`;
   let withRoad = 0;
   for (const b of bs.buildings) {
     const [x, , z] = b.position;
@@ -155,8 +159,8 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
     if (b.parent) { skipped.subBuilding++; continue; }
     const m = byName.get(b.info);
     if (m) m.countInCrop++;
-    if (!m) { skipped.noEquivalent++; tally(notPlaced, b.info); continue; }
-    if (m.decision !== 'place') { skipped[m.decision]++; if (m.decision !== 'growable') tally(notPlaced, b.info); continue; }
+    if (!m) { skipped.noEquivalent++; tally(notPlaced, b.info); at(notPlacedAt, b.info, x, z); continue; }
+    if (m.decision !== 'place') { skipped[m.decision]++; if (m.decision !== 'growable') { tally(notPlaced, b.info); at(notPlacedAt, b.info, x, z); } continue; }
     const item: PlanBuildingItem = {
       id: b.id, cs1Info: b.info, type: 'BuildingPrefab', prefab: m.prefab!, score: m.score, family: m.family,
       x: round(x + ctx.dx), z: round(z + ctx.dz), lot: m.lot, cs1Lot: [b.width, b.length],
@@ -168,7 +172,7 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
     };
     const seg = b.accessSegment ? ctx.segments.get(b.accessSegment) : undefined;
     if (seg) {
-      if (!ctx.planSegments.has(seg.id)) { skipped.roadNotImported++; tally(noRoad, b.info); continue; }
+      if (!ctx.planSegments.has(seg.id)) { skipped.roadNotImported++; tally(noRoad, b.info); at(noRoadAt, b.info, x, z); continue; }
       const c = closestOnBezier(seg.bezier, [x, z]);
       const len = Math.hypot(c.point[0] - x, c.point[1] - z) || 1;
       item.front = [round(c.point[0] + ctx.dx), round(c.point[1] + ctx.dz)];
@@ -197,12 +201,12 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
   for (const [info, n] of [...notPlaced].sort((a, b) => b[1] - a[1])) {
     const m = byName.get(info);
     const d = m?.decision ?? 'noEquivalent';
-    items.push({ level: d === 'noEquivalent' ? 'warning' : 'info', kind: 'buildings', message: `${m?.title ?? info}: ${plural(n, 'building')} not placed – ${m?.reason ?? 'not in assets.json'}`, count: n, cs1: { asset: info } });
+    items.push({ level: d === 'noEquivalent' ? 'warning' : 'info', kind: 'buildings', message: `${m?.title ?? info}: ${plural(n, 'building')} not placed – ${m?.reason ?? 'not in assets.json'}; place ${n === 1 ? 'it' : 'them'} yourself at ${spots(notPlacedAt.get(info) ?? [])}`, count: n, cs1: { asset: info } });
   }
-  if (skipped.roadNotImported) items.push({ level: 'warning', kind: 'buildings', message: `${plural(skipped.roadNotImported, 'building')} not placed because their access road is not in the plan (crop edge or a skipped road type): ${[...noRoad].slice(0, 8).map(([k, v]) => `${byName.get(k)?.title ?? k} ${v}`).join(', ')}`, count: skipped.roadNotImported });
+  if (skipped.roadNotImported) items.push({ level: 'warning', kind: 'buildings', message: `${plural(skipped.roadNotImported, 'building')} not placed because their access road is not in the plan (crop edge or a skipped road type); place them yourself: ${[...noRoad].slice(0, 8).map(([k, v]) => `${byName.get(k)?.title ?? k} ${v} at ${spots(noRoadAt.get(k) ?? [])}`).join('; ')}`, count: skipped.roadNotImported });
   const byFallback = { nearby: 0, anywhere: 0, skip: 0 };
-  for (const it of out) byFallback[it.fallback ?? 'nearby']++;
-  if (byFallback.anywhere || byFallback.skip) items.push({ level: 'info', kind: 'buildings', message: `If a building does not fit at its CS1 spot: ${byFallback.nearby} look for free land within 400 m, ${byFallback.anywhere} anywhere along the imported roads in the crop, ${byFallback.skip} are not placed` });
+  for (const it of out) byFallback[it.fallback ?? 'skip']++;
+  if (byFallback.nearby || byFallback.anywhere) items.push({ level: 'info', kind: 'buildings', message: `If a building does not fit at its CS1 spot: ${byFallback.skip} stay unplaced for you to place, ${byFallback.nearby} look for free land within 400 m, ${byFallback.anywhere} anywhere along the imported roads in the crop` });
   if (chosen.length) items.push({ level: 'info', kind: 'buildings', message: `${plural(chosen.length, 'building type')} mapped by you: ${chosen.map(m => `${m.title} → ${m.override}`).join(', ')}` });
 
   const noEq = matches.filter(m => m.decision === 'noEquivalent' && m.countInCrop).reduce((t, m) => t + m.countInCrop, 0);
@@ -222,7 +226,7 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
       details: [
         tr('sum.buildings.d1'),
         tr('sum.buildings.d2'),
-        byFallback.anywhere ? tr('sum.buildings.d3anywhere', { n: byFallback.anywhere }) : tr('sum.buildings.d3'),
+        byFallback.nearby || byFallback.anywhere ? tr('sum.buildings.d3moved', { n: byFallback.nearby + byFallback.anywhere }) : tr('sum.buildings.d3'),
         ...(noEq ? [tr('sum.buildings.d4', { n: noEq })] : []),
         ...(skipped.roadNotImported ? [tr('sum.buildings.d5', { n: skipped.roadNotImported })] : []),
         tr('sum.buildings.d6'),

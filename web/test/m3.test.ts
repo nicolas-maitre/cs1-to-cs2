@@ -110,7 +110,8 @@ describe('plan.buildings', () => {
     expect(h).toMatchObject({ type: 'BuildingPrefab', x: 0, z: 30, front: [0, 0], facing: [0, -1], cs1Lot: [4, 4], lot: [5, 5], accessSegment: 1 });
     expect(s.items[2].district).toBe(3);
     expect(r.matches.find(m => m.cs1 === 'Hospital')!.countInCrop).toBe(2);
-    expect(r.items.some(i => /Public Library: 1 building not placed – CS2 has no library/.test(i.message))).toBe(true);
+    expect(r.items.some(i => /Public Library: 1 building not placed – CS2 has no library; place it yourself at CS1 \(-?\d+, -?\d+\) = CS2 \(-?\d+, -?\d+\)/.test(i.message))).toBe(true);
+    expect(r.items.some(i => /access road is not in the plan.*place them yourself: .* at CS1 \(/.test(i.message))).toBe(true);
     expect(r.items.some(i => /access road is not in the plan/.test(i.message))).toBe(true);
     expect(r.summary).toMatchObject({ id: 'buildings', status: 'partial' });
   });
@@ -120,7 +121,7 @@ describe('plan.buildings', () => {
     const pkg = buildPackage(c, { crop: CROP, buildings: false });
     const ours = buildBuildings(ctxOf(c), { enabled: true, catalogue: CATALOGUE, theme: 'NA', fallbacks: { Hospital: 'skip' } }).section!;
     const theirs = buildBuildingsPlan({ network: { nodes: c.nodes, segments: c.segments }, buildings: c.buildings!, assets: c.assets! }, CATALOGUE, pkg.plan,
-      { theme: 'North American', fallback: 'nearby', fallbackByType: { Hospital: 'skip' } });
+      { theme: 'North American', fallback: 'skip', fallbackByType: { Hospital: 'skip' } });
     expect(ours.items.map(({ type: _t, district: _d, ...i }) => i)).toEqual(theirs.items);
     expect(ours.cs1AngleConvention).toEqual(theirs.cs1AngleConvention);
     expect({ ...ours.stats.skipped }).toEqual(theirs.stats.skipped);
@@ -136,17 +137,19 @@ describe('plan.buildings', () => {
     expect(packageFiles(pkg).find(f => f.path === 'README.txt')!.text).toMatch(/Buildings and services/);
   });
 
-  it('writes a placement fallback per item: anywhere for big lots by default, the choice of the user otherwise', () => {
+  it('writes a placement fallback per item: skip by default, even for big lots (#106); the choice of the user otherwise', () => {
     const big: Cs2Catalogue = { ...CATALOGUE, prefabs: CATALOGUE.prefabs.map(p => (p.name === 'Hospital01' ? { ...p, lot: [25, 20] } : p)) };
     const pkg = buildPackage(town(), { crop: CROP, catalogue: big });
     const fb = (p: typeof pkg) => Object.fromEntries(p.plan.buildings!.items.map(i => [i.cs1Info, i.fallback]));
-    expect(fb(pkg)).toEqual({ Hospital: 'anywhere', 'Elementary School': 'nearby' });
-    expect(pkg.assetMatches!.find(m => m.cs1 === 'Hospital')).toMatchObject({ fallback: 'anywhere', fallbackAuto: 'anywhere' });
-    const chosen = buildPackage(town(), { crop: CROP, catalogue: big, assetFallbacks: { Hospital: 'skip', 'Elementary School': 'bogus' as never } });
-    expect(fb(chosen)).toEqual({ Hospital: 'skip', 'Elementary School': 'nearby' });
-    expect(chosen.assetMatches!.find(m => m.cs1 === 'Hospital')!.fallbackOverride).toBe('skip');
-    expect(chosen.report.items.some(i => /0 anywhere along the imported roads in the crop, 2 are not placed/.test(i.message))).toBe(true);
-    expect(fb(buildPackage(town(), { crop: CROP, catalogue: big, assetFallback: 'skip' }))).toEqual({ Hospital: 'skip', 'Elementary School': 'skip' });
+    expect(fb(pkg)).toEqual({ Hospital: 'skip', 'Elementary School': 'skip' });
+    expect(pkg.assetMatches!.find(m => m.cs1 === 'Hospital')).toMatchObject({ fallback: 'skip', fallbackAuto: 'skip' });
+    expect(pkg.report.items.some(i => /If a building does not fit/.test(i.message))).toBe(false); // nothing moves: no line
+    expect(pkg.summary.find(s => s.id === 'buildings')!.details.join(' ')).toMatch(/not moved elsewhere: the import report lists it with its CS1 position/);
+    const chosen = buildPackage(town(), { crop: CROP, catalogue: big, assetFallbacks: { Hospital: 'anywhere', 'Elementary School': 'bogus' as never } });
+    expect(fb(chosen)).toEqual({ Hospital: 'anywhere', 'Elementary School': 'skip' });
+    expect(chosen.assetMatches!.find(m => m.cs1 === 'Hospital')!.fallbackOverride).toBe('anywhere');
+    expect(chosen.report.items.some(i => /1 stay unplaced for you to place, 0 look for free land within 400 m, 2 anywhere along the imported roads in the crop/.test(i.message))).toBe(true);
+    expect(fb(buildPackage(town(), { crop: CROP, catalogue: big, assetFallback: 'nearby' }))).toEqual({ Hospital: 'nearby', 'Elementary School': 'nearby' });
   });
 });
 

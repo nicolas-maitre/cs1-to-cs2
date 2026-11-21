@@ -5,7 +5,7 @@
 import type { Lang } from './i18n/index.ts';
 import { DOCS_FR } from './docs.fr.ts';
 
-export const APP_VERSION = '0.6.0';
+export const APP_VERSION = '0.6.1';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }
@@ -93,7 +93,7 @@ export const DOCS_EN: Docs = {
       body: [
         '**Overview** shows what converts per category with your city\'s numbers, a preview of the terrain, the options (zone theme, which parts to convert) and the install steps.',
         '**Mapping** lists every road type with its CS2 equivalent: a vanilla CS2 road when the generated road has the same lanes ("vanilla Small Road (matched)"), else a Road Builder road, with the reason in both cases; you can pick another one. **Prefer vanilla CS2 roads** (in the options, on by default) does the matching; turn it off to make every road a Road Builder road. **Road types** shows the generated Road Builder roads and any width change.',
-        '**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn\'t fit at its spot: look for free land nearby (up to 400 m), anywhere in the square, or leave it out. Very large buildings (universities, power plants, cargo terminals) look anywhere by default.',
+        '**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn\'t fit at its spot. By default it is not moved: it slides a little or takes a smaller alternative, and if it still doesn\'t fit, the import report lists it with its CS1 position so you can place it yourself ("Don\'t move it (list it for me to place)"). You can instead let a type look for free land nearby (up to 400 m) or anywhere in the square.',
         '**Report** lists everything that is approximated or dropped.',
       ],
     },
@@ -165,7 +165,7 @@ export const DOCS_EN: Docs = {
     { q: 'How do I undo an import?', a: ['Press **Remove imported**: it deletes the roads, buildings, trees and props, districts and areas, transit lines and outside connections the imports created in this city, even after saving and loading. Zoning and traffic settings go with the roads. The base map removed by **Prepare map** doesn\'t come back; start a new city for that.'] },
     { q: 'The import says this city\'s terrain isn\'t the package\'s.', a: ['Start a new city and press **Prepare map** before importing. To build on the map\'s own ground anyway, turn on **Keep this map\'s terrain**: roads then follow that ground, and only cuts of 4 m or more keep their CS1 depth.'] },
     { q: 'Why weren\'t all my buildings placed?', a: ['Zoned (growable) buildings are not placed: CS2 grows its own on the converted zones. Pillars, pipe junctions and poles are rebuilt by CS2. A few CS1 building types have no CS2 equivalent (libraries, taxi stands, cable car stops), and buildings on roads outside the square are left out. The Assets tab shows each type.'] },
-    { q: 'Why did a building end up somewhere else?', a: ['CS2 buildings often need more room than their CS1 counterparts. When one doesn\'t fit at its CS1 spot, the importer tries the next-best CS2 buildings, then free land along an imported road nearby (up to 400 m). Very large buildings may go anywhere in the square. In the Assets tab you can change this per type, or leave the building out instead.'] },
+    { q: 'A building is missing, or ended up somewhere else (my hospital moved). Why?', a: ['CS2 buildings often need more room than their CS1 counterparts. When one doesn\'t fit at its CS1 spot, the importer slides it a little or tries a smaller CS2 alternative. If it still doesn\'t fit, it is **not moved** elsewhere: the import report lists it as "place it yourself" with its CS1 position, and you place it by hand. A building only goes somewhere else if you set its type to look for free land nearby (up to 400 m) or anywhere in the square in the Assets tab.'] },
     { q: 'My metro or train line has no vehicles.', a: ['CS2 lines get their vehicles from a depot of their type, and CS1 metro and train lines don\'t need one. Rail and subway yards are never placed inside your city: by default the importer puts a compact yard at the edge of the square, where the line\'s track leaves it, and links it. A line whose track stays inside the square gets none; the import report names it, and you place a yard yourself. Under Overview → Options you can choose "I\'ll place it myself" for metro or train. Bus and tram lines get a default depot near their first stop.'] },
     { q: 'Do I need the Traffic mod?', a: ['Only for TM:PE priority signs, lane connections, lane arrows and U-turn rules. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.'] },
     { q: 'What happens to timed traffic lights and Node Controller tweaks?', a: ['CS2 runs its own light phases and builds junctions itself. Timed lights become plain traffic lights; Node Controller settings are listed in the report.'] },
@@ -198,7 +198,7 @@ export const DOCS_EN: Docs = {
     { area: 'Node Controller', cs1: 'Node types, offsets, hidden markings', cs2: '–', status: 'report', notes: 'CS2 builds junction geometry itself.' },
     { area: 'Transit', cs1: 'Bus and tram lines', cs2: 'CS2 lines with colour, name, number and stops', status: 'approx', notes: 'Trolleybus, tourist and intercity buses become bus lines.' },
     { area: 'Transit', cs1: 'Train, metro, ship and plane lines', cs2: 'CS2 lines at the placed stations', status: 'approx', notes: 'Need their stations from the buildings step. Metro and train yards go at the crop edge where the track leaves it (or you place them); never inside the city.' },
-    { area: 'Buildings', cs1: 'Service buildings, stations, depots, parks, landmarks', cs2: 'Closest CS2 building (same service, then capacity and size)', status: 'approx', notes: 'Check or change each type in the Assets tab, including what happens when it doesn\'t fit.' },
+    { area: 'Buildings', cs1: 'Service buildings, stations, depots, parks, landmarks', cs2: 'Closest CS2 building (same service, then capacity and size)', status: 'approx', notes: 'Check or change each type in the Assets tab. A building that doesn\'t fit at its spot is not moved by default: it is listed for you to place.' },
     { area: 'Buildings', cs1: 'Zoned (growable) buildings', cs2: 'Grown by CS2 on the converted zones', status: 'yes', notes: 'Not placed one by one.' },
     { area: 'Buildings', cs1: 'Libraries, taxi stands, cable car stops', cs2: '–', status: 'no', notes: 'No CS2 equivalent.' },
     { area: 'Districts', cs1: 'District names and outlines; policies', cs2: 'CS2 districts and policies', status: 'approx', notes: 'Policies with a CS2 equivalent (heavy traffic ban, recycling, …); zone specialisations are reported.' },

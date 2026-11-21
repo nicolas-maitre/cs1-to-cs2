@@ -60,7 +60,7 @@ export interface BuildOptions {
   catalogue?: Cs2Catalogue | null;
   /** M3: per CS1 building type, a CS2 prefab name or "skip". */
   assetOverrides?: AssetOverrides;
-  /** M3: per-type placement fallback (Assets tab); others get defaultFallback, or `assetFallback` when given. */
+  /** M3: per-type placement fallback (Assets tab); others get `assetFallback`, else skip (docs/DECISIONS.md #106). */
   assetFallbacks?: FallbackOverrides;
   assetFallback?: PlacementFallback;
   /** Vanilla CS2 road layouts (cs2-roads.json); with preferVanilla, a road whose generated profile matches one uses it. */

@@ -106,3 +106,20 @@ test('slimCatalogue keeps exactly what matching needs', async () => {
   const assets = { buildings: [cs1('Hospital', 'HospitalAI', { aiFields: { m_patientCapacity: 450 } }), cs1('Big Park', 'ParkAI', { footprint: [6, 5] })] };
   assert.deepEqual(matchAssets(assets, slim).results, matchAssets(assets, fat).results);
 });
+
+test('stations keep their height and through/terminus kind, and match by platform length', () => {
+  const st = (name, lot) => cs2(name, { TransportStation: {} }, { lot });
+  const idx = indexCatalogue({
+    prefabs: [st('SubwayStation03', [19, 4]), st('SubwayStationElevated01', [19, 1]), st('SubwayStationElevated02', [12, 7]),
+      st('TrainStation01', [25, 14]), st('TrainStation03', [25, 5]), st('TrainStationTerminus01', [15, 30])],
+  });
+  const elevated = matchAsset(cs1('Overground Metro Station Elevated 01', 'TransportStationAI', { footprint: [16, 4] }), idx);
+  assert.equal(elevated.cs2, 'SubwayStationElevated01');
+  assert.deepEqual(elevated.alternatives.map((a) => a.cs2), ['SubwayStationElevated02']);
+  const ground = matchAsset(cs1('Metro Station', 'TransportStationAI', { footprint: [16, 4] }), idx);
+  assert.equal(ground.cs2, 'SubwayStation03');
+  const train = matchAsset(cs1('Train Station', 'TransportStationAI', { footprint: [16, 6] }), idx);
+  assert.equal(train.cs2, 'TrainStation03');
+  assert.ok(!train.alternatives.some((a) => /Terminus/.test(a.cs2)));
+  assert.equal(matchAsset(cs1('Train Terminal', 'TransportStationAI', { footprint: [16, 30] }), idx).cs2, 'TrainStationTerminus01');
+});

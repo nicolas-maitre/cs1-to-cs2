@@ -70,7 +70,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Bâtiments de service, gares, dépôts, parcs, monuments | Bâtiment CS2 le plus proche (même service, puis capacité et taille) | converti, approché | Vérifiez ou changez chaque type dans l'onglet Bâtiments, y compris ce qui se passe s'il ne tient pas. |
+| Bâtiments de service, gares, dépôts, parcs, monuments | Bâtiment CS2 le plus proche (même service, puis capacité et taille) | converti, approché | Vérifiez ou changez chaque type dans l'onglet Bâtiments. Un bâtiment qui ne tient pas à sa place n'est pas déplacé par défaut : il vous est listé pour que vous le placiez. |
 | Bâtiments des zones | Construits par CS2 sur les zones converties | converti | Pas placés un par un. |
 | Bibliothèques, stations de taxi, arrêts de téléphérique | – | non converti | Pas d'équivalent CS2. |
 

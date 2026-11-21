@@ -70,7 +70,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Service buildings, stations, depots, parks, landmarks | Closest CS2 building (same service, then capacity and size) | converts, approximated | Check or change each type in the Assets tab, including what happens when it doesn't fit. |
+| Service buildings, stations, depots, parks, landmarks | Closest CS2 building (same service, then capacity and size) | converts, approximated | Check or change each type in the Assets tab. A building that doesn't fit at its spot is not moved by default: it is listed for you to place. |
 | Zoned (growable) buildings | Grown by CS2 on the converted zones | converts | Not placed one by one. |
 | Libraries, taxi stands, cable car stops | – | not converted | No CS2 equivalent. |
 

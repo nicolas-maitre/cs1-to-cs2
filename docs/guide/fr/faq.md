@@ -54,9 +54,9 @@ Commencez une nouvelle ville et cliquez sur **Préparer la carte** avant d'impor
 
 Les bâtiments des zones ne sont pas placés : CS2 construit les siens sur les zones converties. Les piliers, jonctions de tuyaux et poteaux sont reconstruits par CS2. Quelques types de bâtiment CS1 n'ont pas d'équivalent CS2 (bibliothèques, stations de taxi, arrêts de téléphérique), et les bâtiments sur des routes hors du carré sont laissés de côté. L'onglet Bâtiments montre chaque type.
 
-## Pourquoi un bâtiment s'est-il retrouvé ailleurs ?
+## Un bâtiment manque, ou s'est retrouvé ailleurs (mon hôpital a bougé). Pourquoi ?
 
-Les bâtiments CS2 ont souvent besoin de plus de place que leurs équivalents CS1. Quand l'un d'eux ne tient pas à sa place CS1, l'importeur essaie les bâtiments CS2 suivants les mieux classés, puis un terrain libre le long d'une route importée à proximité (jusqu'à 400 m). Les très grands bâtiments peuvent aller n'importe où dans le carré. Dans l'onglet Bâtiments, vous pouvez changer cela par type, ou ne pas placer le bâtiment.
+Les bâtiments CS2 ont souvent besoin de plus de place que leurs équivalents CS1. Quand l'un d'eux ne tient pas à sa place CS1, l'importeur le fait glisser un peu ou essaie une alternative CS2 plus petite. S'il ne tient toujours pas, il n'est **pas déplacé** ailleurs : le rapport d'import le liste comme "à placer vous-même" avec sa position CS1, et vous le placez à la main. Un bâtiment ne va ailleurs que si vous avez réglé son type, dans l'onglet Bâtiments, pour chercher un terrain libre à proximité (jusqu'à 400 m) ou n'importe où dans le carré.
 
 ## Ma ligne de métro ou de train n'a pas de véhicules.
 

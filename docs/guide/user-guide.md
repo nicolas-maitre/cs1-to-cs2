@@ -49,7 +49,7 @@ Keyboard: click the map, then use the arrow keys to move the square, + and − t
 
 **Mapping** lists every road type with its CS2 equivalent: a vanilla CS2 road when the generated road has the same lanes ("vanilla Small Road (matched)"), else a Road Builder road, with the reason in both cases; you can pick another one. **Prefer vanilla CS2 roads** (in the options, on by default) does the matching; turn it off to make every road a Road Builder road. **Road types** shows the generated Road Builder roads and any width change.
 
-**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn't fit at its spot: look for free land nearby (up to 400 m), anywhere in the square, or leave it out. Very large buildings (universities, power plants, cargo terminals) look anywhere by default.
+**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn't fit at its spot. By default it is not moved: it slides a little or takes a smaller alternative, and if it still doesn't fit, the import report lists it with its CS1 position so you can place it yourself ("Don't move it (list it for me to place)"). You can instead let a type look for free land nearby (up to 400 m) or anywhere in the square.
 
 **Report** lists everything that is approximated or dropped.
 
