@@ -72,7 +72,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Service buildings, stations, depots, parks, landmarks | Closest CS2 building (same service, then capacity and size) | converts, approximated | Check or change each type in the Assets tab. A building that doesn't fit at its spot is not moved by default: it is listed for you to place. |
+| Service buildings, stations, depots, parks, landmarks | Closest CS2 building (same service, then capacity and size) | converts, approximated | Check or change each type in the Assets tab. A building that doesn't fit at its spot is not moved by default: it is listed for you to place. Bus and tram depots are the exception when none of their type fits: one is placed nearby so the lines get vehicles. |
 | Zoned (growable) buildings | Grown by CS2 on the converted zones | converts | Not placed one by one. |
 | Libraries, taxi stands, cable car stops | – | not converted | No CS2 equivalent. |
 
@@ -89,6 +89,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | --- | --- | --- | --- |
 | Pipes and power lines along roads | Built by CS2 with the roads | converts | CS2 roads carry water, sewage and low-voltage power themselves. |
 | Pipes and power lines away from roads | CS2 pipes and power lines at the same place | converts, approximated | Placed by the importer's buildings step; a line that runs along a converted road for most of its length is left to the road. |
+| Power plants and wind turbines | CS2 power plants, linked to the grid | converts, approximated | Wind turbines and other low-voltage producers get a short power line to the nearest road. Coal, gas and incineration plants need a transformer station: an opt-in in the importer's options (Add a transformer station next to each imported power plant); otherwise the report names them and the city runs on its outside connection. |
 | Electricity and water bought from outside the square | CS2 electricity and water outside connections | converts | The importer's Outside connections step adds them at the edge of the imported roads (a short power line and pipe with the connection at the end), so a square without its own plants and pumps still gets power, water and sewage. |
 | Free-standing trees and rocks | CS2 trees (same species, or same kind and closest height) and boulders | converts | Trees on a road are moved just past its edge; trees inside building lots are left out. |
 | Other free-standing props (benches, lamps, decorations) | – | not converted | No sensible CS2 equivalent; counted in the report. |

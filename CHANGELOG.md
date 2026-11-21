@@ -4,7 +4,7 @@ The CS1 → CS2 converter as a whole. The version is in [`VERSION`](VERSION); th
 
 ## Unreleased (release candidate 3 passed, 2026-11-22; proposed 0.3.1)
 
-RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), importer 0.3.4 → proposed 0.4.0, web tool 0.9.3, buildings 0.3.3 → proposed 0.4.0.
+RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), importer 0.3.4 → proposed 0.4.0, web tool 0.9.3 (0.9.4 since RC3: phone layout and guide only), buildings 0.3.3 → proposed 0.4.0.
 
 **What works now**
 - **Roads at their CS1 heights:** the ground follows zoneable roads; highways and ramps keep their CS1 height with retaining walls or embankments; paths lie on the ground. Each road type's mode can be changed in the web tool. CS1 tunnels stay tunnels.
@@ -24,6 +24,11 @@ RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build t
 - **Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed** (#106); the report lists each one as "place it yourself".
 - **Power producers away from any road produce nothing** in CS2 (#150); high-voltage plants need a transformer (opt-in).
 - IMT junction fills aren't converted; a few roads lose their traffic upgrade flags on reload (#149).
+
+**Since RC3**
+- **Web tool 0.9.4:**
+  - phone layout: the tabs wrap instead of hiding behind a sideways scroll, and the feature table's status badges no longer break mid-word;
+  - guide and FAQ (English and French) updated to what the importer does now: electricity and water come in through outside connections, power plants need a transformer station (opt-in) or get a short line to the road, and bus and tram depots are placed nearby when none fits at its spot.
 
 ## 0.3.0 (2026-11-21, M3: buildings and objects)
 

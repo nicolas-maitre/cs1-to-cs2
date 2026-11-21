@@ -567,4 +567,12 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - **Results (3 km crops):**
       - Skibidi: 117 segments, 9176 pixels, up to +5.9 / −15.8 m (highway trenches become open cuts with walls);
       - Cacao: 103 segments, 849 pixels, up to +19.3 m (the elevated ramp gets an embankment).
-    - **Until worker-4 mirrors it:** the web identity test compares the conform burn alone (`completePackage(…, { walls: false })`).
+    - **Identity:** worker-4 mirrored it in `terrain/lib`; the web identity test compares the full burn (conform + walls) on worker-3's tunnel crop.
+100. **Web 0.9.4: release polish** (coordinator's release pass, after RC3 passed).
+    - **Phones (375 px):** the five tabs wrap onto two rows instead of hiding Assets and Report behind a sideways scroll. The "What converts" status badges break between words, never inside one, and get a wider column. No page scrolls sideways (checked on the landing page, every tab with Skibidi and a synthetic city, and the Help dialog).
+    - **Guide and FAQ brought up to date with the importer (EN + FR):**
+      - after the import, homes get electricity, water and sewage from the start through the utility outside connections (#144), not "it still needs water and electricity";
+      - power plants (#150): wind turbines are linked to the nearest road; coal, gas and incineration plants need a transformer (the importer's opt-in) or one placed by hand; plants away from roads produce nothing. New "What converts" row;
+      - bus and tram depots (#152): when none of a type fits at its CS1 spot, one is placed nearby so the lines get vehicles; the exception is stated where the guide says buildings are never moved (#106);
+      - the known limit that trains and metros don't leave their yard yet (#133) is in the metro/train FAQ.
+    - Already current and checked: lane connections survive a reload (#149), the driving side (#138), the transformer option, Remove imported.

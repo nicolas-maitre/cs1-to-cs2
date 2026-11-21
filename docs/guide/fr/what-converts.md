@@ -72,7 +72,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Bâtiments de service, gares, dépôts, parcs, monuments | Bâtiment CS2 le plus proche (même service, puis capacité et taille) | converti, approché | Vérifiez ou changez chaque type dans l'onglet Bâtiments. Un bâtiment qui ne tient pas à sa place n'est pas déplacé par défaut : il vous est listé pour que vous le placiez. |
+| Bâtiments de service, gares, dépôts, parcs, monuments | Bâtiment CS2 le plus proche (même service, puis capacité et taille) | converti, approché | Vérifiez ou changez chaque type dans l'onglet Bâtiments. Un bâtiment qui ne tient pas à sa place n'est pas déplacé par défaut : il vous est listé pour que vous le placiez. Les dépôts de bus et de tram font exception quand aucun de leur type ne tient : l'un d'eux est placé à proximité pour que les lignes aient des véhicules. |
 | Bâtiments des zones | Construits par CS2 sur les zones converties | converti | Pas placés un par un. |
 | Bibliothèques, stations de taxi, arrêts de téléphérique | – | non converti | Pas d'équivalent CS2. |
 
@@ -89,6 +89,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 | --- | --- | --- | --- |
 | Tuyaux et lignes électriques le long des routes | Posés par CS2 avec les routes | converti | Les routes CS2 transportent elles-mêmes l'eau, les eaux usées et la basse tension. |
 | Tuyaux et lignes électriques hors des routes | Tuyaux et lignes électriques CS2 au même endroit | converti, approché | Posés par l'étape bâtiments de l'importeur ; une ligne qui longe une route convertie sur la plus grande partie de sa longueur est laissée à la route. |
+| Centrales électriques et éoliennes | Centrales CS2, reliées au réseau | converti, approché | Les éoliennes et autres producteurs basse tension reçoivent une courte ligne électrique jusqu'à la route la plus proche. Les centrales à charbon, à gaz et les incinérateurs ont besoin d'un poste de transformation : une option à activer dans l'importeur (Ajouter un poste de transformation à côté de chaque centrale importée) ; sinon le rapport les nomme et la ville vit de sa connexion extérieure. |
 | Électricité et eau achetées hors du carré | Connexions extérieures CS2 d'électricité et d'eau | converti | L'étape Connexions extérieures de l'importeur les ajoute au bord des routes importées (une courte ligne électrique et un tuyau, avec la connexion au bout) : un carré sans ses propres centrales et pompes reçoit quand même électricité, eau et évacuation des eaux usées. |
 | Arbres et rochers isolés | Arbres CS2 (même espèce, ou même genre et hauteur la plus proche) et rochers | converti | Les arbres sur une route sont déplacés juste après son bord ; ceux dans le terrain d'un bâtiment sont laissés de côté. |
 | Autres décorations isolées (bancs, lampadaires, ornements) | – | non converti | Pas d'équivalent CS2 raisonnable ; comptées dans le rapport. |

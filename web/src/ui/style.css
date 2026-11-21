@@ -103,7 +103,7 @@ ol.guide { padding-left: 22px; }
 ol.guide h3 { text-transform: none; letter-spacing: 0; color: var(--text); font-size: 15px; margin: 16px 0 4px; }
 table.matrix { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
 table.matrix th:nth-child(3), table.matrix td:nth-child(3) { width: 26%; }
-table.matrix .status { white-space: normal; }
+table.matrix .status { white-space: normal; overflow-wrap: normal; } /* break between words, never inside "approximated" */
 @media (max-width: 820px) { .help-backdrop { padding: 6px; } .help-body { padding: 4px 10px 12px; } }
 table.matrix td, table.matrix th { border-top: 1px solid var(--line); padding: 6px 4px; text-align: left; vertical-align: top; }
 table.matrix caption { caption-side: top; text-align: left; color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 14px 4px 2px; }
@@ -213,4 +213,8 @@ ul.report li.warning { border-left: 3px solid var(--warn); padding-left: 6px; }
   .hint-keys { display: none; }
   .hero h1 { font-size: 24px; }
   .legend { display: none; }
+  /* phones: the five tabs wrap onto two rows instead of hiding Assets and Report behind a sideways scroll */
+  .tabs { flex-wrap: wrap; overflow-x: visible; row-gap: 4px; }
+  .tabs button { border-radius: 6px; border-bottom: 1px solid var(--line); }
+  table.matrix th:nth-child(3), table.matrix td:nth-child(3) { width: 31%; }
 }
