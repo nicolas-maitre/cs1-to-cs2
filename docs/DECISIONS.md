@@ -427,3 +427,11 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Why it works:** CS2 moves a node to roughly the mean of its edges' ends, so the importer finds nodes there, or else through the edges ending at the shifted points. Off-node ends survive save/load.
      - **Default:** flips to on once worker-3's real-terrain tunnel package run passes with it on.
      - Node Controller offset, slope and twist stay report-only.
+136. **Checkpoint after usage limits stopped workers 3, 4 and 5** (Claude, 2026-11-21 evening). Reviewed in a temp checkout: core 71/71, all four C# projects build, transit and terrain tests pass.
+     - **Verified in game:**
+       - Tunnels: all 66 CS1 tunnels in the Skibidi tunnel crop come out as CS2 tunnels (25 deepened), and open cuts where tunnels should be went from 21 to 0.
+       - The in-game segment split (18 segments).
+       - The lane `turn_check` (#126): 0 arm mismatches, and wrong turns only at CacaoCity node 17774 (2 of 167, the 10 m Node Controller merge; open).
+     - **Committed, not verified in game:** walls clamping of ground nodes and segment middles; the terrain guard.
+     - **Trains and metros: the hunt is closed** (#133). The yard link exists, but the yard's trains never leave it; the open lead is depot dispatch. They stay a known limit, and all rail depot features are opt-in.
+     - **Utilities, cause found:** CS2's only electricity outside connection is a high-voltage line marker at the map edge, which Prepare map's clear deletes. Water has none on the base map. The fix (keep or recreate an HV connection plus a transformer, and create a water connection) is the next task.

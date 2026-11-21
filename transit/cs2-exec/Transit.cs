@@ -59,7 +59,9 @@ namespace Cs1ConvTransit
                 case "lines.delete": return LinesDelete(a);
                 case "lines.debug": return LinesDebug(Str(a, "name", null));
                 case "node.at": return NodeAt(a);
+                case "lines.reach": return TrackLink.Reach(Str(a, "name", null));
                 case "counts": return Counts();
+                case "vehicles": return Vehicles(Str(a, "match", "Subway"));
                 case "infoviews": return Infoviews(null);
                 case "yards.inspect": return TrackLink.Inspect();
                 case "yards.plan": return TrackLink.Plan(a);
@@ -584,6 +586,38 @@ namespace Cs1ConvTransit
                 if (Em.HasComponent<Game.Pathfind.PathInformation>(sg) && (Em.GetComponentData<Game.Pathfind.PathInformation>(sg).m_State & Game.Pathfind.PathFlags.Failed) != 0) failed++;
             }
             return n;
+        }
+
+        /// <summary>Diagnostic: vehicles whose prefab name contains `match`: position, parked or moving, the route they
+        /// serve (CurrentRoute), PublicTransport state, owner (depot) and target.</summary>
+        static object Vehicles(string match)
+        {
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            var r = new List<object>();
+            var es = Query(new[] { ComponentType.ReadOnly<Game.Vehicles.Vehicle>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var e in es)
+            {
+                string pn = PrefabName(Em.GetComponentData<PrefabRef>(e).m_Prefab);
+                if (pn == null || pn.IndexOf(match, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                var it = new Dictionary<string, object> { { "entity", Id(e) }, { "prefab", pn } };
+                if (Em.HasComponent<Game.Objects.Transform>(e)) it["pos"] = V(Em.GetComponentData<Game.Objects.Transform>(e).m_Position);
+                it["parked"] = Em.HasComponent<Game.Vehicles.ParkedTrain>(e);
+                if (Em.HasComponent<Game.Vehicles.PublicTransport>(e)) it["ptState"] = Em.GetComponentData<Game.Vehicles.PublicTransport>(e).m_State.ToString();
+                if (Em.HasComponent<Game.Routes.CurrentRoute>(e))
+                {
+                    var rt = Em.GetComponentData<Game.Routes.CurrentRoute>(e).m_Route;
+                    string rn = null; if (Em.Exists(rt)) names.TryGetCustomName(rt, out rn);
+                    it["route"] = rn ?? Id(rt);
+                }
+                if (Em.HasComponent<Owner>(e)) { var o = Em.GetComponentData<Owner>(e).m_Owner; it["owner"] = Em.Exists(o) && Em.HasComponent<PrefabRef>(o) ? PrefabName(Em.GetComponentData<PrefabRef>(o).m_Prefab) : Id(o); }
+                if (Em.HasComponent<Game.Common.Target>(e)) it["target"] = Id(Em.GetComponentData<Game.Common.Target>(e).m_Target);
+                if (Em.HasComponent<Game.Objects.Moving>(e)) { var mv = Em.GetComponentData<Game.Objects.Moving>(e); it["speed"] = math.length(mv.m_Velocity); }
+                if (Em.HasComponent<Game.Vehicles.Controller>(e)) { var c = Em.GetComponentData<Game.Vehicles.Controller>(e).m_Controller; if (c != e) it["controller"] = Id(c); }
+                r.Add(it);
+                if (r.Count >= 40) break;
+            }
+            es.Dispose();
+            return r;
         }
 
         static object Counts()

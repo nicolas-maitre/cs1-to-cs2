@@ -25,22 +25,43 @@ namespace Cs2Importer
             if (type == null) return new Dictionary<string, object> { { "op", "laneview" }, { "error", "the Traffic mod's LaneConnectorToolSystem is not loaded" } };
             var tool = w.World.GetExistingSystemManaged(type) as Game.Tools.ToolBaseSystem;
             if (tool == null) return new Dictionary<string, object> { { "op", "laneview" }, { "error", "no LaneConnectorToolSystem instance" } };
+            return Select(w, tool, type, node);
+        }
+
+        /// <summary>
+        /// What a click on the junction does in the mod 0.2.x (LaneConnectorToolSystem.Apply, read from its IL): state
+        /// SelectingSourceConnector, control points cleared, SelectIntersectionNode(deps, node), which sets _selectedNode, the
+        /// UI's selected intersection and schedules the job that builds the connector helpers. The tool must be running
+        /// first (a few frames after it becomes the active tool). Run with phase/pump "tool".
+        /// </summary>
+        static System.Collections.IEnumerator Select(GameWorld w, Game.Tools.ToolBaseSystem tool, Type type, Entity node)
+        {
             var tools = w.World.GetOrCreateSystemManaged<Game.Tools.ToolSystem>();
             tools.activeTool = tool;
+            for (int i = 0; i < 5; i++) yield return null;
             const BindingFlags F = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            var set = new List<object>();
-            foreach (var f in type.GetFields(F).Where(f => f.FieldType == typeof(Entity) && f.Name.IndexOf("selected", StringComparison.OrdinalIgnoreCase) >= 0 && f.Name.IndexOf("node", StringComparison.OrdinalIgnoreCase) >= 0))
-            { f.SetValue(tool, node); set.Add(f.Name); }
-            // a tool mode that shows the selected node's connections, if the mod has one
-            var modes = new List<object>();
-            var mp = type.GetProperty("ToolMode", F);
-            if (mp != null && mp.PropertyType.IsEnum)
+            var steps = new List<object>();
+            string error = null;
+            try
             {
-                foreach (var n in Enum.GetNames(mp.PropertyType)) modes.Add(n);
-                var pick = Enum.GetNames(mp.PropertyType).FirstOrDefault(n => n.IndexOf("SelectedNode", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Edit", StringComparison.OrdinalIgnoreCase) >= 0);
-                if (pick != null && mp.CanWrite) { try { mp.SetValue(tool, Enum.Parse(mp.PropertyType, pick)); set.Add("ToolMode=" + pick); } catch (Exception e) { set.Add("ToolMode failed: " + e.Message); } }
+                var stateField = type.GetField("_state", F);
+                if (stateField != null) { stateField.SetValue(tool, Enum.ToObject(stateField.FieldType, 1)); steps.Add("_state=SelectingSourceConnector"); }
+                var cps = type.GetField("_controlPoints", F)?.GetValue(tool);
+                if (cps != null) { cps.GetType().GetMethod("Clear")?.Invoke(cps, null); steps.Add("_controlPoints cleared"); }
+                var sel = type.GetMethod("SelectIntersectionNode", F);
+                if (sel == null) error = "SelectIntersectionNode not found";
+                else
+                {
+                    var h = (Unity.Jobs.JobHandle)sel.Invoke(tool, new object[] { default(Unity.Jobs.JobHandle), node });
+                    h.Complete();
+                    steps.Add("SelectIntersectionNode");
+                }
             }
-            return new Dictionary<string, object> { { "op", "laneview" }, { "tool", tools.activeTool?.GetType().FullName }, { "node", node.Index }, { "set", set }, { "tool_modes", modes } };
+            catch (Exception e) { error = (e.InnerException ?? e).GetType().Name + ": " + (e.InnerException ?? e).Message; }
+            for (int i = 0; i < 20; i++) yield return null;
+            object selected = null, state = null;
+            try { selected = ((Entity)type.GetProperty("SelectedNode", F).GetValue(tool)).Index; state = type.GetProperty("ToolState", F)?.GetValue(tool)?.ToString(); } catch { }
+            yield return new Dictionary<string, object> { { "op", "laneview" }, { "tool", tools.activeTool?.GetType().FullName }, { "node", node.Index }, { "steps", steps }, { "error", error }, { "selected_node", selected }, { "tool_state", state } };
         }
     }
 }

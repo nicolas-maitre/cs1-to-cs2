@@ -414,6 +414,7 @@ namespace Cs2Importer
             report["segments_split_over_terrain"] = splitOverTerrain;
             int wallsMiddle = planTerrain ? ImportPlanner.KeepWallsProfile(job, (x, z) => w.TerrainHeight(x, z)) : 0;
             if (wallsMiddle > 0) report["walls_middle_kept"] = wallsMiddle;
+            ImportPlanner.ClampWallsMiddles(job);
             int cs1Tunnels = 0;
             foreach (var s in job.Segments) if (s.Source.Kind == "tunnel") cs1Tunnels++;
             report["tunnels"] = new Dictionary<string, object> { { "cs1_tunnel_segments", cs1Tunnels }, { "deepened", job.TunnelsDeepened.Count } };

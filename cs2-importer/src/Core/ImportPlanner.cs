@@ -419,6 +419,8 @@ namespace Cs2Importer.Core
                 // a conformed node sits on terrain burned to its CS1 height: elevation 0 even where an elevated segment ends
                 // (a ramp's embankment meets the bridge); tunnel nodes are never conformed
                 if (n.Conformed) best = 0;
+                // #61: a walls ground node stays within the wall limits whatever its segment ends say (a slope's -14.8 m end)
+                if (n.WallsGround) best = Math.Max(job.Options.FeatureMin, Math.Min(job.Options.FeatureMax, best));
                 n.Elevation = best;
                 if (hi - lo > 1)
                     job.Warnings.Add(new Issue("info", "elevation-mismatch", "segments at node " + n.Id + " disagree on its elevation (" + lo.ToString("0.0") + " .. " + hi.ToString("0.0") + " m); using " + best.ToString("0.0")) { Node = n.Id });
@@ -430,6 +432,7 @@ namespace Cs2Importer.Core
                 n.PositionHeight = exact && !double.IsNaN(n.Cs1HeightAboveTerrain) && Math.Abs(n.Cs1HeightAboveTerrain - n.Elevation) <= job.Options.ExactLimit
                     ? Math.Round(n.Cs1HeightAboveTerrain, 2) : n.Elevation;
             foreach (var s in job.Segments) s.MiddleElevation = (s.Start.Elevation + s.End.Elevation) / 2;
+            ClampWallsMiddles(job);
         }
 
         static void Add(Dictionary<long, List<double>> d, long k, double v)
@@ -645,6 +648,7 @@ namespace Cs2Importer.Core
                 n.PositionHeight = e;
             }
             foreach (var s in job.Segments) s.MiddleElevation = (s.Start.Elevation + s.End.Elevation) / 2;
+            ClampWallsMiddles(job);
             return moved;
         }
 
@@ -676,7 +680,16 @@ namespace Cs2Importer.Core
             return n;
         }
 
-        static double Cubic(double a, double b, double c, double d, double t)
+        /// <summary>#61: a walls ground segment's middle elevation stays within the wall limits, so an end at a bridge
+        /// (+9 m) and a walls end at +7.5 m don't make CS2 build pillars (it needs the middle at 8 m or more).</summary>
+        public static void ClampWallsMiddles(ImportJob job)
+        {
+            foreach (var s in job.Segments)
+                if (s.HeightMode == "walls" && s.Source.Kind == "ground")
+                    s.MiddleElevation = Math.Max(job.Options.FeatureMin, Math.Min(job.Options.FeatureMax, s.MiddleElevation));
+        }
+
+                static double Cubic(double a, double b, double c, double d, double t)
         {
             double u = 1 - t;
             return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
@@ -745,6 +758,7 @@ namespace Cs2Importer.Core
             foreach (var n in touched.Values) n.PositionHeight = n.Elevation;
             ExtendDescents(job, touched, terrainAt);
             foreach (var s in job.Segments) s.MiddleElevation = (s.Start.Elevation + s.End.Elevation) / 2;
+            ClampWallsMiddles(job);
             var ic = System.Globalization.CultureInfo.InvariantCulture;
             foreach (var s in deepenedSegs)
             {

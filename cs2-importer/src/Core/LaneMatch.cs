@@ -51,6 +51,24 @@ namespace Cs2Importer.Core
         }
 
         /// <summary>
+        /// The turn check (DECISIONS.md #126): geometry of what was written against CS1's. `want` = CS1's target arm
+        /// directions for one source lane (leaving the node, from the CS1 beziers); `got` = exit directions of the CS2
+        /// junction lanes that now leave that source lane (their curves' end tangents). Every CS2 lane must leave towards
+        /// one of CS1's target arms and every CS1 target arm must be reached, within `tol` degrees. Independent of how plan
+        /// segments were mapped to CS2 edges and lanes. `why` names the first failure ("extra_arm", "missing_arm", "none").
+        /// </summary>
+        public static bool TurnCheck(IList<double[]> want, IList<double[]> got, double tol, out string why)
+        {
+            why = null;
+            if (got.Count == 0) { why = "none"; return want.Count == 0; }
+            foreach (var g in got)
+                if (!want.Any(x => AngleDeg(x[0], x[1], g[0], g[1]) <= tol)) { why = "extra_arm"; return false; }
+            foreach (var x in want)
+                if (!got.Any(g => AngleDeg(x[0], x[1], g[0], g[1]) <= tol)) { why = "missing_arm"; return false; }
+            return true;
+        }
+
+        /// <summary>
         /// The lane picked by position instead of ordinal (independent lane check, #60): among the edge's lanes flowing
         /// the wanted way, the one whose offset as a fraction of the CS2 half-width is nearest to the CS1 lane's offset as a
         /// fraction of the CS1 half-width (sign: + = right of the plan segment). Null when nothing fits.

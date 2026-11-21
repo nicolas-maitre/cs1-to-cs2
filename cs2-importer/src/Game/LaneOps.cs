@@ -76,6 +76,7 @@ namespace Cs2Importer
             public long Segment;
             public readonly List<KeyValuePair<Entity, int>> Targets = new List<KeyValuePair<Entity, int>>();      // explicit connections
             public readonly List<string> TargetRefs = new List<string>();
+            public readonly List<double[]> WantDirs = new List<double[]>();                                     // CS1 target arms leaving the node (turn check)
             public HashSet<string> Arrows;                                                                         // or arrows (all three for U-turn-only)
             public Entity NoUTurnTo = Entity.Null;                                                                 // U-turn ban: no lane back into this edge
             public readonly List<KeyValuePair<Entity, int>> Extra = new List<KeyValuePair<Entity, int>>();        // U-turn allowed: added to the arrows' lanes
@@ -198,8 +199,8 @@ namespace Cs2Importer
                     if (!double.IsNaN(cs1Off) && hw1 > 0 && hw2 > 0)
                     {
                         posChecked++;
-                        var byPos = LaneMatch.PickByPosition(lanes, cs1Off / hw1, hw2, inbound);
-                        var byPosM = LaneMatch.PickByPosition(lanes, -cs1Off / hw1, hw2, inbound);
+                        var byPos = LaneMatch.PickByPosition(lanes, cs1Off / hw1, hw1, inbound); // absolute offsets: half-widths include sidewalks (CS1 16 m vs CS2 11.5 m for the same lanes)
+                        var byPosM = LaneMatch.PickByPosition(lanes, -cs1Off / hw1, hw1, inbound);
                         if (byPos == idx) posAgree++;
                         if (byPosM == idx) posAgreeMirrored++;
                         if (byPos != idx && byPosM != idx && posDiag.Count < maxDiag)
@@ -225,6 +226,8 @@ namespace Cs2Importer
                 var s = get(src);
                 s.Targets.Add(new KeyValuePair<Entity, int>(tgt.Edge, tgt.LaneIndex));
                 s.TargetRefs.Add(tgt.Ref);
+                var wd = PlanArmDir(job, node, tgt.Segment);
+                if (wd != null) s.WantDirs.Add(wd);
             }
             int arrowsOverridden = 0;
             foreach (var o in arrows)
@@ -366,6 +369,10 @@ namespace Cs2Importer
             // and each U-turn rule holds
             var outcome = new Dictionary<string, int>();
             var diag = new List<object>();
+            // turn check (#126): the CS2 junction lanes leaving each explicit source lane, by their own geometry, against
+            // CS1's target arms; independent of the plan → edge → lane mapping
+            int turnChecked = 0, turnOk = 0, turnWrong = 0, turnNone = 0;
+            var turnDiag = new List<object>();
             int nodesWithData = 0;
             var after = new Dictionary<Entity, List<NodeLane>>();
             foreach (var g in byNode)
@@ -387,8 +394,24 @@ namespace Cs2Importer
                     }
                     else
                     {
-                        got = after[g.Key].Where(l => l.SrcEdge == s.Edge && l.SrcIndex == s.LaneIndex).Select(l => l.TgtEdge.Index + ":" + l.TgtIndex).ToList();
+                        var gotLanes = after[g.Key].Where(l => l.SrcEdge == s.Edge && l.SrcIndex == s.LaneIndex).ToList();
+                        got = gotLanes.Select(l => l.TgtEdge.Index + ":" + l.TgtIndex).ToList();
                         kind = LaneMatch.Compare(want, got);
+                        if (s.WantDirs.Count == s.Targets.Count && !unsure.ContainsKey(s.PlanNode)) // unsure junctions keep CS2's own lanes
+                        {
+                            string why;
+                            turnChecked++;
+                            if (LaneMatch.TurnCheck(s.WantDirs, gotLanes.Select(l => l.Exit).ToList(), armTol, out why)) turnOk++;
+                            else
+                            {
+                                if (why == "none") turnNone++; else turnWrong++;
+                                if (turnDiag.Count < maxDiag)
+                                    turnDiag.Add(new Dictionary<string, object> {
+                                        { "node", s.PlanNode }, { "why", why }, { "from", s.Ref }, { "want", s.TargetRefs.Cast<object>().ToList() },
+                                        { "want_deg", s.WantDirs.Select(d => (object)Math.Round(Math.Atan2(d[0], d[1]) * 180 / Math.PI)).ToList() },
+                                        { "got_deg", gotLanes.Select(l => (object)Math.Round(Math.Atan2(l.Exit[0], l.Exit[1]) * 180 / Math.PI)).ToList() } });
+                            }
+                        }
                     }
                     int k; outcome.TryGetValue(kind, out k); outcome[kind] = k + 1;
                     if (kind != "match" && kind != "continuous" && diag.Count < maxDiag)
@@ -447,6 +470,8 @@ namespace Cs2Importer
                     { "tolerance_deg", armTol }, { "arms_ok", armOk }, { "arms_off", armOff }, { "arms_unknown", armUnknown },
                     { "junctions_off", unsure.Count }, { "junctions_left_to_cs2", nodesUnsure }, { "source_lanes_left_to_cs2", leftToCs2 },
                     { "junctions", unsure.Take(maxDiag).ToDictionary(kv => kv.Key.ToString(), kv => (object)kv.Value) }, { "arms", armDiag } } },
+                { "turn_check", new Dictionary<string, object> {
+                    { "tolerance_deg", armTol }, { "checked", turnChecked }, { "ok", turnOk }, { "wrong", turnWrong }, { "none", turnNone }, { "wrong_examples", turnDiag } } },
                 { "lane_position_check", new Dictionary<string, object> {
                     { "checked", posChecked }, { "agree", posAgree }, { "agree_mirrored", posAgreeMirrored },
                     { "agree_rate", posChecked == 0 ? 0 : Math.Round(100.0 * Math.Max(posAgree, posAgreeMirrored) / posChecked, 1) }, { "disagreements", posDiag } } },
@@ -502,8 +527,19 @@ namespace Cs2Importer
         /// leaving the same node. NaN when unknown.</summary>
         static double ArmAngle(GameWorld w, ImportJob job, long node, long segment, Entity edge, bool isEnd)
         {
+            var d = PlanArmDir(job, node, segment);
+            if (d == null || !w.Em.HasComponent<Curve>(edge)) return double.NaN;
+            var c = w.Em.GetComponentData<Curve>(edge).m_Bezier;
+            float3 t = isEnd ? (c.c - c.d) : (c.b - c.a);
+            if (math.lengthsq(t.xz) < 0.01f) t = isEnd ? (c.a - c.d) : (c.d - c.a);
+            return LaneMatch.AngleDeg(d[0], d[1], t.x, t.z);
+        }
+
+        /// <summary>The CS1 segment's direction leaving the plan node (its bezier tangent there), x/z; null when unknown.</summary>
+        static double[] PlanArmDir(ImportJob job, long node, long segment)
+        {
             var seg = job.SegmentAt(segment, node);
-            if (seg == null || !w.Em.HasComponent<Curve>(edge)) return double.NaN;
+            if (seg == null) return null;
             bool atStart = seg.Start.Id == node;
             double px, pz;
             var b = seg.Bezier;
@@ -520,10 +556,7 @@ namespace Cs2Importer
                 var o = atStart ? seg.End : seg.Start;
                 px = o.X - n0.X; pz = o.Z - n0.Z;
             }
-            var c = w.Em.GetComponentData<Curve>(edge).m_Bezier;
-            float3 t = isEnd ? (c.c - c.d) : (c.b - c.a);
-            if (math.lengthsq(t.xz) < 0.01f) t = isEnd ? (c.a - c.d) : (c.d - c.a);
-            return LaneMatch.AngleDeg(px, pz, t.x, t.z);
+            return px * px + pz * pz < 1e-6 ? null : new[] { px, pz };
         }
 
         /// <summary>Half the edge composition's width (m); NaN when unknown.</summary>
@@ -550,7 +583,7 @@ namespace Cs2Importer
             return Turn.Straight;
         }
 
-        sealed class NodeLane { public Entity SrcEdge, TgtEdge; public int SrcIndex, TgtIndex; public CarLaneFlags Flags; public Game.Pathfind.PathMethod Methods; }
+        sealed class NodeLane { public Entity SrcEdge, TgtEdge; public int SrcIndex, TgtIndex; public CarLaneFlags Flags; public Game.Pathfind.PathMethod Methods; public double[] Exit; }
 
         /// <summary>The junction's car lanes (no master lanes): source/target edge and lane index, turn flags.</summary>
         static List<NodeLane> NodeCarLanes(GameWorld w, Entity node, bool forbiddenOnly = false)
@@ -574,7 +607,9 @@ namespace Cs2Importer
                 if (src == Entity.Null || tgt == Entity.Null) continue;
                 var cl = em.GetComponentData<Game.Net.CarLane>(l);
                 if (((cl.m_Flags & CarLaneFlags.Forbidden) != 0) != forbiddenOnly) continue;
-                r.Add(new NodeLane { SrcEdge = src, TgtEdge = tgt, SrcIndex = lane.m_StartNode.GetLaneIndex() & 0xff, TgtIndex = lane.m_EndNode.GetLaneIndex() & 0xff, Flags = cl.m_Flags, Methods = subs[i].m_PathMethods });
+                var lc = em.HasComponent<Curve>(l) ? em.GetComponentData<Curve>(l).m_Bezier : default(Bezier4x3);
+                var ex = MathUtils.EndTangent(lc);
+                r.Add(new NodeLane { SrcEdge = src, TgtEdge = tgt, SrcIndex = lane.m_StartNode.GetLaneIndex() & 0xff, TgtIndex = lane.m_EndNode.GetLaneIndex() & 0xff, Flags = cl.m_Flags, Methods = subs[i].m_PathMethods, Exit = new double[] { ex.x, ex.z } });
             }
             return r;
         }

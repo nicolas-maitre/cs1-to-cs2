@@ -185,6 +185,19 @@ try {
     const c = JSON.parse(fs.readFileSync(path.join(runDir, 'lanedirs-compare.json'), 'utf8'));
     return { segments: r.segments, missing: r.missing, cs2LeftHandTraffic: r.cs2_left_hand_traffic, byKind: c.byKind, reversed: c.reversed, mirrored: c.mirrored, other: c.other, examples: c.examples.slice(0, 5), ok: c.ok, out: out ? undefined : 'no output' };
   });
+  // TM:PE lane connections (docs/DECISIONS.md #126): re-measure what the mod wrote, read-only (op "lanes" checkOnly):
+  // the geometric arm check (every connection's arms against CS1's directions), the written-vs-intended match, and the
+  // junctions left to CS2 because they couldn't be mapped confidently. A wrong arm or turn fails the step.
+  await step('lane-connections', async () => {
+    const r = await b.exec(LIB, { phase: 'tool', pump: 'tool', args: { op: 'lanes', plan: path.join(S.package, 'cs1conv-plan.json'), checkOnly: true, diagnostics: 40 }, timeout: 900 });
+    fs.writeFileSync(path.join(runDir, 'lanecheck.json'), JSON.stringify(r, null, 1));
+    if (r.skipped) return { skipped: r.skipped };
+    const ac = r.arm_check ?? {}, tc = r.turn_check ?? {};
+    const res = { refs: r.lane_refs, refsMatched: r.lane_refs_matched, matchRate: r.match_rate, outcomes: r.outcomes, arm_check: { arms_ok: ac.arms_ok, arms_off: ac.arms_off, junctions_off: ac.junctions_off, junctions: ac.junctions }, turn_check: tc.checked == null ? undefined : { checked: tc.checked, ok: tc.ok, wrong: tc.wrong, examples: (tc.wrong_examples ?? []).slice(0, 5) } };
+    const wrongTurns = tc.wrong ?? 0;
+    if (wrongTurns > 0) throw new Error(`${wrongTurns} written lane connection(s) go to a different arm than in CS1: ${JSON.stringify(res).slice(0, 1500)}`);
+    return res;
+  });
   await step('simulate', async () => { await b.call('sim.set', { paused: false, speed: 3 }); await b.wait(1, Number(opt('simulate', '60')), { timeout: 600 }); await b.pause(); return { seconds: Number(opt('simulate', '60')) }; });
   // Public-transport vehicles after the simulation (read-only count from the transit exec library): are buses,
   // trams, metros and trains actually running? Lines without vehicles show up here, not in the import status.

@@ -2,6 +2,33 @@
 
 The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The version is `Mod.Version` in `mod/Mod.cs` (the `<Version>` in `mod/Cs2ImporterMod.csproj` must match; `node tools/release/build.mjs --check` verifies both).
 
+## 0.3.3 (2026-11-21)
+
+- **Road heights follow CS1** (DECISIONS.md #110–113; DECISIONS-importer.md #57). Packages from web tool 0.7.0 and later shape the ground to the roads and give each road type a height mode:
+  - `conform` (zoneable roads): the ground follows the road;
+  - `walls` (highways, ramps, roads without zoning): the road keeps its CS1 height with retaining walls or embankments;
+  - `follow` (paths): the road lies on the ground.
+
+  The importer places each road accordingly, keeps CS1's vertical profile along it, and keeps elevated, bridge and tunnel ends at their CS1 height where the ground was reshaped under them.
+
+  Ground roads more than 2 m off their CS1 height:
+
+  | City | Before | After |
+  | --- | --- | --- |
+  | Skibidi | 408 of 1870 | 5 |
+  | CacaoCity | 44 of 668 | 6 |
+  | Westfield | 90 of 579 | 0 |
+
+  Roads built, lane connections, lane directions and buildings are unchanged.
+- **CS1's road kind decides what CS2 builds** (#61, #129): a CS1 ground road is never turned into a tunnel or put on pillars. Beyond CS2's wall limits it gets its height from the package's ground (web 0.9.3 walls burn), else it stays at the limit and is listed in the report. Verify counts tunnels and elevated roads by CS1 kind. *In-game check pending.*
+- **CS1 tunnels stay tunnels** (#58, #124): CS1 tunnels shallower than CS2's minimum tunnel depth are built deeper (the deep end to 12.5 m, the portal to 8.5 m at most), and each one is listed in the report. On a Skibidi crop, 21 tunnel segments that came out as open cuts are now all tunnels.
+- **Walls roads over a dip** (#62): a walls road whose CS1 height leaves the ground line by more than 1.5 m is split there, with a node at its CS1 height. *In-game check pending.*
+- **Lane connections:** an independent check (#60, #126). Each junction arm's direction in CS2 must match CS1's. A junction where an arm doesn't match gets no connections written and is listed in the report. *In-game numbers pending.*
+- **Node Controller shifts** (web 0.9.0+, `offNode`): off by default until verified in game (#59); road ends snap to their nodes, as before.
+- **For tests:**
+  - op `heights`: the height error per segment;
+  - op `laneview`: the Traffic mod's lane connection view on one junction.
+
 ## 0.3.2 (2026-11-21)
 
 - **Vanilla CS2 roads:** packages from web tool 0.6.0 use the game's own roads where they match the CS1 road (same driving lanes per side, widths and sidewalks), and Road Builder roads only where nothing matches (DECISIONS.md #100). The import treats both kinds alike: traffic settings, priority signs, lane connections, zoning, the left-hand reversal and verify. Measured with vanilla-road packages (DECISIONS-importer.md #56):

@@ -93,7 +93,10 @@ export async function transit(argv) {
       if (!a.plan) throw new Error('depots needs --plan');
       const plan = JSON.parse(readFileSync(a.plan, 'utf8'));
       const lines = (plan.transit?.lines ?? []).map(l => ({ name: l.name, cs1Type: l.cs1Type, stops: (l.stops ?? []).map(s => ({ x: s.x, z: s.z })) }));
-      const yp = await op({ op: 'yards.plan', bounds: plan.bounds, lines, depotMode: plan.transit?.depotMode ?? null, edgeMargin: Number(a.edgeMargin ?? 80) });
+      // --interior-yards (opt-in, DECISIONS-transit #14): a type whose track doesn't leave the crop gets a yard beside
+      // an open end of its track inside the area instead of a "place it yourself" report entry
+      const depotMode = a['interior-yards'] || a.interiorYards ? Object.fromEntries(['Metro', 'Train'].map(t => [t, plan.transit?.depotMode?.[t] === 'manual' ? 'manual' : 'interior'])) : (plan.transit?.depotMode ?? null);
+      const yp = await op({ op: 'yards.plan', bounds: plan.bounds, lines, depotMode, edgeMargin: Number(a.edgeMargin ?? 80) });
       out = { types: yp.types, report: yp.report, items: yp.buildings.items };
       // train/metro lines pathfind when they are created; created before their stations were joined to the track
       // they keep no path, so --recreate deletes and re-creates them afterwards

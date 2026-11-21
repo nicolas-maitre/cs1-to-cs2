@@ -158,6 +158,12 @@ namespace Cs1ConvTerrain
                     { "name", PrefabName(p) }, { "type", d.m_Type.ToString() }, { "remoteness", d.m_Remoteness },
                     { "isObject", Em.HasComponent<ObjectData>(p) }, { "isNet", Em.HasComponent<NetData>(p) },
                 };
+                // utility markers (electricity / water pipe): the prefab's own components say which
+                var ct = Em.GetComponentTypes(p, Allocator.Temp);
+                var util = new List<object>();
+                foreach (var t in ct) { var n = t.GetManagedType()?.Name; if (n != null && (n.Contains("Electricity") || n.Contains("WaterPipe") || n.Contains("Sewage"))) util.Add(n); }
+                ct.Dispose();
+                if (util.Count > 0) item["utility"] = util;
                 if (Em.HasComponent<RouteConnectionData>(p))
                 {
                     var rc = Em.GetComponentData<RouteConnectionData>(p);
@@ -173,14 +179,22 @@ namespace Cs1ConvTerrain
         static List<object> OcList()
         {
             var r = new List<object>();
-            var ocs = Query(new[] { ComponentType.ReadOnly<Game.Objects.OutsideConnection>() });
-            foreach (var e in ocs)
+            var all = new List<Entity>(); var seen = new HashSet<Entity>();
+            foreach (var ct in new[] { ComponentType.ReadOnly<Game.Objects.OutsideConnection>(), ComponentType.ReadOnly<Game.Objects.ElectricityOutsideConnection>(), ComponentType.ReadOnly<Game.Objects.WaterPipeOutsideConnection>() })
+            {
+                var q = Query(new[] { ct });
+                foreach (var e in q) if (seen.Add(e)) all.Add(e);
+                q.Dispose();
+            }
+            foreach (var e in all)
             {
                 var prefab = Em.GetComponentData<PrefabRef>(e).m_Prefab;
                 var item = new Dictionary<string, object> { { "entity", Id(e) }, { "prefab", PrefabName(prefab) } };
                 if (Em.HasComponent<OutsideConnectionData>(prefab)) item["type"] = Em.GetComponentData<OutsideConnectionData>(prefab).m_Type.ToString();
                 if (Em.HasComponent<Game.Objects.Transform>(e)) item["pos"] = V(Em.GetComponentData<Game.Objects.Transform>(e).m_Position);
                 if (Em.HasComponent<Game.Net.Node>(e)) item["isNode"] = true;
+                if (Em.HasComponent<Game.Objects.ElectricityOutsideConnection>(e)) item["electricity"] = true;
+                if (Em.HasComponent<Game.Objects.WaterPipeOutsideConnection>(e)) item["waterPipe"] = true;
                 if (Em.HasComponent<Owner>(e))
                 {
                     var o = Em.GetComponentData<Owner>(e).m_Owner;
@@ -195,7 +209,6 @@ namespace Cs1ConvTerrain
                 if (Em.HasBuffer<Game.Net.SubLane>(e)) item["subLanes"] = Em.GetBuffer<Game.Net.SubLane>(e, true).Length;
                 r.Add(item);
             }
-            ocs.Dispose();
             return r;
         }
 

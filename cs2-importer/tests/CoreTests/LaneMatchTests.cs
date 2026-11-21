@@ -89,5 +89,19 @@ namespace CoreTests
             Assert.Eq(1, LaneMatch.PickByPosition(lanes, -3.5 / 16, 8, false).Value, "outbound inner lane");
             Assert.True(LaneMatch.PickByPosition(lanes, double.NaN, 8, true) == null, "no CS1 offset");
         }
+
+        /// <summary>#126: the written junction lanes must leave towards CS1's target arms, and reach all of them.</summary>
+        public static void TestTurnCheck()
+        {
+            // a 6-arm junction: arms every 60°; CS1 says this lane goes straight (east) and right (south-east)
+            var east = new[] { 1.0, 0.0 };
+            var southEast = new[] { 0.5, -System.Math.Sqrt(3) / 2 };
+            var northEast = new[] { 0.5, System.Math.Sqrt(3) / 2 };
+            string why;
+            Assert.True(LaneMatch.TurnCheck(new[] { east, southEast }, new[] { new[] { 0.98, 0.1 }, new[] { 0.45, -0.85 } }, 30, out why), "both arms, slightly bent lanes");
+            Assert.True(!LaneMatch.TurnCheck(new[] { east, southEast }, new[] { east, northEast }, 30, out why) && why == "extra_arm", "the neighbouring arm on the other side: wrong");
+            Assert.True(!LaneMatch.TurnCheck(new[] { east, southEast }, new[] { east }, 30, out why) && why == "missing_arm", "one target arm not reached");
+            Assert.True(!LaneMatch.TurnCheck(new[] { east }, new double[0][], 30, out why) && why == "none", "nothing written");
+        }
 }
 }

@@ -381,3 +381,15 @@ Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,1
     - Metro Line 1/2/3 segments between the underground stations are connected end to end through the imported track (`reach: true`), and still get 0 path elements.
     - **So the cause isn't only gaps.** The likely suspect is lane direction: each waypoint gets one platform lane, and nothing makes consecutive stops use lanes whose directions agree.
     - **Not verified yet.** Next test: a directed lane search (`Lane.m_StartNode` / `m_EndNode`), or a station line built with the game's own line tool on the same stations, to compare the waypoint lanes.
+
+**Utility outside connections: cause found** (worker-4, `node terrain/tools/oc-probe.mjs --all`, `.gamectl/mapprep/oc-probe-corral.json`).
+- **Fresh Corral Riches:** 11 outside connections, of which **1 electricity**: "Powerline Outside Connection", owned by a "High-voltage Line" node at the map edge (−7181, 4492). There are **0 water-pipe outside connections**: the base map has none.
+- **After MapPrep `clear {all: true}`**, which is what the importer mod's Prepare map runs: 2 left (airplane only). The clear deletes the high-voltage line, and its node takes the electricity marker with it.
+- **So, for the fix:**
+  - Water can't be kept, because the map has none; it has to be created.
+  - Electricity can be kept (spare the power line chain that owns the marker) or recreated: a high-voltage line node at the crop edge plus a "Powerline Outside Connection" marker. A high-voltage line still needs a transformer to feed the roads' low-voltage grid.
+  - This needs in-game tests. Not done yet.
+
+**Rail hunt stopped (coordinator #133).** In run 13 (`cs1conv-train6k-st3-yards2`), the opt-in interior SubwayYard02's 110 m link to the elevated metro line **was built**: the yard node has the link edge, and the line node has 3 edges (`.gamectl/tracklink/yardjoint-run13.json`). Metro Lines 1 and 3 have paths (27 and 78 elements). Even so, the yard's 2 trains stayed parked for 480 s and the lines show 0 vehicles.
+- **Open lead:** the depot doesn't dispatch to the lines. Possibly it can't pathfind from the yard to a line waypoint (lane direction), or the dispatch request needs something else.
+- **Status:** trains and metros remain a known limit for this release. Interior yards and bridges stay opt-in or default as recorded in DECISIONS-transit #12–14.

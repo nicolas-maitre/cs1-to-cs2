@@ -51,9 +51,9 @@ Known limits:
        optional dependencies, so it is only named in the description. -->
   <Dependency Id="87190" />
   <ChangeLog>
-* Imports packages that use the game's own roads where they match the CS1 road (web tool 0.6.0): fewer Road Builder roads to install.
-* Cities that drove on the left: Prepare map sets the same side, and one-way and asymmetric roads now run as in CS1.
-* TM:PE lane connections, lane arrows and U-turn rules are applied by default through the Traffic mod, exactly at junctions.
-* Check warns when the city drives on the other side than the CS1 city.
+* Road heights follow CS1: with packages from web tool 0.7.0 and later, the ground is shaped to the roads, and highways and ramps keep their CS1 height with walls or embankments.
+* CS1 ground roads are never turned into tunnels or put on pillars; CS1 tunnels too shallow for CS2 are built deeper so they stay tunnels.
+* Lane connections are only written at junctions whose roads line up with CS1's; the others are left as CS2 builds them and listed in the report.
+* The import report lists tunnels deepened, roads short of their CS1 height, and buildings to place yourself.
   </ChangeLog>
 </Publish>

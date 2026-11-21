@@ -12,6 +12,6 @@ const out = {};
 try {
   const { bridge: b } = await start('cs2', { load: save, timeout: 400 });
   await b.load(save, { timeout: 900 }); await b.pause();
-  for (const n of names.split(',')) out[n] = await b.exec(DLL, { type: 'Cs1ConvTransit.Ops', args: { op: 'lines.debug', name: n }, timeout: 300 });
+  for (const n of names.split(',')) out[n] = await b.exec(DLL, { type: 'Cs1ConvTransit.Ops', args: { op: process.env.OP || "lines.debug", name: n, ...(process.env.ARGS ? JSON.parse(process.env.ARGS) : {}) }, timeout: 300 });
 } catch (e) { out.error = e.message; }
 finally { writeFileSync(outFile, JSON.stringify(out, null, 1)); try { await stop('cs2', { wait: 90 }); } catch {} if (existsSync(LOCK) && /terrain worker/.test(readFileSync(LOCK, 'utf8'))) unlinkSync(LOCK); }

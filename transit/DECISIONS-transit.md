@@ -41,6 +41,21 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
 9. **`tracklink` also joins station platforms to the imported track** (each open end to the nearest imported dead end within 200 m).
    - **Why:** CS1 station platforms are building sub-nets (not imported), so the CS2 station's own platform tracks end loose next to the line.
 
-10. **Link course recipe:** a Permanent course when the straight course crosses nothing; otherwise the player's way, a Temp definition plus one forced apply frame. ApplyNetSystem then makes the level crossings and junctions; a Permanent course across an existing edge leaves Temp ghosts (Spike 1).
+10. **Link course recipe:** every link is built the player's way: a Temp definition plus one forced apply frame. ApplyNetSystem then makes the level crossings and junctions.
+    - **Why not Permanent:** a Permanent course across an existing edge leaves Temp ghosts (Spike 1), and one that starts on a building-owned node (a station or yard track end) is silently not built (QA §5c).
 
-11. **Open:** train and metro lines still get no path (QA §5). Depots, links and report entries are in place, but no rail vehicle runs yet.
+11. **Open:** train and metro lines still get no path. The causes are in QA §5c; the station-side ones (elevated metro matching, station position) were fixed by the buildings worker (buildings decision #36) and are being verified.
+
+12. **Imported track under a long CS2 platform is trimmed back.** CS2 train stations are 200 m long, CS1's 128 m, so at the CS1 spot each platform runs about 36 m past the imported track's dead end.
+    - **How:** when the nearest imported dead end lies behind a platform end (closer to the station centre, within 16 m of its axis: TrainStation03's platforms sit 10.5 m off the CS1 track), `tracklink` deletes the imported edges from that dead end up to the first node more than 8 m beyond the platform end, and joins the platform end to that node.
+    - **Limits:** it stops (and only reports) at a junction under the platform or after 8 edges; junctions are never deleted.
+    - **Why:** joining back to the dead end would lay a second track on top of the platform, and the line couldn't pass through the station.
+
+13. **Facing imported dead ends are bridged across a missing station.** CS1 station platforms that no CS2 station reproduces leave a gap in the line, for example the metro platforms of Skibidi's "Large Trainstation", which CS2's TrainStation03 doesn't have (buildings worker, 2026-11-21).
+    - **How:** after the station links, `tracklink` joins pairs of unowned dead ends of the same track type (subway, train) that are mutual nearest within 300 m, where the straight course leaves each end within 30° of its own track's direction. Ends already joined to a station or yard are skipped; `bridge:false` turns it off.
+    - **Result:** the line passes through and loses that stop, which stays reported as a missing stop. That's a known limit until the plan can place a companion metro station.
+
+14. **Interior yards, opt-in only.** `transit.mjs depots --interior-yards` (or `depotMode {Metro|Train: "interior"}` in the plan) lets a rail type whose track doesn't leave the crop get a yard anyway: the compact prefab beside an open dead end of its track inside the area (not one a station link or bridge will use), continuing it, then linked like an edge yard.
+    - **Default unchanged:** decision #8 / docs/DECISIONS.md #83 (edge yards, otherwise a "place it yourself" report entry) stays the default.
+    - **Why:** on Skibidi's 6 km crop the metro track never leaves the area. So the metro lines, which now have paths, can only get vehicles from an interior yard; this verifies that the chain works end to end.
+
