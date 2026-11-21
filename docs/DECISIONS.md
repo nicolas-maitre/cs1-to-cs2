@@ -439,3 +439,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Before going public:** all 79 commits were audited for private data (names, emails, local paths, tokens, binaries). The only finding was a local Steam library path (`E:\GamesLibrarySteam\…`) in two old commits of the M0 notes, already removed from the current files. The user chose to keep the history unchanged rather than force-push a rewrite. Commits use the GitHub no-reply email.
      - **Deploy:** `.github/workflows/pages.yml` builds `web/` and deploys it on every push to `main` touching `web/` or `docs/guide/`.
      - **Exporter 1.2.2:** the "Open web tool" button now defaults to the hosted URL.
+138. **The driving side can't end up wrong on any path** (user report, 2026-11-21). A CacaoCity test city, a left-hand city, was built right-hand, most likely by a scripted path that skipped the mod's Prepare map (#90).
+     - Every path that creates or prepares a city sets CS2's driving side from `plan.source.leftHandTraffic` before the first road: the mod, the e2e script, map prep and the bridge's `game.new`.
+     - Import (mod and exec) refuses when the loaded city's driving side differs from the plan's, unless explicitly overridden.
+     - Acceptance asserts it.
+     - Right-hand CacaoCity test saves are listed so they aren't used as evidence.
