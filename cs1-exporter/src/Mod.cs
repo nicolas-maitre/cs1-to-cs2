@@ -38,7 +38,9 @@ namespace Cs1Exporter
     public static class Settings
     {
         public const string FileName = "Cs1Exporter";
-        public const string DefaultWebTool = "http://localhost:5178";
+        public const string DefaultWebTool = "https://nicolas-maitre.github.io/cs1-to-cs2/";
+        /// <summary>The default before 1.2.2 (the dev server); a saved value equal to it follows the new default.</summary>
+        private const string OldDefaultWebTool = "http://localhost:5178";
 
         public static void Register()
         {
@@ -74,7 +76,8 @@ namespace Cs1Exporter
                 try
                 {
                     if (s_WebTool == null) s_WebTool = new SavedString("webToolUrl", FileName, DefaultWebTool, true);
-                    return string.IsNullOrEmpty(s_WebTool.value) ? DefaultWebTool : s_WebTool.value;
+                    var v = s_WebTool.value;
+                    return string.IsNullOrEmpty(v) || v.TrimEnd('/') == OldDefaultWebTool ? DefaultWebTool : v;
                 }
                 catch { return DefaultWebTool; }
             }

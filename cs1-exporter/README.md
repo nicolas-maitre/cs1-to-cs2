@@ -31,7 +31,7 @@ No other mod is required.
 2. Open **Options → Mod Settings → CS1 → CS2 Exporter 1.2.0** and press **Export city**.
 3. The status line under the button shows the progress. The simulation is paused for those few seconds and resumes afterwards.
 4. A dialog shows where the file was written and a short summary.
-5. Open the CS1 → CS2 web tool and drop the file on it. *Open web tool* in the options opens it; the address is a setting and defaults to the local development server, `http://localhost:5178`.
+5. Open the CS1 → CS2 web tool and drop the file on it. *Open web tool* in the options opens it; the address is a setting and defaults to the hosted tool, https://nicolas-maitre.github.io/cs1-to-cs2/.
 
 ### Options
 

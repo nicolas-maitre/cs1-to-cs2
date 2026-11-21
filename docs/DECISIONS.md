@@ -435,3 +435,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Committed, not verified in game:** walls clamping of ground nodes and segment middles; the terrain guard.
      - **Trains and metros: the hunt is closed** (#133). The yard link exists, but the yard's trains never leave it; the open lead is depot dispatch. They stay a known limit, and all rail depot features are opt-in.
      - **Utilities, cause found:** CS2's only electricity outside connection is a high-voltage line marker at the map edge, which Prepare map's clear deletes. Water has none on the base map. The fix (keep or recreate an HV connection plus a transformer, and create a water connection) is the next task.
+137. **The repository is public and the web tool is hosted on GitHub Pages** (user, 2026-11-21): https://nicolas-maitre.github.io/cs1-to-cs2/.
+     - **Before going public:** all 79 commits were audited for private data (names, emails, local paths, tokens, binaries). The only finding was a local Steam library path (`E:\GamesLibrarySteam\…`) in two old commits of the M0 notes, already removed from the current files. The user chose to keep the history unchanged rather than force-push a rewrite. Commits use the GitHub no-reply email.
+     - **Deploy:** `.github/workflows/pages.yml` builds `web/` and deploys it on every push to `main` touching `web/` or `docs/guide/`.
+     - **Exporter 1.2.2:** the "Open web tool" button now defaults to the hosted URL.

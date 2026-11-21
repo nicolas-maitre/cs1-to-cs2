@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 (2026-11-21)
+
+- **Changed:** the web tool address now defaults to the hosted tool, https://nicolas-maitre.github.io/cs1-to-cs2/. A saved address equal to the old default (the local development server) follows the new default automatically; any other saved address is kept.
+
 ## 1.2.1 (2026-11-21)
 
 - **New:** `manifest.traffic.leftHand`, true for a left-hand-traffic city ("invert traffic"). The importer needs it to match lane connections: on CacaoCity, a left-hand city, none of 265 matched without it.

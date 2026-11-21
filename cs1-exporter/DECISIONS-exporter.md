@@ -252,3 +252,5 @@ All taken by Claude while the user was asleep; review them. Exporter version **1
     - **Why:** in a left-hand-traffic city, lanes are mirrored relative to the segment direction, so CS1 lane indices point at the wrong CS2 lanes. The importer matched 0 of 265 lane connections on CacaoCity (QA §6, A5) until it guessed the handedness from inverted segments. The game knows it; the export should say it.
     - **Verified:** CacaoCity re-export → `true`. Older exports lack the field, so readers treat it as unknown and keep their own detection.
     - **Also in 1.2.1:** the zoning self-check reports the median (QA Q2). Patch bump: the format only gains a field.
+
+42. **The web tool address defaults to the hosted tool** (1.2.2, 2026-11-21): https://nicolas-maitre.github.io/cs1-to-cs2/, replacing `http://localhost:5178` (#29). A saved address equal to the old default follows the new one, so existing installs pick it up without touching the setting. Any other saved address is kept.

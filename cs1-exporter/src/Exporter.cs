@@ -13,7 +13,7 @@ namespace Cs1Exporter
     public static class ModInfo
     {
         /// <summary>Release version shown in the mod name and written to manifest.exporter.version.</summary>
-        public const string Version = "1.2.1";
+        public const string Version = "1.2.2";
         public const string Name = "CS1 → CS2 Exporter";
     }
 

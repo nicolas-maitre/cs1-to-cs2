@@ -8,7 +8,7 @@ CS1 + Exporter mod ──▶ city.cs1x ──▶ web tool (crop, mapping, checks
 
 There are three parts:
 - **CS1 → CS2 Exporter:** a CS1 mod that writes the loaded city to one `.cs1x` file. It never changes the save.
-- **cs1conv web tool:** a static web page, so everything stays on your computer. You choose the part of the city that fits a CS2 map, check how each road type, building and rule converts, and download the import package. The package is self-contained: it also carries the converted terrain, water and outside connections. The same core is a Node CLI for scripts.
+- **cs1conv web tool:** a static web page, so everything stays on your computer. **Use it at https://nicolas-maitre.github.io/cs1-to-cs2/** (published from `web/` on every push to `main`). You choose the part of the city that fits a CS2 map, check how each road type, building and rule converts, and download the import package. The package is self-contained: it also carries the converted terrain, water and outside connections. The same core is a Node CLI for scripts.
 - **CS1 → CS2 Importer:** a CS2 mod that builds the package in a new CS2 city.
 
 **User guide:** [docs/guide/user-guide.md](docs/guide/user-guide.md) · [FAQ and troubleshooting](docs/guide/faq.md) · [What converts](docs/guide/what-converts.md). The web tool's Help page shows the same text. **En français :** [guide](docs/guide/fr/user-guide.md) · [FAQ](docs/guide/fr/faq.md) · [ce qui est converti](docs/guide/fr/what-converts.md); the web tool follows the browser's language (English or French).
