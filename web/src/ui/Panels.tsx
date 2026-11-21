@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ZoningOptions } from '../core/m2/zoning.ts';
 import type { Cs1City } from '../core/types.ts';
 
-export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean }
+export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean }
 
 /** M2 options: which extra sections to convert and how zones map. */
 export function ConversionOptions({ value, onChange, city }: { value: ConvOptions; onChange: (v: ConvOptions) => void; city: Cs1City }) {
@@ -35,6 +35,8 @@ export function ConversionOptions({ value, onChange, city }: { value: ConvOption
       <label className="check"><input type="checkbox" checked={value.traffic} onChange={e => onChange({ ...value, traffic: e.target.checked })} /> Traffic rules: TM:PE, speed limits, traffic lights</label>
       <label className="check"><input type="checkbox" checked={value.transit} disabled={!city.transit} onChange={e => onChange({ ...value, transit: e.target.checked })} /> Transit lines</label>
       <label className="check"><input type="checkbox" checked={value.water} disabled={!city.water} onChange={e => onChange({ ...value, water: e.target.checked })} /> Water: sea level and sources</label>
+      <label className="check"><input type="checkbox" checked={value.buildings} disabled={!city.buildings} onChange={e => onChange({ ...value, buildings: e.target.checked })} /> Buildings: services, parks, landmarks (see the Assets tab)</label>
+      <label className="check"><input type="checkbox" checked={value.districts} disabled={!city.districts} onChange={e => onChange({ ...value, districts: e.target.checked })} /> Districts and policies</label>
     </div>
   );
 }

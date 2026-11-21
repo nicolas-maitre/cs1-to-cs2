@@ -28,6 +28,8 @@ export const KNOWN_SECTIONS: { id: string; label: string; milestone: 'M1' | 'M2'
   { id: 'nodecontroller', label: 'Node Controller', milestone: 'M2' },
   { id: 'transit', label: 'Transit lines', milestone: 'M2' },
   { id: 'buildings', label: 'Buildings', milestone: 'M3' },
+  { id: 'assets', label: 'Asset catalogue', milestone: 'M3' },
+  { id: 'districts', label: 'Districts and park areas', milestone: 'M3' },
 ];
 
 export interface SectionCheck { id: string; label: string; status: string; messages: string[] }
@@ -94,14 +96,14 @@ export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategor
   });
   out.push(...(pkg.extraSummary ?? []));
   const bst = city.manifest.sections?.buildings;
-  if (bst && bst !== 'absent') out.push({
+  if (bst && bst !== 'absent' && !out.some(c => c.id === 'buildings')) out.push({
     id: 'buildings', label: 'Buildings, parks, props', status: 'not-converted',
     summary: 'in the export, not converted yet: CS2 grows its own buildings on the converted zones',
     details: ['Service buildings, stations, parks and unique buildings need an asset mapping, planned for a later version.'],
   });
   // A section whose export failed is not "absent": say so.
   const secStatus = city.manifest.sections ?? {};
-  const sectionOf: Record<string, string> = { roads: 'network', tracks: 'network', imt: 'imt', terrain: 'terrain', zoning: 'zones', water: 'water', traffic: 'tmpe', nodecontroller: 'nodecontroller', transit: 'transit' };
+  const sectionOf: Record<string, string> = { roads: 'network', tracks: 'network', imt: 'imt', terrain: 'terrain', zoning: 'zones', water: 'water', traffic: 'tmpe', nodecontroller: 'nodecontroller', transit: 'transit', buildings: 'buildings', districts: 'districts' };
   for (const c of out) {
     const sec = sectionOf[c.id];
     if (sec && secStatus[sec] === 'failed' && c.status === 'absent') {

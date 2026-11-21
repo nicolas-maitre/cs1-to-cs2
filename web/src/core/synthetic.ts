@@ -52,9 +52,25 @@ export function syntheticCity(n: number, spacing = 90): Cs1City {
     nodes.push(node); ring.push(node);
   }
   for (let i = 0; i < k; i++) segments.push(seg(ring[i], ring[(i + 1) % k], HIGHWAY));
+  // two districts over the grid (an L-shaped "Old Town" and a rectangle "Harbour"), on the CS1 district raster
+  const res = 900, cs = 19.2, half = (res * cs) / 2, districtGrid = new Uint8Array(res * res);
+  const ext = (n * spacing) / 2;
+  const cell = (v: number) => Math.floor((v + half) / cs);
+  for (let r = cell(-ext); r < cell(0); r++) for (let c = cell(-ext); c < cell(0); c++) districtGrid[r * res + c] = 1;
+  for (let r = cell(0); r < cell(ext / 2); r++) for (let c = cell(-ext); c < cell(-ext / 2); c++) districtGrid[r * res + c] = 1;
+  for (let r = cell(ext / 4); r < cell(ext); r++) for (let c = cell(ext / 4); c < cell(ext); c++) districtGrid[r * res + c] = 2;
   return {
     source: 'cs1x',
-    manifest: { format: 'cs1x', formatVersion: 1, city: { name: `Synthetic ${n}×${n}`, saveName: 'synthetic' }, mapSize: 17280, sections: { network: 'ok', netinfos: 'ok', imt: 'absent', terrain: 'absent' } },
+    manifest: { format: 'cs1x', formatVersion: 1, city: { name: `Synthetic ${n}×${n}`, saveName: 'synthetic' }, mapSize: 17280, sections: { network: 'ok', netinfos: 'ok', imt: 'absent', terrain: 'absent', districts: 'ok' } },
     nodes, segments, netInfos: [BASIC, MEDIUM, HIGHWAY], imtFillers: [], terrain: null, report: [], sha256: null,
+    districts: {
+      grid: { resolution: res, cellSize: cs, size: res * cs }, districtGrid,
+      city: { policies: ['Recycling'] },
+      districts: [
+        { id: 1, name: 'Old Town', policies: ['HeavyTrafficBan', 'Tourist'], nameLocation: [-ext / 2, 0, -ext / 2] },
+        { id: 2, name: 'Harbour', policies: ['CombustionEngineBan'], nameLocation: [(5 * ext) / 8, 0, (5 * ext) / 8] },
+      ],
+      parks: [],
+    },
   };
 }

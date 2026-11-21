@@ -12,6 +12,8 @@ interface Props {
   showTerrain: boolean;
   showZones: boolean;
   showTransit: boolean;
+  showBuildings: boolean;
+  showDistricts: boolean;
   describe: (s: SegInfo) => string[];
 }
 
@@ -31,7 +33,7 @@ interface View { x: number; z: number; scale: number }
  * is slow (huge cities), pan/zoom first moves the last base image with a CSS transform and redraws
  * once the view settles.
  */
-export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, crop, onCrop, showSkipped, showTerrain, showZones, showTransit, describe }, ref) {
+export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, crop, onCrop, showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts, describe }, ref) {
   const wrap = useRef<HTMLDivElement>(null);
   const base = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
@@ -42,8 +44,8 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const cropRef = useRef(crop);
   cropRef.current = crop;
-  const props = useRef({ scene, showSkipped, showTerrain, showZones, showTransit });
-  props.current = { scene, showSkipped, showTerrain, showZones, showTransit };
+  const props = useRef({ scene, showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts });
+  props.current = { scene, showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts };
   const [cursor, setCursor] = useState('grab');
   const [hover, setHover] = useState<{ s: SegInfo; x: number; y: number } | null>(null);
   const [focused, setFocused] = useState(false);
@@ -95,7 +97,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
     const cv = base.current;
     if (!cv) return;
     const t0 = performance.now();
-    const { scene: sc, showSkipped: sk, showTerrain: st, showZones: sz, showTransit: stt } = props.current;
+    const { scene: sc, showSkipped: sk, showTerrain: st, showZones: sz, showTransit: stt, showBuildings: sb, showDistricts: sd } = props.current;
     const ctx = cv.getContext('2d')!;
     const dpr = window.devicePixelRatio || 1;
     const { w, h } = size.current, v = view.current;
@@ -120,6 +122,19 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
     if (sz && sc.zones.length) {
       ctx.globalAlpha = 0.55;
       for (const zz of sc.zones) { ctx.fillStyle = zz.color; ctx.fill(zz.path); }
+      ctx.globalAlpha = 1;
+    }
+    if (sd && sc.districts) {
+      for (const d of sc.districts.items) {
+        ctx.globalAlpha = 0.18; ctx.fillStyle = d.color; ctx.fill(d.path, 'evenodd');
+        ctx.globalAlpha = 0.9; ctx.strokeStyle = d.color; ctx.lineWidth = 2 * px; ctx.setLineDash([8 * px, 5 * px]); ctx.stroke(d.path);
+      }
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+    if (sb && sc.buildings) {
+      ctx.globalAlpha = 0.85;
+      for (const p of sc.buildings.paths) { ctx.fillStyle = p.color; ctx.fill(p.path); }
       ctx.globalAlpha = 1;
     }
     // visible world rect, for culling
@@ -161,6 +176,18 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
       for (const l of sc.lines) { ctx.strokeStyle = l.color; ctx.stroke(l.path); }
       ctx.setLineDash([]);
       for (const l of sc.lines) { ctx.fillStyle = l.color; ctx.fill(l.stops); ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5 * px; ctx.stroke(l.stops); }
+    }
+    if (sd && sc.districts) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      for (const d of sc.districts.items) {
+        const p = toScreen(d.label[0], d.label[1], v);
+        if (p.x < -100 || p.y < -20 || p.x > w + 100 || p.y > h + 20) continue;
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000c'; ctx.strokeText(d.name, p.x, p.y);
+        ctx.fillStyle = d.color; ctx.fillText(d.name, p.x, p.y);
+      }
+      ctx.textAlign = 'start';
     }
     lastBaseMs.current = performance.now() - t0;
   };
@@ -271,7 +298,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView({ scene, cr
     fit(c.centerX - m, c.centerX + m, c.centerZ - m, c.centerZ + m);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene]);
-  useEffect(() => { lastBaseMs.current = 0; schedule({ base: true }); }, [showSkipped, showTerrain, showZones, showTransit]);
+  useEffect(() => { lastBaseMs.current = 0; schedule({ base: true }); }, [showSkipped, showTerrain, showZones, showTransit, showBuildings, showDistricts]);
   useEffect(() => { schedule({ over: true }); }, [crop, focused]);
 
   const hitHandle = (sx: number, sy: number) => {

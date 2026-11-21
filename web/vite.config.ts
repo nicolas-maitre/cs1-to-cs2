@@ -47,6 +47,7 @@ export default defineConfig({
   base: './',
   plugins: [react(), samples()],
   worker: { format: 'es' },
-  server: { port: 5178, strictPort: true },
+  // the buildings worker's matcher lives in ../buildings and is imported by relative path
+  server: { port: 5178, strictPort: true, fs: { allow: ['..'] } },
   test: { include: ['test/**/*.test.ts'] },
 } as never);

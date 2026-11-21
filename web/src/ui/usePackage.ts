@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { buildPackage } from '../core/plan.ts';
 import type { BuildOptions, BuiltPackage } from '../core/plan.ts';
 import type { Cs1City } from '../core/types.ts';
+import type { Cs2Catalogue } from '../core/m3/buildings.ts';
 import type { WorkerRequest } from './packageWorker.ts';
 
 export interface Source { city: Cs1City; bytes?: ArrayBuffer; synthetic?: number }
@@ -10,7 +11,7 @@ export interface Source { city: Cs1City; bytes?: ArrayBuffer; synthetic?: number
  * Builds the package for the current options in a Web Worker (latest request wins), falling back to
  * the main thread if workers are unavailable (e.g. the page was opened from file://).
  */
-export function usePackage(src: Source | null, opts: BuildOptions | null) {
+export function usePackage(src: Source | null, opts: BuildOptions | null, catalogue: Cs2Catalogue | null = null) {
   const [pkg, setPkg] = useState<BuiltPackage | null>(null);
   const [busy, setBusy] = useState(false);
   const [ms, setMs] = useState(0);
@@ -18,6 +19,7 @@ export function usePackage(src: Source | null, opts: BuildOptions | null) {
   const worker = useRef<Worker | null>(null);
   const ready = useRef<Promise<boolean> | null>(null);
   const seq = useRef(0);
+  const sentCatalogue = useRef<Cs2Catalogue | null | undefined>(undefined);
 
   useEffect(() => {
     setPkg(null);
@@ -26,6 +28,7 @@ export function usePackage(src: Source | null, opts: BuildOptions | null) {
     try { w = new Worker(new URL('./packageWorker.ts', import.meta.url), { type: 'module' }); }
     catch { w = null; }
     worker.current = w;
+    sentCatalogue.current = undefined;
     if (!w) { ready.current = Promise.resolve(false); return; }
     ready.current = new Promise<boolean>(resolve => {
       const onFirst = (e: MessageEvent) => {
@@ -53,17 +56,20 @@ export function usePackage(src: Source | null, opts: BuildOptions | null) {
     setBusy(true);
     const local = () => {
       const t = performance.now();
-      try { const p = buildPackage(src.city, opts); if (id === seq.current) { setPkg(p); setMs(performance.now() - t); setError(null); } }
+      try { const p = buildPackage(src.city, { ...opts, catalogue }); if (id === seq.current) { setPkg(p); setMs(performance.now() - t); setError(null); } }
       catch (e) { if (id === seq.current) setError(e instanceof Error ? e.message : String(e)); }
       if (id === seq.current) setBusy(false);
     };
     void ready.current?.then(ok => {
       if (id !== seq.current) return;
-      if (ok && worker.current) worker.current.postMessage({ type: 'build', id, opts } satisfies WorkerRequest);
+      if (ok && worker.current) {
+        if (sentCatalogue.current !== catalogue) { worker.current.postMessage({ type: 'catalogue', catalogue } satisfies WorkerRequest); sentCatalogue.current = catalogue; }
+        worker.current.postMessage({ type: 'build', id, opts } satisfies WorkerRequest);
+      }
       else setTimeout(local, 0);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, key]);
+  }, [src, key, catalogue]);
 
   return { pkg, busy, ms, error };
 }

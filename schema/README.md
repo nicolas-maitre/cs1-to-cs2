@@ -396,7 +396,7 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
                   "elevationStart": 0, "elevationEnd": 0, "kind": "ground", "reversed": true, "cs1Info": "Train Track" } ],
   "stats": { "segments": 1234, "skipped": 56, "nodes": 1100, "outsideCrop": 4000, "crossingCropEdge": 40, "unmapped": 16,
              "rbConfigs": 22, "byPrefabType": { "RoadBuilderPrefab": 1100, "TrackPrefab": 134 } },
-  "zoning": { … }, "water": { … }, "transit": { … }, "traffic": { … }
+  "zoning": { … }, "water": { … }, "transit": { … }, "traffic": { … }, "buildings": { … }, "districts": { … }
 }
 ```
 
@@ -484,6 +484,69 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   - bus-only vehicle restrictions become RB bus lanes (`lanesFrom: "TM:PE"`).
 - **Report only:** timed traffic lights (the junction keeps plain lights), turn on red, entering blocked junctions, lane changing, parking restrictions, other vehicle restrictions, and all Node Controller settings.
 
+### `buildings` (M3)
+
+```json
+"buildings": {
+  "generator": { "matcher": "1.0.0", "web": "1.0.0" },
+  "catalogue": { "game": "1.6.4f1 (1097.158a)", "prefabs": 263 },
+  "cs1AngleConvention": { "facing": "-sin,cos", "agreement": 1, "buildingsWithRoad": 108 },
+  "items": [ { "id": 422, "cs1Info": "Hospital", "type": "BuildingPrefab", "prefab": "Hospital01", "score": 0.93, "family": "hospital",
+               "x": 1012.4, "z": -340.2, "front": [1020.1, -330.0], "facing": [0.6, 0.8], "lot": [23, 10], "cs1Lot": [4, 4],
+               "accessSegment": 1234, "alternatives": ["Hospital02"], "district": 3 } ],
+  "stats": { "items": 108, "withRoad": 108, "withoutRoad": 0, "growablesInCrop": 7226,
+             "skipped": { "outsideCrop": 4023, "subBuilding": 0, "growable": 7226, "skip": 372, "noEquivalent": 8, "roadNotImported": 4 } }
+}
+```
+
+- **What's placed:** ploppable CS1 buildings (services, stations, depots, parks, landmarks, utilities) in the crop, matched to a CS2 building prefab by the buildings worker's matcher (`buildings/match/match.mjs`) or chosen by the user per building type in the web tool's Assets tab.
+- **What's not placed:**
+  - growables, which CS2 grows itself on the converted zones (counted in `growablesInCrop`);
+  - sub-buildings;
+  - things CS2 rebuilds itself (pillars, pipe junctions, poles: `skip`);
+  - types without a CS2 equivalent (libraries, taxi stands, cable car stops: `noEquivalent`);
+  - buildings whose access road isn't in the plan (`roadNotImported`).
+
+  report.json lists each not-placed type (`kind: "buildings"`).
+- **Item fields:**
+  - `x`, `z`, `front`, `facing` are in plan coordinates, like `nodes`.
+  - `front` is the closest point of the CS1 access road; the placer snaps it to the imported road and keeps the lot on the CS1 side.
+  - `facing` is the unit vector building → road. Without an access road (`front: null`) it comes from the CS1 angle under the convention learned from the buildings that have one (`cs1AngleConvention`).
+  - `accessSegment` is a `plan.segments[].id`.
+  - `score` is the match score 0–1, `null` when the user chose the prefab.
+  - `alternatives` are the next-best prefabs, tried in order when the first doesn't fit; empty when the user chose the prefab.
+  - `district` is a `plan.districts.items[].cs1Id`.
+  - `type` is always `BuildingPrefab`.
+- **Same shape as the buildings worker's standalone file:** the items match `buildings/lib/plan.mjs` `buildBuildingsPlan()` field for field (plus `type` and `district`); a web test checks this on the real Skibidi export. Its standalone `cs1conv-buildings.json` stays valid for its placer.
+
+### `districts` (M3)
+
+```json
+"districts": {
+  "items": [ { "cs1Id": 3, "name": "Old Town", "outlines": [[[-300, -300], [100, -300], [100, 0], [-300, 0]]],
+               "policies": ["Heavy Traffic Ban"], "cs1Policies": ["HeavyTrafficBan", "Tourist"], "area": 120000 } ],
+  "cityPolicies": ["Recycling"]
+}
+```
+
+- **`outlines`:** the district's outer boundaries in plan coordinates (counter-clockwise, one polygon per separate piece), traced from the CS1 district raster's cell edges and clipped to the crop. Holes are filled, because CS2 districts are simple areas.
+- **`policies`:** CS2 policy prefabs with a CS1 equivalent:
+
+  | CS1 | CS2 |
+  | --- | --- |
+  | `HeavyTrafficBan` | `Heavy Traffic Ban` |
+  | `CombustionEngineBan` | `Combustion Engine Ban` |
+  | `Recycling` | `Recycling` |
+  | `EncourageBiking` | `Urban Cycling Initiative` |
+  | `BikeBan` | `Bicycle Traffic Restriction` |
+  | `SmallBusiness` | `Small Business Enthusiast` (approximation) |
+  | `SmokeDetectors` | `Fire Safety Sprinkler System` (approximation) |
+  | `PowerSaving` | `Energy Consumption Awareness` (approximation) |
+  | `PaidParking` | `Roadside Parking Fee` (approximation) |
+
+  The names come from the CS2 policy list. `cityPolicies` maps the CS1 city-wide policies the same way. The importer applies each policy where CS2 allows it (district or city).
+- **Not converted, reported:** zone specialisations (Leisure, Tourist, Organic, Hightech, SelfSufficient, specialised industry), other policies, and park areas (parks, industry areas, campuses, airports).
+
 ### `report.json` (package)
 
 ```json
@@ -495,6 +558,7 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   - roads: `width-loss`, `lane-approximation`, `unmapped-netinfo`, `not-placeable`, `mapping-override`, `speed-limit`;
   - IMT: `imt-override`, `imt-node-fill`, `imt-partial-fill`, `imt-paint`;
   - crop and source: `outside-crop`, `crossing-crop-edge`, `crop`, `source`;
-  - M2: `zoning`, `water`, `transit`, `traffic`, `node-controller`.
+  - M2: `zoning`, `water`, `transit`, `traffic`, `node-controller`;
+  - M3: `buildings`, `districts`.
 - **`count`:** how many CS1 objects an aggregated item stands for.
 - **`cs1`:** sample ids (`segment`, `segments`, `node`, `nodes`, `netInfo`, `filler`, `line`).

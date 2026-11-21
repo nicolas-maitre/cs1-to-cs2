@@ -8,6 +8,7 @@ import type { MappingOverride, NetCategory, ResolvedTarget } from './mapping.ts'
 import { analyse, convert, netInfoTitle } from './rb.ts';
 import type { RbConfig, RbReport } from './rb.ts';
 import { packageReadme } from './readme.ts';
+import { APP_VERSION } from './docs.ts';
 import { conversionSummary } from './summary.ts';
 import type { ConvCategory } from './summary.ts';
 import type { PlanContext } from './m2/context.ts';
@@ -17,11 +18,14 @@ import { buildTransit } from './m2/transit.ts';
 import { buildWater } from './m2/water.ts';
 import { DEFAULT_ZONING, buildZoning } from './m2/zoning.ts';
 import type { ZoningOptions } from './m2/zoning.ts';
+import { buildBuildings } from './m3/buildings.ts';
+import type { AssetMatch, AssetOverrides, Cs2Catalogue } from './m3/buildings.ts';
+import { buildDistricts } from './m3/districts.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
 } from './types.ts';
 
-export const GENERATOR = { name: 'cs1conv-web', version: '0.2.0' };
+export const GENERATOR = { name: 'cs1conv-web', version: APP_VERSION };
 
 export interface BuildOptions {
   crop: Crop;
@@ -36,6 +40,14 @@ export interface BuildOptions {
   transit?: boolean;
   /** M2: sea level and water sources (default on). */
   water?: boolean;
+  /** M3: place service buildings, parks and landmarks (default on; needs a catalogue). */
+  buildings?: boolean;
+  /** M3: the CS2 building catalogue (cs2-catalogue.json); without it buildings are not matched. */
+  catalogue?: Cs2Catalogue | null;
+  /** M3: per CS1 building type, a CS2 prefab name or "skip". */
+  assetOverrides?: AssetOverrides;
+  /** M3: districts and policies (default on). */
+  districts?: boolean;
 }
 
 export interface MappingRow {
@@ -68,6 +80,8 @@ export interface BuiltPackage {
   summary: ConvCategory[];
   /** Per-category entries added by the M2 sections (zoning, traffic, transit, water...). */
   extraSummary?: ConvCategory[];
+  /** M3: every CS1 building type with its CS2 match (for the Assets tab); empty without a catalogue. */
+  assetMatches?: AssetMatch[];
 }
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -269,7 +283,9 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const transit = buildTransit(ctx, opts.transit !== false);
   const traffic = buildTraffic(ctx, opts.traffic !== false);
   const nc = buildNodeController(ctx);
-  for (const r of [zoning, water, transit, traffic, nc]) items.push(...r.items);
+  const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
+  const districts = buildDistricts(ctx, opts.districts !== false);
+  for (const r of [zoning, water, transit, traffic, nc, buildings, districts]) items.push(...r.items);
   for (const [k, n] of speedGroups) {
     const [base, kmh] = k.split('|');
     items.push({ level: 'info', kind: 'speed-limit', message: `${base}: ${n} segment(s) with a TM:PE speed limit of ${kmh} km/h use a Road Builder variant with that speed`, count: n, cs1: { netInfo: base } });
@@ -335,6 +351,8 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     },
     requires: [...new Set([...(rbConfigs.size ? ['RoadBuilder'] : []), ...(traffic.section?.requires ?? [])])],
     ...(zoning.section ? { zoning: zoning.section } : {}),
+    ...(buildings.section ? { buildings: buildings.section } : {}),
+    ...(districts.section ? { districts: districts.section } : {}),
     ...(water.section ? { water: water.section } : {}),
     ...(transit.section ? { transit: transit.section } : {}),
     ...(traffic.section ? { traffic: traffic.section } : {}),
@@ -349,7 +367,8 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     mapping: [...rows.values()].sort((a, b) => Number(a.target.mode === 'skip') - Number(b.target.mode === 'skip') || b.segmentsInCrop - a.segmentsInCrop || b.segments - a.segments),
     errors: cv.errors,
     summary: [],
-    extraSummary: [zoning.summary, water.summary, transit.summary, traffic.summary, nc.summary],
+    extraSummary: [zoning.summary, water.summary, transit.summary, traffic.summary, nc.summary, buildings.summary, districts.summary],
+    assetMatches: buildings.matches,
   };
   pkg.summary = conversionSummary(city, pkg);
   return pkg;

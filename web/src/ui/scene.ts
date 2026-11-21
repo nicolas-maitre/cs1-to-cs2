@@ -3,6 +3,8 @@
 
 import { bezierPoint } from '../core/imt.ts';
 import { cellCentre } from '../core/m2/zoning.ts';
+import { buildBuildingLayer, buildDistrictLayer } from './sceneM3.ts';
+import type { BuildingLayer, DistrictLayer } from './sceneM3.ts';
 import { categorize } from '../core/mapping.ts';
 import type { NetCategory } from '../core/mapping.ts';
 import type { Cs1City, Cs1Segment, NetInfo, Terrain } from '../core/types.ts';
@@ -50,6 +52,8 @@ export interface Scene {
   zones: { zone: string; color: string; path: Path2D; count: number }[];
   /** Transit lines through their stops. */
   lines: { name: string; color: string; path: Path2D; stops: Path2D }[];
+  buildings: BuildingLayer | null;
+  districts: DistrictLayer | null;
 }
 
 export const ZONE_STYLE: Record<string, { color: string; label: string }> = {
@@ -169,7 +173,7 @@ export function buildScene(city: Cs1City): Scene {
     const c = l.color ?? [255, 255, 255];
     return { name: l.name ?? l.type, color: `rgb(${c[0]},${c[1]},${c[2]})`, path, stops };
   });
-  return { buckets: sorted, fills, segs, grid, cell, extent: { minX, maxX, minZ, maxZ }, terrain: city.terrain ? hillshade(city.terrain) : null, terrainSize: city.terrain?.size ?? 0, ends, skipped, zones: [...zonePaths.values()], lines };
+  return { buckets: sorted, fills, segs, grid, cell, extent: { minX, maxX, minZ, maxZ }, terrain: city.terrain ? hillshade(city.terrain) : null, terrainSize: city.terrain?.size ?? 0, ends, skipped, zones: [...zonePaths.values()], lines, buildings: buildBuildingLayer(city), districts: buildDistrictLayer(city) };
 }
 
 /** Hillshade + hypsometric tint of the raw heightmap; image row 0 = north (screen top). */

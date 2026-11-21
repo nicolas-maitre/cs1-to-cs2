@@ -175,6 +175,40 @@ export interface NcNode {
 }
 export interface NodeControllerSection { assembly?: { name?: string; version?: string }; nodes: NcNode[] }
 
+// ---------------------------------------------------------------- M3 sections (schema/README.md §1)
+
+export interface Cs1Building {
+  id: number; info: string; workshopId?: string | null; position: Vec3;
+  /** degrees, CS1 Building.m_angle × 180/π */
+  angle: number;
+  service?: string; subService?: string; level?: number; ai?: string; growable: boolean;
+  /** footprint in 8 m cells */
+  width: number; length: number; size?: number[];
+  parent?: number; subBuilding?: number; netNode?: number;
+  accessSegment?: number; district?: number; park?: number; flags?: string; customName?: string;
+}
+export interface BuildingsSection { angleUnit?: string; buildings: Cs1Building[] }
+
+export interface Cs1Asset {
+  name: string; kind?: string; workshopId?: string | null; custom?: boolean; title?: string; count: number;
+  service?: string; subService?: string; zone?: string | null; level?: string; ai?: string; growable?: boolean;
+  footprint?: number[]; size?: number[]; height?: number; placementMode?: string; subBuildings?: number;
+  tags?: string[]; aiFields?: Fields;
+}
+export interface AssetsSection { buildings: Cs1Asset[]; props?: Cs1Asset[]; trees?: Cs1Asset[]; networks?: Cs1Asset[] }
+
+export interface Cs1District { id: number; name: string; nameLocation?: Vec3; cells?: number; area?: number; policies?: string[] }
+export interface Cs1ParkArea { id: number; name: string; type?: string; kind?: string; level?: string; mainGate?: number; cells?: number; area?: number; policies?: string[] }
+export interface DistrictsSection {
+  grid: { resolution: number; cellSize: number; size: number; districtFile?: string; parkFile?: string };
+  city?: { policies?: string[] };
+  districts: Cs1District[];
+  parks: Cs1ParkArea[];
+  /** Decoded rasters (resolution², row 0 = south), when present. */
+  districtGrid?: Uint8Array;
+  parkGrid?: Uint8Array;
+}
+
 /** A loaded CS1 city, whatever the source (.cs1x or the M0 network dump). */
 export interface Cs1City {
   source: 'cs1x' | 'm0-dump';
@@ -189,6 +223,9 @@ export interface Cs1City {
   transit?: TransitSection | null;
   tmpe?: TmpeSection | null;
   nodeController?: NodeControllerSection | null;
+  buildings?: BuildingsSection | null;
+  assets?: AssetsSection | null;
+  districts?: DistrictsSection | null;
   /** The exporter's own report plus anything the reader noticed. */
   report: Cs1ReportItem[];
   /** sha256 of the source file bytes (hex), when computed. */
@@ -260,9 +297,53 @@ export interface Plan {
   /** CS2 mods the plan needs besides Road Builder (e.g. "Traffic" for lane connections and priority signs). */
   requires?: string[];
   zoning?: PlanZoning;
+  buildings?: PlanBuildings;
+  districts?: PlanDistricts;
   water?: PlanWater;
   transit?: PlanTransit;
   traffic?: PlanTraffic;
+}
+
+/** Placed buildings (M3): service buildings, parks, landmarks … matched to CS2 prefabs. Growables are left to zoning. */
+export interface PlanBuildingItem {
+  /** CS1 building id */
+  id: number;
+  cs1Info: string;
+  type: 'BuildingPrefab';
+  prefab: string;
+  /** match score 0–1; null when the user chose the prefab */
+  score: number | null;
+  family: string | null;
+  x: number; z: number;
+  /** closest point of the access road (plan coordinates), null without an access road */
+  front: [number, number] | null;
+  /** unit vector from the building towards its road */
+  facing: [number, number] | null;
+  lot: number[] | null;
+  cs1Lot: [number, number];
+  /** CS1 segment id of the access road (a plan segment), 0 if none */
+  accessSegment: number;
+  /** next-best CS2 prefabs, tried in order when the first does not fit; empty when the user chose the prefab */
+  alternatives: string[];
+  /** CS1 district id (plan.districts) */
+  district?: number;
+}
+export interface PlanBuildings {
+  generator: { matcher: string; web: string };
+  catalogue: { game: string | null; prefabs: number };
+  cs1AngleConvention: { facing: string; agreement: number | null; buildingsWithRoad: number };
+  items: PlanBuildingItem[];
+  stats: {
+    items: number; withRoad: number; withoutRoad: number; growablesInCrop: number;
+    skipped: { outsideCrop: number; subBuilding: number; growable: number; skip: number; noEquivalent: number; roadNotImported: number };
+  };
+}
+
+/** CS1 districts in the crop as CS2 district areas (outer outlines in plan coordinates). */
+export interface PlanDistricts {
+  items: { cs1Id: number; name: string; outlines: [number, number][][]; policies: string[]; cs1Policies: string[]; area: number }[];
+  /** CS2 policies for the whole city (from CS1 city-wide policies). */
+  cityPolicies: string[];
 }
 
 /** Zoned cells: centre of every zoned CS1 cell (CS2 coordinates) → index into prefabs (CS2 zone prefab names). */
@@ -349,7 +430,9 @@ export type PackageReportKind =
   | 'water'
   | 'transit'
   | 'traffic'
-  | 'node-controller';
+  | 'node-controller'
+  | 'buildings'
+  | 'districts';
 
 export interface PackageReportItem {
   level: 'info' | 'warning';

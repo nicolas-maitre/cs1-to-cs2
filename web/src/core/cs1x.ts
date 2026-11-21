@@ -4,7 +4,7 @@
 
 import { unzipSync, strFromU8 } from 'fflate';
 import { sha256Hex } from './hash.ts';
-import type { Cs1City, Cs1Node, Cs1ReportItem, Cs1Segment, ImtFiller, Manifest, NetInfo, NodeControllerSection, Terrain, TmpeSection, TransitSection, WaterSection, ZonesSection } from './types.ts';
+import type { AssetsSection, BuildingsSection, Cs1City, Cs1Node, Cs1ReportItem, Cs1Segment, DistrictsSection, ImtFiller, Manifest, NetInfo, NodeControllerSection, Terrain, TmpeSection, TransitSection, WaterSection, ZonesSection } from './types.ts';
 
 const VARIANT_FIELDS: Record<string, string> = {
   elevated: 'm_elevatedInfo', bridge: 'm_bridgeInfo', slope: 'm_slopeInfo', tunnel: 'm_tunnelInfo',
@@ -119,11 +119,24 @@ export function readCs1x(bytes: Uint8Array): Cs1City {
   const transit = section('transit', 'transit.json', (j: TransitSection) => (Array.isArray(j.lines) ? j : null), null as TransitSection | null);
   const tmpe = section('tmpe', 'tmpe.json', (j: TmpeSection) => j, null as TmpeSection | null);
   const nodeController = section('nodecontroller', 'nodecontroller.json', (j: NodeControllerSection) => (Array.isArray(j.nodes) ? j : null), null as NodeControllerSection | null);
+  const buildings = section('buildings', 'buildings.json', (j: BuildingsSection) => (Array.isArray(j.buildings) ? j : null), null as BuildingsSection | null);
+  const assets = section('assets', 'assets.json', (j: AssetsSection) => (Array.isArray(j.buildings) ? j : null), null as AssetsSection | null);
+  const districts = section('districts', 'districts.json', (j: DistrictsSection) => (j.grid ? { ...j, districts: j.districts ?? [], parks: j.parks ?? [] } : null), null as DistrictsSection | null);
+  if (districts) {
+    const n = districts.grid.resolution * districts.grid.resolution;
+    const u8 = (file: string | undefined) => {
+      const raw = file ? entries[file] : undefined;
+      if (!raw || raw.length < n) { report.push({ level: 'warning', section: 'reader', message: `${file ?? 'district raster'} missing or short` }); return undefined; }
+      return raw.slice(0, n);
+    };
+    districts.districtGrid = u8(districts.grid.districtFile ?? 'districts.u8');
+    if (districts.parks.length) districts.parkGrid = u8(districts.grid.parkFile ?? 'parks.u8');
+  }
   for (const [k, v] of Object.entries(tmpe?.parts ?? {})) if (v !== 'ok') report.push({ level: 'warning', section: 'tmpe', message: `TM:PE part ${k}: ${v}` });
   completeVariants(netInfos);
   return {
     source: 'cs1x', manifest, nodes: network.nodes ?? [], segments: network.segments ?? [],
-    netInfos, imtFillers, terrain, zones, water, transit, tmpe, nodeController, report, sha256: null,
+    netInfos, imtFillers, terrain, zones, water, transit, tmpe, nodeController, buildings, assets, districts, report, sha256: null,
   };
 }
 

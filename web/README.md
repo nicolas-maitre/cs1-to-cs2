@@ -1,6 +1,12 @@
 # web: the cs1conv web tool and CLI
 
-Reads a `.cs1x` export of a Cities: Skylines city (or the M0 network dump), lets you pick a crop square, maps every CS1 NetInfo to a CS2 prefab or a generated Road Builder road, converts zoning, TM:PE rules, transit lines and water, and writes the import package (`schema/README.md` §2). The same TypeScript core runs in the browser and as a Node CLI. Everything runs client-side: nothing is uploaded.
+Reads a `.cs1x` export of a Cities: Skylines city (or the M0 network dump). You pick a crop square, and the tool:
+- maps every CS1 NetInfo to a CS2 prefab or a generated Road Builder road;
+- matches CS1 buildings to CS2 buildings;
+- converts zoning, TM:PE rules, transit lines, water and districts;
+- writes the import package (`schema/README.md` §2).
+
+The same TypeScript core runs in the browser and as a Node CLI. Everything runs client-side: nothing is uploaded. The user guide lives in [`docs/guide/`](../docs/guide/user-guide.md) and in the app's Help page, both generated from `src/core/docs.ts`.
 
 ```
 src/core/          pure TS, no DOM (Node ≥ 24 runs it directly through type stripping)
@@ -11,12 +17,16 @@ src/core/          pure TS, no DOM (Node ≥ 24 runs it directly through type st
   crop.ts            crop square, CS2 limits, auto crop
   plan.ts            buildPackage(): plan + roadbuilder/*.json + report.json + README.txt
   m2/                zoning, water, transit, traffic (TM:PE), nodecontroller → plan sections
+  m3/                buildings (adapter over buildings/match/match.mjs), districts, slim CS2 catalogue
   summary.ts         what converts per category; .cs1x section check
+  docs.ts            user guide, FAQ, conversion matrix, privacy text (app Help + docs/guide)
   readme.ts          the package README.txt
-  synthetic.ts       synthetic n × n city for performance checks
-src/ui/            React + canvas UI (map, landing, panels); packageWorker.ts builds packages off the main thread
+  synthetic.ts       synthetic n × n city with districts, for performance checks
+src/ui/            React + canvas UI (map, landing, panels, Assets, Help); packageWorker.ts builds packages off the main thread
 cli/cs1conv.ts
-test/              vitest (includes byte-parity with the M0 spike generator on the real dump, when present)
+scripts/           gen-docs.mjs (docs/guide), notices.mjs (third-party notices), slim-catalogue.mjs (bundled CS2 catalogue)
+public/            cs2-catalogue.json (slim CS2 building catalogue), THIRD-PARTY-NOTICES.txt
+test/              vitest; includes parity with the M0 spike generator and with buildings/lib/plan.mjs on the real data, when present
 ```
 
 ## Use
@@ -27,78 +37,66 @@ npm test                  # vitest
 npm run typecheck
 npm run dev               # UI on http://localhost:5178 (drop a .cs1x on the page)
 npm run build             # static site in dist/ (relative paths: host it from any folder)
+npm run docs              # regenerate docs/guide/*.md from src/core/docs.ts
+npm run notices           # regenerate public/THIRD-PARTY-NOTICES.txt
+npm run slim-catalogue    # refresh public/cs2-catalogue.json from %LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json
 ```
 
 Dev server only:
 - `http://localhost:5178/?open=/samples/skibidi.cs1x` opens a file from `%LOCALAPPDATA%\cs1-to-cs2\samples\`.
-- `?synthetic=150` generates a 150 × 150 street grid for performance checks. This one also works in the build.
+- `?synthetic=150` generates a 150 × 150 street grid with two districts, for performance checks. This one also works in the build.
 
 CLI (from the repo root):
 
 ```powershell
 node web/cli/cs1conv.ts inspect <file.cs1x> [--json]
 node web/cli/cs1conv.ts plan <file.cs1x> --crop <cx>,<cz>,<size> --out <dir> [--overrides map.json] [--install-rb] [--keep-other-rb]
-node web/cli/cs1conv.ts plan <file.cs1x> --auto-crop 3000 --out <dir> [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
+node web/cli/cs1conv.ts plan <file.cs1x> --auto-crop 3000 --out <dir> [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low]
+     [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--no-zoning] [--no-traffic] [--no-transit] [--no-water] [--no-buildings] [--no-districts]
 node web/cli/cs1conv.ts install-rb <package dir>
 ```
 
 - **`--auto-crop <size>`** centres the square on the 250 m grid position that fully contains the most road segments.
-- **`--install-rb`** copies the package's `roadbuilder/*-cs1conv.json` into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`. It removes other `*-cs1conv.json` files there unless `--keep-other-rb` is given, and never touches any other file. Road Builder reads configs only at CS2 start.
-- **`--overrides`** is a JSON object keyed by ground NetInfo name:
-  - `{"mode":"vanilla","type":"RoadPrefab","name":"Large Road"}`
-  - `{"mode":"rb"}`
-  - `{"mode":"skip"}`
-  - `{"mode":"auto"}`
+- **`--install-rb`** copies the package's `roadbuilder/*-cs1conv.json` into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`. It removes other `*-cs1conv.json` files there unless `--keep-other-rb` is given, and never touches any other file.
+- **`--overrides`** (road types) is a JSON object keyed by ground NetInfo name. Values are `{"mode":"vanilla","type":"RoadPrefab","name":"Large Road"}`, `{"mode":"rb"}`, `{"mode":"skip"}` or `{"mode":"auto"}`.
+- **`--asset-overrides`** (buildings) is a JSON object keyed by CS1 building type name, with a CS2 building prefab name or `"skip"` as value.
+- **`--catalogue`:** the CS2 building catalogue. It defaults to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json` when that exists (`node buildings/run.mjs catalogue` writes it). Without a catalogue, buildings aren't matched and the plan has no `buildings` section.
 
-  The UI's mapping table produces the same overrides.
-- **The M2 flags** set the zone theme and densities, and switch the zoning, traffic, transit and water sections off. They match the options in the UI.
+## Buildings
 
-## What converts
+The matching module is the buildings worker's `buildings/match/match.mjs`. It's pure and shared, imported by relative path. On top of it, `src/core/m3/buildings.ts` adds two things:
+- the per-type overrides from the Assets tab;
+- the plan's `buildings` section, built by the same rules as `buildings/lib/plan.mjs`. A test compares the two on the real Skibidi export.
 
-| CS1 | CS2 |
-| --- | --- |
-| Roads (vanilla, Vanilla+/workshop) | generated Road Builder roads: lanes, medians, parking, bus and tram lanes, trees, speed. Widths may change (reported). |
-| Elevated roads, bridges, slopes, tunnels | same Road Builder road at the CS1 height |
-| Train, metro, tram tracks, paths | vanilla CS2 tracks and paths |
-| IMT fills over a whole lane | bus lane (red) or median (pavement, grass); other fills are reported |
-| Terrain | heightmap for the terrain step |
-| Zoning | zoned cells → CS2 zones, NA or EU theme |
-| TM:PE | speed limits and bus-only lanes → RB variants; traffic lights, all-way stops, turn bans, crosswalks → vanilla; priority signs, lane arrows, lane connections → Traffic mod; the rest is reported |
-| Transit lines | CS2 lines with colour and stops (station lines wait for stations) |
-| Water | sea level and natural water sources |
-| Node Controller | reported |
-| Pipes, power lines, buildings | not converted (CS2 lays utilities along roads; buildings come later) |
+The site bundles a slim catalogue (`public/cs2-catalogue.json`, 263 placeable buildings, 98 kB): only the fields the matcher reads, and it gives identical matches (tested). The Assets tab can load another catalogue, for example after a game update.
 
 ## UI
 
-- **Landing page:** what the tool does, the six steps, the mods, the limits, and clear errors for wrong files, unsupported format versions and failed sections.
+- **Landing:** what the tool does, the steps, the mods, the limits, a privacy note, and clear errors for wrong files, unsupported format versions and failed sections.
 - **Map:**
   - Roads are drawn at their real width and coloured by type, with tunnels faded and elevated roads outlined.
-  - Layers: IMT fills, terrain hillshade, CS1 zones, transit lines with stops, and segments crossing the crop edge (dashed yellow).
-  - The canvas has two layers, a worker builds the packages, and the view is culled by tile, so it stays smooth on very large cities.
-- **Crop square:**
-  - Drag to move, drag a corner to resize. It is capped at 14 336 m, the CS2 playable area.
-  - Keyboard: focus the map; arrows move the crop (Shift = 500 m), +/− resize, Ctrl+arrows pan, `[` `]` zoom, F / C fit.
-  - Touch: pinch to zoom.
-- **Right panel:**
-  - Plan stats.
+  - Layers: IMT fills, terrain hillshade, CS1 zones, transit lines with stops, building footprints by category, district areas with names, and the segments crossing the crop edge.
+  - It has two canvas layers, tile culling and a worker for the package, so it stays smooth on very large cities.
+- **Crop square:** drag to move and drag corners to resize (max 14 336 m). Keyboard: arrows move it, +/− resize. Touch: pinch to zoom.
+- **Panel:**
+  - Stats.
   - Download the package (zip with a README) or only the RB configs.
   - Tabs:
-    - Overview: what converts per category, M2 options, install steps with copy buttons, file check.
+    - Overview: what converts per category, options, install steps, file check.
     - Mapping: per-NetInfo overrides.
-    - Road types: generated RB configs with lanes, width change and notes.
-    - Report: filterable by kind.
+    - Road types: the generated RB configs.
+    - Assets: per CS1 building type, its count, the CS2 building, score, reason, and an override.
+    - Report.
+- **Help:** user guide, what converts, FAQ, and about & privacy (version, mods, third-party notices).
 
 ## Sample packages
 
-Both packages come from `%LOCALAPPDATA%\cs1-to-cs2\samples\skibidi.cs1x` with `--auto-crop 3000` (centre 3750, −1250).
+All are made from `%LOCALAPPDATA%\cs1-to-cs2\samples\skibidi.cs1x` with `--auto-crop 3000` (centre 3750, −1250):
 
-- **`skibidi-plan\` (M1, roads only):** 2035 segments, 1670 nodes, 22 RB configs.
-- **`skibidi-plan-m2\` (M2):**
-  - Roads: the same 2035 segments, with 33 RB configs (11 TM:PE speed variants).
-  - Zoning: 76,658 zoned cells.
-  - Transit: 9 lines.
-  - TM:PE: 325 priority signs, 237 lane connections, 211 lane arrows, 66 turn bans.
-  - Traffic lights at 14 of 588 junctions.
+| Package | Contents |
+| --- | --- |
+| `skibidi-plan\` | M1, roads only |
+| `skibidi-plan-m2\` | adds zoning, TM:PE, transit, water |
+| `skibidi-plan-m3\` | adds `buildings`: 108 placed as 25 CS2 types, 7,226 growables left to zoning. Skibidi has no districts. |
 
 Decisions are in [DECISIONS-web.md](DECISIONS-web.md).

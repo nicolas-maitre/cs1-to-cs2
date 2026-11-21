@@ -260,7 +260,7 @@ describe('package with M2 sections', () => {
     expect(pkg.plan).toMatchObject({ format: 'cs1conv-plan', formatVersion: 1, requires: ['RoadBuilder', 'Traffic'] });
     expect(pkg.plan.zoning!.prefabs).toEqual(['EU Residential Low']);
     expect(pkg.plan.traffic!.segmentEnds).toEqual([{ segment: 1, node: 1, priority: 'yield' }]);
-    expect(pkg.summary.map(s => s.id)).toEqual(['roads', 'tracks', 'imt', 'skipped', 'terrain', 'zoning', 'water', 'transit', 'traffic', 'nodecontroller', 'buildings']);
+    expect(pkg.summary.map(s => s.id)).toEqual(['roads', 'tracks', 'imt', 'skipped', 'terrain', 'zoning', 'water', 'transit', 'traffic', 'nodecontroller', 'buildings', 'districts']);
     const readme = packageFiles(pkg).find(f => f.path === 'README.txt')!.text;
     expect(readme).toMatch(/Road Builder, Traffic/);
     expect(readme).toMatch(/ModsData\\RoadBuilder/);

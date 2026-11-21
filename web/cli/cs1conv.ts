@@ -20,6 +20,7 @@ import { autoCrop, buildPackage, mappingStats, packageFiles } from '../src/core/
 import type { MappingOverride } from '../src/core/mapping.ts';
 import { DEFAULT_ZONING } from '../src/core/m2/zoning.ts';
 import type { ZoningOptions } from '../src/core/m2/zoning.ts';
+import type { Cs2Catalogue } from '../src/core/m3/buildings.ts';
 import type { Crop, Cs1City } from '../src/core/types.ts';
 
 const RB_SUFFIX = '-cs1conv.json';
@@ -30,6 +31,7 @@ function usage(msg?: string): never {
   node web/cli/cs1conv.ts inspect <file.cs1x|dump.json> [--json]
   node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb] [--keep-other-rb]
        [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
+       [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--no-buildings] [--no-districts]
   node web/cli/cs1conv.ts install-rb <package dir> [--keep-other-rb]`);
   process.exit(2);
 }
@@ -41,7 +43,7 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water'];
+      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts'];
       if (boolFlags.includes(name)) flags[name] = true;
       else { const v = argv[++i]; if (v == null) usage(`--${name} needs a value`); flags[name] = v; }
     } else pos.push(a);
@@ -53,6 +55,19 @@ async function load(file: string): Promise<Cs1City> {
   if (!fs.existsSync(file)) usage(`file not found: ${file}`);
   const bytes = new Uint8Array(fs.readFileSync(file));
   return readCityFile(bytes);
+}
+
+/** The CS2 building catalogue: --catalogue, else %LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json when it exists. */
+function loadCatalogue(flags: Record<string, string | true>): Cs2Catalogue | null {
+  const explicit = typeof flags.catalogue === 'string' ? flags.catalogue : null;
+  const local = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2', 'samples', 'cs2-catalogue.json');
+  const file = explicit ?? (fs.existsSync(local) ? local : null);
+  if (!file) return null;
+  if (!fs.existsSync(file)) usage(`catalogue not found: ${file}`);
+  const c = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  if (!Array.isArray(c.prefabs)) usage(`${file} is not a CS2 catalogue (no prefabs array)`);
+  console.log(`CS2 building catalogue: ${file} (${c.prefabs.length} prefabs)`);
+  return c;
 }
 
 export function rbFolder(): string {
@@ -153,6 +168,8 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
     crop, overrides,
     zoning: { enabled: !flags['no-zoning'], theme, residentialHigh: resHigh as ZoningOptions['residentialHigh'], office: office as ZoningOptions['office'] },
     traffic: !flags['no-traffic'], transit: !flags['no-transit'], water: !flags['no-water'],
+    buildings: !flags['no-buildings'], districts: !flags['no-districts'], catalogue: loadCatalogue(flags),
+    assetOverrides: typeof flags['asset-overrides'] === 'string' ? JSON.parse(fs.readFileSync(flags['asset-overrides'], 'utf8')) : undefined,
   });
   if (pkg.errors.length) usage(pkg.errors.join('; '));
 

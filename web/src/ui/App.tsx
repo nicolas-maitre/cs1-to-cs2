@@ -5,6 +5,10 @@ import { ReadError, readCityFile } from '../core/cs1x.ts';
 import type { MappingOverride } from '../core/mapping.ts';
 import { DEFAULT_ZONING } from '../core/m2/zoning.ts';
 import type { ZoningOptions } from '../core/m2/zoning.ts';
+import type { AssetOverrides, Cs2Catalogue } from '../core/m3/buildings.ts';
+import { slimCatalogue } from '../core/m3/catalogue.ts';
+import { AssetsTable } from './AssetsTable.tsx';
+import { Help } from './Help.tsx';
 import { autoCrop, mappingStats, packageFiles } from '../core/plan.ts';
 import type { BuildOptions, BuiltPackage } from '../core/plan.ts';
 import { rbOnlyReadme } from '../core/readme.ts';
@@ -29,20 +33,21 @@ const STORE = 'cs1conv.ui.v1';
 
 interface Loaded extends Source { fileName: string; size: number }
 
-const DEFAULT_CONV: ConvOptions = { zoning: DEFAULT_ZONING, traffic: true, transit: true, water: true };
+const DEFAULT_CONV: ConvOptions = { zoning: DEFAULT_ZONING, traffic: true, transit: true, water: true, buildings: true, districts: true };
 
-function loadPrefs(): { overrides?: Record<string, MappingOverride>; crops?: Record<string, Crop>; conv?: ConvOptions } {
+function loadPrefs(): { overrides?: Record<string, MappingOverride>; crops?: Record<string, Crop>; conv?: ConvOptions; assetOverrides?: AssetOverrides } {
   try { return JSON.parse(localStorage.getItem(STORE) ?? '{}'); } catch { return {}; }
 }
 function savePrefs(p: ReturnType<typeof loadPrefs>) {
   try { localStorage.setItem(STORE, JSON.stringify(p)); } catch { /* storage unavailable */ }
 }
 
-type Tab = 'overview' | 'mapping' | 'rb' | 'report';
+type Tab = 'overview' | 'mapping' | 'rb' | 'assets' | 'report';
 const TABS: { id: Tab; label: (p: BuiltPackage) => string }[] = [
   { id: 'overview', label: () => 'Overview' },
   { id: 'mapping', label: p => `Mapping (${p.mapping.filter(r => r.segmentsInCrop).length})` },
   { id: 'rb', label: p => `Road types (${p.rbVariants.length})` },
+  { id: 'assets', label: p => `Assets (${p.plan.buildings?.items.length ?? 0})` },
   { id: 'report', label: p => `Report (${p.report.items.length})` },
 ];
 
@@ -61,7 +66,33 @@ export function App() {
   const [conv, setConv] = useState<ConvOptions>(() => ({ ...DEFAULT_CONV, ...loadPrefs().conv, zoning: { ...DEFAULT_ZONING, ...loadPrefs().conv?.zoning } as ZoningOptions }));
   const [showZones, setShowZones] = useState(true);
   const [showTransit, setShowTransit] = useState(true);
+  const [showBuildings, setShowBuildings] = useState(false);
+  const [showDistricts, setShowDistricts] = useState(true);
+  const [assetOverrides, setAssetOverrides] = useState<AssetOverrides>(() => loadPrefs().assetOverrides ?? {});
+  const [catalogue, setCatalogue] = useState<Cs2Catalogue | null>(null);
+  const [catalogueSource, setCatalogueSource] = useState<string | null>(null);
+  const catalogueInput = useRef<HTMLInputElement>(null);
+
+  // The bundled slim catalogue (public/cs2-catalogue.json), if the site has one.
+  useEffect(() => {
+    fetch('./cs2-catalogue.json')
+      .then(r => (r.ok ? r.json() : null))
+      .then(c => { if (c && Array.isArray(c.prefabs)) { setCatalogue(c); setCatalogueSource('bundled with this site'); } })
+      .catch(() => { /* no bundled catalogue */ });
+  }, []);
+  const loadCatalogueFile = useCallback(async (file: File) => {
+    try {
+      const j = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
+      if (!Array.isArray(j.prefabs)) throw new Error('no prefabs array');
+      setCatalogue(j.format === 'cs2-catalogue-slim' ? j : slimCatalogue(j));
+      setCatalogueSource(file.name);
+      setError(null);
+    } catch (e) {
+      setError({ title: `Can't use ${file.name} as a CS2 catalogue`, message: e instanceof Error ? e.message : String(e), hint: 'Use the cs2-catalogue.json written by node buildings/run.mjs catalogue.' });
+    }
+  }, []);
   const [tab, setTab] = useState<Tab>('overview');
+  const [help, setHelp] = useState<null | 'guide' | 'converts' | 'faq' | 'about'>(null);
   const [showSkipped, setShowSkipped] = useState(false);
   const [showTerrain, setShowTerrain] = useState(true);
   const [dragOver, setDragOver] = useState(false);
@@ -82,6 +113,7 @@ export function App() {
   }, []);
 
   const open = useCallback(async (file: File) => {
+    if (/catalogue.*\.json$/i.test(file.name)) { await loadCatalogueFile(file); return; }
     setBusy(`Reading ${file.name}…`);
     setError(null);
     try {
@@ -94,7 +126,7 @@ export function App() {
     } finally {
       setBusy(null);
     }
-  }, [accept]);
+  }, [accept, loadCatalogueFile]);
 
   // ?open=<url> (dev server serves local samples at /samples/) and ?synthetic=<n> (performance check).
   useEffect(() => {
@@ -121,15 +153,18 @@ export function App() {
 
   const scene = useMemo(() => (loaded ? buildScene(loaded.city) : null), [loaded]);
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
-  const opts: BuildOptions | null = useMemo(() => (loaded ? { crop: committed, overrides, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water } : null), [loaded, committed, overrides, conv]);
-  const { pkg, busy: building, ms, error: buildError } = usePackage(loaded, opts);
+  const opts: BuildOptions | null = useMemo(() => (loaded ? {
+    crop: committed, overrides, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
+    buildings: conv.buildings, districts: conv.districts, assetOverrides,
+  } : null), [loaded, committed, overrides, conv, assetOverrides]);
+  const { pkg, busy: building, ms, error: buildError } = usePackage(loaded, opts, catalogue);
   const stats = useMemo(() => (pkg ? mappingStats(pkg.mapping) : null), [pkg]);
 
   useEffect(() => {
     if (!loaded || loaded.synthetic) return;
     const prefs = loadPrefs();
-    savePrefs({ ...prefs, overrides, conv, crops: { ...prefs.crops, [loaded.city.sha256 ?? loaded.fileName]: committed } });
-  }, [loaded, overrides, committed, conv]);
+    savePrefs({ ...prefs, overrides, conv, assetOverrides, crops: { ...prefs.crops, [loaded.city.sha256 ?? loaded.fileName]: committed } });
+  }, [loaded, overrides, committed, conv, assetOverrides]);
 
   const onCrop = useCallback((c: Crop, done: boolean) => {
     const cc = clampCrop(c, loaded?.city.manifest.mapSize);
@@ -195,8 +230,10 @@ export function App() {
           </div>
         )}
         <div className="spacer" />
+        <button onClick={() => setHelp('guide')} aria-haspopup="dialog">Help</button>
         {loaded && <button onClick={pick}>Open another file…</button>}
         <input ref={fileInput} type="file" accept=".cs1x,.json,.zip" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
+        <input ref={catalogueInput} type="file" accept=".json" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void loadCatalogueFile(f); e.target.value = ''; }} />
       </header>
       {loaded && error && (
         <div className="error-bar" role="alert">
@@ -205,11 +242,11 @@ export function App() {
         </div>
       )}
       {!loaded ? (
-        <main id="main" className="landing-wrap"><Landing busy={busy} error={error} onPick={pick} /></main>
+        <main id="main" className="landing-wrap"><Landing busy={busy} error={error} onPick={pick} onHelp={s => setHelp(s)} /></main>
       ) : (
         <main id="main" className="work">
           <section className="left" aria-label="Map and crop">
-            {scene && <MapView ref={map} scene={scene} crop={crop} onCrop={onCrop} showSkipped={showSkipped} showTerrain={showTerrain} showZones={showZones && conv.zoning.enabled} showTransit={showTransit && conv.transit} describe={describe} />}
+            {scene && <MapView ref={map} scene={scene} crop={crop} onCrop={onCrop} showSkipped={showSkipped} showTerrain={showTerrain} showZones={showZones && conv.zoning.enabled} showTransit={showTransit && conv.transit} showBuildings={showBuildings} showDistricts={showDistricts} describe={describe} />}
             <div className="mapbar">
               <fieldset>
                 <legend className="sr-only">Crop square (CS1 metres)</legend>
@@ -222,6 +259,8 @@ export function App() {
               <label className="check"><input type="checkbox" checked={showTerrain} onChange={e => setShowTerrain(e.target.checked)} disabled={!loaded.city.terrain} /> Terrain</label>
               {!!loaded.city.zones && <label className="check"><input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> Zones</label>}
               {!!loaded.city.transit?.lines.length && <label className="check"><input type="checkbox" checked={showTransit} onChange={e => setShowTransit(e.target.checked)} /> Transit</label>}
+              {!!loaded.city.buildings && <label className="check"><input type="checkbox" checked={showBuildings} onChange={e => setShowBuildings(e.target.checked)} /> Buildings</label>}
+              {!!loaded.city.districts?.districts.length && <label className="check"><input type="checkbox" checked={showDistricts} onChange={e => setShowDistricts(e.target.checked)} /> Districts</label>}
               <label className="check"><input type="checkbox" checked={showSkipped} onChange={e => setShowSkipped(e.target.checked)} /> Skipped networks</label>
               <span className="muted hint-keys">Drag the square to move it, corners to resize. Keyboard: focus the map, arrows move, +/− resize.</span>
               {cv.warnings.map(w => <span key={w} className="warn">{w}</span>)}
@@ -274,6 +313,9 @@ export function App() {
                   )}
                   {tab === 'mapping' && <MappingTable rows={pkg.mapping} overrides={overrides} onOverride={(name, o) => setOverrides(prev => { const n = { ...prev }; if (o.mode === 'auto') delete n[name]; else n[name] = o; return n; })} />}
                   {tab === 'rb' && <RbList pkg={pkg} />}
+                  {tab === 'assets' && <AssetsTable matches={pkg.assetMatches ?? []} overrides={assetOverrides} catalogue={catalogue} catalogueSource={catalogueSource} hasBuildings={!!loaded.city.buildings && !!loaded.city.assets}
+                    onLoadCatalogue={() => catalogueInput.current?.click()}
+                    onOverride={(cs1, v) => setAssetOverrides(prev => { const n = { ...prev }; if (v) n[cs1] = v; else delete n[cs1]; return n; })} />}
                   {tab === 'report' && <ReportPanel report={pkg.report} />}
                 </div>
               </>
@@ -282,6 +324,7 @@ export function App() {
         </main>
       )}
       {busy && loaded && <div className="busy" role="status">{busy}</div>}
+      {help && <Help initial={help} onClose={() => setHelp(null)} />}
     </div>
   );
 }

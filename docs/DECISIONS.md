@@ -124,3 +124,22 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - Skibidi 3 km: 77 of 108 placed, 71 of them connected.
     - 31 refused, because CS2 service lots are much bigger (e.g. CS1 crematory 3×3 cells vs CS2 8×10).
     - **Open:** a user choice (smaller alternative, nearby free land, or accept) belongs in the web tool. Roads on embankments block building access.
+
+## 2026-11-21: M2 importer, map prep and M3 web (overnight)
+
+42. **One-command end to end: `tools/e2e/run.mjs`** (Claude). The order is fixed:
+    1. new city on Sunshine Peninsula, then clear the base map's nets;
+    2. CS1 terrain;
+    3. water;
+    4. road import;
+    5. outside connections;
+    6. checks.
+
+    Runs pass 2035/2035 on the Skibidi 3 km crop. CS1 and CS2 are shared between workers through lock files (`cs1.lock`, `cs2.lock`; another owner's lock under 2 h old means wait).
+43. **User-facing CS2 importer mod `Cs2ImporterMod`** (Claude). It's built from the same sources as the exec library and runs in its own `ToolUpdate` system, one step per frame. The game's settings UI has no read-only text field, so progress is shown as a rewritten locale label. **Not published.**
+44. **Embankments snap to the terrain; trenches keep their depth** (Claude). Raised CS1 roads had made CS2 build retaining walls with no building access (walled edges went from 94 to 26). `keepEmbankments:true` restores the old behaviour. An experimental `heights:"exact"` mode exists but is off.
+45. **Map prep: rebuild outside connections at the crop edge, not the map edge** (Claude). After 5 minutes of simulation: 94–113 cars, up to 28 trains, 28–59 trucks.
+46. **Water: CS1 sea level as is (heights are absolute), the base map's water sources removed, CS1 natural sources recreated** (Claude). CS2's definition path only made temporary sources, so they're now created directly. Water depth vs CS1: median error 0.66 m, p90 1.97 m.
+47. **Default base map: Sunshine Peninsula**, chosen after surveying all 12 built-in maps in game (Claude).
+48. **Web M3: the buildings worker's matcher is reused as is, and the plan's `buildings` section shares its item shape** (Claude). The zoning theme breaks ties between equally good CS2 buildings. The site bundles a slim CS2 catalogue. Growables are counted, not placed.
+49. **One source for the user docs** (Claude): `docs/guide/` is also shown in the web app's Help. The README states each feature's real status and says plainly that the mods aren't published yet.

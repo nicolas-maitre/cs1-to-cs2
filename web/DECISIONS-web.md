@@ -206,3 +206,67 @@ Also taken by Claude while the user was away. Review them.
 - Turn bans are derived conservatively, so partially customised ends get none and keep their default turns. That is reported.
 - The transit stop position along the segment (`t`) assumes CS1 lane beziers run from the segment start to its end. Use the stop `x`/`z` when they disagree.
 - Districts, district policies and specialised industry aren't exported yet, so specialised zones become generic.
+
+## M3 / docs (2026-11-21, overnight)
+
+Taken by Claude while the user was away. Review them.
+
+33. **The buildings worker's matcher is used as is, not re-implemented.**
+    - `buildings/match/match.mjs` (`matchAssets`) and `closestOnBezier` from `buildings/lib/plan.mjs` are imported by relative path into the web core, the worker and the CLI. TypeScript compiles them with `allowJs`, and Vite's dev server is allowed to serve `..`.
+    - The web adapter (`src/core/m3/buildings.ts`) adds only what the UI needs:
+      - per-type overrides (a CS2 prefab or "skip"; `score: null`, reason "chosen by you");
+      - normalised field names. It accepts both `cs2`/`prefab`, `cs2Lot`/`lot` and `noEquivalent`/`no-equivalent`, in case the other worker renames them.
+    - Agreed with the buildings worker by message.
+
+34. **The plan's `buildings` section uses the same rules and item shape as `buildings/lib/plan.mjs`.**
+    - The web builds it itself, because overrides must reach the items. It adds `type: "BuildingPrefab"` and `district`.
+    - A test compares the items, the angle convention and the skip counts with `buildBuildingsPlan()`, on a fixture and on the real Skibidi export with the real catalogue.
+    - That test caught a change the other worker made overnight: the `alternatives` list on each item, for the placer to try in order. The web adds it too, and leaves it empty when the user chose the prefab.
+    - `types` and `notPlaced` don't go into the plan: they are the Assets tab and report.json items (`kind: "buildings"`).
+
+35. **The theme for building matching follows the zoning theme** (NA → "North American", EU → "European"). It only breaks ties between equally good CS2 buildings.
+
+36. **The site bundles a slim CS2 catalogue.**
+    - `public/cs2-catalogue.json` holds 263 placeable buildings (98 kB, 9 kB gzipped), against 17,717 prefabs and 10 MB in the full one. It keeps only the fields `match.mjs` reads.
+    - A test checks that matching against it is identical to the full catalogue on all 423 Skibidi building types.
+    - A catalogue the user loads in the Assets tab is slimmed in the browser before use. The worker receives the catalogue once, not with every build.
+    - Shipping CS2 prefab names, lot sizes and capacities in a static site is metadata, not game assets. Hosting the site is the user's call.
+
+37. **Growables are counted, not placed.** CS2 grows its own buildings on the converted zones. Also not placed:
+    - sub-buildings;
+    - pillars, pipe junctions and poles;
+    - types with no CS2 equivalent (libraries, taxi stands, cable car stops);
+    - buildings whose access road isn't in the plan.
+
+    Each type is a report item.
+
+38. **Districts.**
+    - **Outlines:** traced from the CS1 district raster (cell edges, collinear points removed), only over cells whose centre is in the crop. Holes are filled and reported, because CS2 districts are simple areas.
+    - **Policies with a CS2 equivalent:** the CS2 names come from the game's policy list (`Policy.TITLE[…]` in Locale.cok).
+      - Direct: Heavy Traffic Ban, Combustion Engine Ban, Recycling, Urban Cycling Initiative, Bicycle Traffic Restriction.
+      - Approximated and reported: Small Business Enthusiast, smoke detectors → Fire Safety Sprinkler System, power saving → Energy Consumption Awareness, paid parking → Roadside Parking Fee.
+    - **Reported:** zone specialisations (Leisure, Tourist, Organic, Hightech, SelfSufficient, specialised industry), other policies, and park, industry, campus and airport areas.
+    - Skibidi has no districts, so the layer was checked on the synthetic city (which now has two) and by unit tests.
+
+39. **One source for the user documentation.**
+    - `src/core/docs.ts` holds the guide, requirements, FAQ, conversion matrix and privacy text.
+    - The in-app Help renders it, and `scripts/gen-docs.mjs` writes `docs/guide/{user-guide,faq,what-converts}.md`. A test fails when the files are stale.
+    - The matrix status "in the package; CS2 side in progress" is used where the importer doesn't build the section yet: zoning, TM:PE junction rules, transit, buildings and districts in the mod.
+
+40. **The top-level README** states each feature's real status: what the package contains versus what CS2 builds today (mod or script). It says plainly that the exporter and importer aren't on the Workshop or Paradox Mods yet. The links point only to the two Paradox Mods pages taken from the installed mods.
+
+41. **Release polish.**
+    - One app version, `APP_VERSION` (0.3.0), in `src/core/docs.ts`. It's shown on the landing page and in Help, stamped into `plan.generator`, and checked against package.json by a test.
+    - `scripts/notices.mjs` writes `public/THIRD-PARTY-NOTICES.txt` from the licences of the bundled production dependencies (fflate, react, react-dom, scheduler; all MIT). A test checks it's current.
+    - There's a privacy note on the landing page and in Help: nothing leaves the browser, and only `localStorage` holds the user's choices.
+    - Meta description, Open Graph tags and an inline SVG favicon.
+    - No licence is set for the project itself; that's the user's call.
+
+42. **Help dialog.** `role="dialog"`, `aria-modal`, focus moves to its title, and Escape or a click outside closes it. It fits phone width: the matrix uses a fixed table layout and wrapping status chips (checked at 375 px).
+
+### Open issues (M3 / docs)
+
+- The importer doesn't build `buildings` from the plan yet; the buildings worker's placer reads the same items. The status table says so.
+- When the CS2 game updates, refresh the bundled catalogue: `node buildings/run.mjs catalogue`, then `npm run slim-catalogue`.
+- A CS1 policy name is mapped only when it matches exactly. Names I couldn't check against a real export (no district in Skibidi) may simply go to the report.
+- Free-standing props and trees are exported but not converted.

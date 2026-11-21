@@ -1,3 +1,4 @@
+import { APP_VERSION, PRIVACY } from '../core/docs.ts';
 import { MODS } from './links.ts';
 
 export interface LoadError { title: string; message: string; hint?: string }
@@ -6,6 +7,7 @@ interface Props {
   busy: string | null;
   error: LoadError | null;
   onPick: () => void;
+  onHelp: (section: 'guide' | 'converts' | 'faq' | 'about') => void;
 }
 
 const STEPS: { title: string; text: string }[] = [
@@ -17,12 +19,12 @@ const STEPS: { title: string; text: string }[] = [
   { title: 'Import in CS2', text: 'Start a new city with Road Builder and the CS1 → CS2 Importer, then import the plan.' },
 ];
 
-export function Landing({ busy, error, onPick }: Props) {
+export function Landing({ busy, error, onPick, onHelp }: Props) {
   return (
     <div className="landing">
       <section className="hero">
         <h1>Bring your Cities: Skylines city to Cities: Skylines II</h1>
-        <p className="lead">cs1conv reads an export of your CS1 city and turns it into an import package for CS2: the road network with its road types, bridges and tunnels, rail and metro, the terrain, and the extras CS2 can express.</p>
+        <p className="lead">cs1conv reads an export of your CS1 city and turns it into an import package for CS2: the road network with its road types, bridges and tunnels, rail and metro, the terrain, zoning, traffic rules, transit lines, service buildings and districts, as far as CS2 can express them.</p>
         <div className="drop" role="group" aria-labelledby="drop-title">
           <h2 id="drop-title">Drop a <code>.cs1x</code> file here</h2>
           <p className="muted">or</p>
@@ -41,7 +43,7 @@ export function Landing({ busy, error, onPick }: Props) {
         </div>
       </section>
       <section aria-labelledby="steps-title">
-        <h2 id="steps-title">How it works</h2>
+        <h2 id="steps-title">How it works <button className="link small" onClick={() => onHelp('guide')}>full guide</button></h2>
         <ol className="steps">
           {STEPS.map((s, i) => (
             <li key={s.title}><span className="num" aria-hidden="true">{i + 1}</span><div><b>{s.title}</b><p>{s.text}</p></div></li>
@@ -67,10 +69,15 @@ export function Landing({ busy, error, onPick }: Props) {
         <ul className="plain">
           <li>CS2 maps are smaller: you convert a square of up to 14.3 km, the CS2 playable area. Large 81-tile cities need a crop.</li>
           <li>Road types are rebuilt with Road Builder, so roads keep their lanes, medians, bus lanes and trees. Some widths change slightly; the report lists each one.</li>
-          <li>Buildings, parks and props are not converted yet.</li>
+          <li>Service buildings, parks and landmarks are matched to the closest CS2 building; zoned buildings are grown by CS2 itself. Props and trees are not converted yet.</li>
           <li>Works with exports from cities using 81 Tiles, TM:PE, Node Controller, Intersection Marking Tool and Vanilla+ roads.</li>
         </ul>
+        <p><button className="link" onClick={() => onHelp('converts')}>What converts, feature by feature</button> · <button className="link" onClick={() => onHelp('faq')}>FAQ and troubleshooting</button></p>
       </section>
+      <footer className="landing-foot">
+        <p><b>Privacy:</b> {PRIVACY[0]}</p>
+        <p className="muted small">cs1conv {APP_VERSION} · not affiliated with Colossal Order or Paradox Interactive · <button className="link" onClick={() => onHelp('about')}>About</button> · <a href="./THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">Third-party notices</a></p>
+      </footer>
     </div>
   );
 }
