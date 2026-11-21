@@ -101,7 +101,7 @@ try {
   const rel = path.join(REPO, 'release', v.product);
 
   if (!flag('skip-build')) await step('build', () => node([path.join(REPO, 'tools', 'release', 'build.mjs')], { timeout: 900e3 }).split('\n').slice(-3).join('\n'));
-  await step('build-exec-lib', () => ['cs2-importer/Cs2Importer.csproj', 'terrain/cs2-apply/TerrainApply.csproj'].map((p) => execFileSync('dotnet', ['build', path.join(REPO, p), '-c', 'Release', '-nologo', '-v', 'q'], { encoding: 'utf8' }).slice(-200)).join(' | '));
+  await step('build-exec-lib', () => ['cs2-importer/Cs2Importer.csproj', 'terrain/cs2-apply/TerrainApply.csproj', 'transit/cs2-exec/Cs1ConvTransit.csproj'].map((p) => execFileSync('dotnet', ['build', path.join(REPO, p), '-c', 'Release', '-nologo', '-v', 'q'], { encoding: 'utf8' }).slice(-200)).join(' | '));
 
   await step('package', () => {
     const pkg = path.join(runDir, 'package');

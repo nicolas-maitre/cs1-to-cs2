@@ -24,7 +24,7 @@
 // 0.35 − the name weight. For depots, stations, cargo terminals and schools the kind is strict: no prefab of that kind
 // means noEquivalent (a ferry depot is not a subway yard).
 
-export const MATCHER_VERSION = '1.2.0'; // 1.2: a CS1 water tower becomes the groundwater pump. 1.1: stations keep their height (elevated / ground) and match by platform length
+export const MATCHER_VERSION = '1.2.1'; // 1.2.1: a groundwater intake (CS1's real Water Tower) is a tower too. 1.2: a CS1 water tower becomes the groundwater pump. 1.1: stations keep their height (elevated / ground) and match by platform length
 
 // ------------------------------------------------------------------ CS1 classification
 
@@ -78,7 +78,8 @@ export function classifyCs1(a) {
     case 'FusionPowerPlantAI': return out('power', 'nuclear', f.m_electricityProduction ?? null, 'electricity');
     case 'DamPowerHouseAI': return { ...out(null), decision: 'skip', reason: 'dam power house: CS1 dams are networks; CS2 hydro dams are built differently' };
     case 'WaterFacilityAI':
-      if (f.m_waterIntake > 0) return out('waterPump', null, f.m_waterIntake, 'water');
+      // a CS1 water tower pumps groundwater (m_useGroundWater, with an intake): CS2's groundwater pump (#43, RC3)
+      if (f.m_waterIntake > 0) return out('waterPump', f.m_useGroundWater ? 'tower' : null, f.m_waterIntake, 'water');
       if (f.m_sewageOutlet > 0) return out('sewage', f.m_outletPollution > 0 && !/treatment/.test(name) ? 'outlet' : 'treatment', f.m_sewageOutlet, 'sewage');
       if (/treatment/.test(name)) return out('sewage', 'treatment', null, 'sewage');
       return out('waterPump', 'tower', f.m_waterStorage ?? null, 'water');

@@ -249,7 +249,8 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
     - **What was wrong:** a CS1 water tower is kind `tower`, and CS2 has no water tower, so the whole family competed and WaterPumpingStation01 (surface water) won. CacaoCity's tower at CS2 (1156, −60) stood on dry land and was flagged `notEnoughSurfaceWater`.
     - **Fix:** a CS2 pump whose `WaterPumpingStation.m_AllowedWaterTypes` is `Groundwater` only is kind `tower`. GroundwaterPumpingStation01 works away from water, as a CS1 tower does. Its lot is larger ([6, 6] against the tower's), so under #106 it may not fit, and then it gets "place it yourself".
     - **Web:** the web tool's slim catalogue keeps that field, so web plans get the same match.
-    - **Tests:** matcher test "a water tower becomes the groundwater pump". Not yet run in game.
+    - **Tests:** matcher test "a water tower becomes the groundwater pump".
+    - **RC3 finding (matcher 1.2.1):** CS1's own Water Tower has a water intake (`m_waterIntake` 3750, `m_useGroundWater: true`), so the CS1 classifier still called it a plain pump and CacaoCity got WaterPumpingStation01, flagged `notEnoughSurfaceWater`. A groundwater intake is kind `tower` now; covered by a test. Not in the RC3 commit b71a160.
 44. **Placed power plants and wind turbines are joined to the grid: a new `powerhook` step** (coordinator, after worker-3's 14 km Skibidi stress run: 10 placed producers unconnected).
     - **Why:** in CS1, power flows between touching buildings, so a plant beside the city needs no line, and these 10 had none. CS2 needs a link at the plant's marker:
       - coal, gas and incineration plants feed the **high-voltage** grid (`highVoltageNotConnected` otherwise), and only a transformer turns that into the roads' low voltage;

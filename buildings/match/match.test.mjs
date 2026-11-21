@@ -131,5 +131,7 @@ test('a water tower becomes the groundwater pump, a water intake the surface pum
     cs2('GroundwaterPumpingStation01', { WaterPumpingStation: { m_Capacity: 75000, m_AllowedWaterTypes: 'Groundwater' } }, { capacity: { water: 75000 }, lot: [6, 6] }),
   ] });
   assert.equal(matchAsset(cs1('Water Tower', 'WaterFacilityAI', { aiFields: { m_waterStorage: 600 } }), idx).cs2, 'GroundwaterPumpingStation01');
+  // CS1's own Water Tower: an intake that pumps groundwater (RC3 CacaoCity)
+  assert.equal(matchAsset(cs1('Water Tower', 'WaterFacilityAI', { aiFields: { m_waterIntake: 3750, m_useGroundWater: true } }), idx).cs2, 'GroundwaterPumpingStation01');
   assert.equal(matchAsset(cs1('Water Intake', 'WaterFacilityAI', { aiFields: { m_waterIntake: 1200 } }), idx).cs2, 'WaterPumpingStation01');
 });
