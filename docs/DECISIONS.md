@@ -460,3 +460,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Node Controller shifts are on by default** (`ApplyOffNode`, #135).
      - **Lane turn-check work (#126) is in progress.**
 142. **Lane connections must survive save/reload with 0 Traffic-mod load failures** (Claude, from worker-3's finding). A saved converted city showed a Traffic mod dialog: lane data failed to load at 13 of 70 junctions. That may be what the user saw at the six-arm junction, where the freshly written data checks out (17/17 connections as in CS1, turn_check clean). The acceptance lane check gains a save/reload step that reports load failures and re-runs the turn check. Junctions that can't be written reload-safely get nothing written and are reported. Also verified: the user's trench corridor (#129) is an open cut with walls and no tunnels.
+143. **Worker-3's height and tunnel series is complete and verified** (Claude; importer 0.3.4 in 38e6f31).
+     - **Node Controller shifts on:** 0 node failures, including on the package that failed before.
+     - **Walls burn:** Skibidi has 2035/2035 roads, tunnels equal to CS1's 10, 0 ground roads built as tunnels or elevated, and 6 ground roads over 2 m off. CacaoCity has 684/684 roads, 4 ground roads over 2 m off (was 44), and the user's ramp within 1 m as an embankment. The user's trench corridor is an open cut with no portals.
+     - **Split with shifts:** each half keeps its own shift; segment 25425 is within 0.6 m.
+     - **Without the walls burn:** a few ground tunnels and elevated pieces remain where CS2 cuts long segments itself. That's documented, and the walls burn is the default.

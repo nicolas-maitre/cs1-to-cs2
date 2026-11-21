@@ -442,6 +442,9 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
     - **Measured:**
       - The in-game split ran on the package's terrain everywhere: CacaoCity 0.9.3 20 segments split, Skibidi 0.9.3 7, the 0.9.1 crop 18. All roads built (684/684, 2035/2035, 1328/1328).
       - CacaoCity 25425 is within 0.6 m of CS1 (8.8 m low before).
+      - **With offNode on by default (#59):** the split first skipped offNode segments, and 25425 has a 5 m Node Controller shift. 17 splits instead of 20, and 25425 was 7 m low again (`.gamectl/final10/cacao-093`).
+        - Fixed: offNode segments are split too, each half keeping the shift at its own end and none at the split node (`NodeControllerTests.TestSplitKeepsTheShiftOnItsHalf`).
+        - Re-run `.gamectl/final10/cacao-093-b`: 20 splits, 25425 within 0.6 m, ground roads over 2 m: 4, 684/684 roads.
 63. **The import never builds a plan on the other side of the road** (DECISIONS.md #138, user report: a CacaoCity test city built right-hand; CacaoCity drives on the left).
     - **Cause:** only the mod's Prepare map sets `CityConfigurationSystem.leftHandTraffic` from `plan.source.leftHandTraffic` (#55, DECISIONS.md #90). Scripts that create a city with `game.new` and import through the exec (`tools/e2e/run.mjs`, the flat-spot verifies) left CS2's default, right-hand.
     - **Refusal:**
