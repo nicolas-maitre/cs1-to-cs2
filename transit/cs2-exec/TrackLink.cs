@@ -529,6 +529,7 @@ namespace Cs1ConvTransit
             var pendingTemp = new List<Dictionary<string, object>>();
             var usedTargets = new HashSet<Entity>();
             float maxDist = F(a, "maxDistance", 2500f);
+            float gradeLimit = F(a, "maxGrade", 0f); // 0 = no grade limit (default); --interior-yards passes 0.06
             int candidates = (int)F(a, "candidates", 40f);
             bool dry = a != null && a.TryGetValue("dryRun", out var d) && d is bool b && b;
             bool allowCrossings = !(a != null && a.TryGetValue("allowCrossings", out var ac) && ac is bool acb && !acb);
@@ -641,9 +642,11 @@ namespace Cs1ConvTransit
                     foreach (var t in targets)
                     {
                         float dd = math.distance(ep.xz, t.Pos.xz);
-                        // CS2 drops a track course steeper than it can build without a word (run 12: an 8 m link
-                        // climbing 1.8 m was never built): only candidates within maxGrade (6 %), and at least 20 m
-                        if (dd <= maxDist && dd >= 20f && math.abs(t.Pos.y - ep.y) <= F(a, "maxGrade", 0.06f) * dd) pairs.Add(new KeyValuePair<float, KeyValuePair<Entity, Target>>(dd, new KeyValuePair<Entity, Target>(en, t)));
+                        // with maxGrade (passed with --interior-yards, opt-in): CS2 drops a track course steeper than
+                        // it can build without a word (run 12: an 8 m link climbing 1.8 m was never built), so only
+                        // candidates within that grade and at least 20 m long
+                        bool ok = gradeLimit > 0f ? dd <= maxDist && dd >= 20f && math.abs(t.Pos.y - ep.y) <= gradeLimit * dd : dd <= maxDist && dd > 1f;
+                        if (ok) pairs.Add(new KeyValuePair<float, KeyValuePair<Entity, Target>>(dd, new KeyValuePair<Entity, Target>(en, t)));
                     }
                 }
                 pairs.Sort((p, q) => p.Key.CompareTo(q.Key));

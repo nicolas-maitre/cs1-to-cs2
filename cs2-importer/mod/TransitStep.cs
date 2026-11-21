@@ -44,6 +44,14 @@ namespace Cs2ImporterMod
                 for (int f = 0; f < 10; f++) yield return null;
             }
             for (int f = 0; f < 30; f++) yield return null;
+            // the stops' roads re-select their composition now (the bus bay), not only on the next load: otherwise the road
+            // changes on reload and lane connections written for the old lanes break (DECISIONS-importer.md #64)
+            if (created.Count > 0)
+            {
+                try { report["stopsTouch"] = Ops.Run(new Dictionary<string, object> { { "op", "stops.touch" } }); }
+                catch (Exception e) { report["stopsTouch"] = new Dictionary<string, object> { { "error", e.Message } }; }
+                for (int f = 0; f < 30; f++) yield return null;
+            }
             var errors = new List<object>();
             var posByKey = new Dictionary<string, List<object>>();
             foreach (var o in created)

@@ -68,6 +68,9 @@ export async function transit(argv) {
         await b.wait(10);
       }
       await b.wait(30);
+      // the stops' road edges re-select their composition now (bus bay), not only on the next load
+      out.touched = await op({ op: 'stops.touch' }, { phase: 'tool' });
+      await b.wait(30);
       out.stops = { requested: j.stops.length, defined: created.filter(r => !r.error).length, errors: created.filter(r => r.error) };
       // resolve each line stop at the exact position its stop object was created (up to 14 m off the centre line on
       // wide roads), with a tight radius, so neighbouring stops on the other side are never picked
@@ -95,7 +98,8 @@ export async function transit(argv) {
       const lines = (plan.transit?.lines ?? []).map(l => ({ name: l.name, cs1Type: l.cs1Type, stops: (l.stops ?? []).map(s => ({ x: s.x, z: s.z })) }));
       // --interior-yards (opt-in, DECISIONS-transit #14): a type whose track doesn't leave the crop gets a yard beside
       // an open end of its track inside the area instead of a "place it yourself" report entry
-      const depotMode = a['interior-yards'] || a.interiorYards ? Object.fromEntries(['Metro', 'Train'].map(t => [t, plan.transit?.depotMode?.[t] === 'manual' ? 'manual' : 'interior'])) : (plan.transit?.depotMode ?? null);
+      const interior = !!(a['interior-yards'] || a.interiorYards);
+      const depotMode = interior ? Object.fromEntries(['Metro', 'Train'].map(t => [t, plan.transit?.depotMode?.[t] === 'manual' ? 'manual' : 'interior'])) : (plan.transit?.depotMode ?? null);
       const yp = await op({ op: 'yards.plan', bounds: plan.bounds, lines, depotMode, edgeMargin: Number(a.edgeMargin ?? 80) });
       out = { types: yp.types, report: yp.report, items: yp.buildings.items };
       // train/metro lines pathfind when they are created; created before their stations were joined to the track
@@ -110,7 +114,7 @@ export async function transit(argv) {
       };
       if (!yp.buildings.items.length) {
         // no yard to place: still join the stations' platform tracks to the line track, and recompute the paths
-        out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500) }, { phase: 'tool', pump: 'tool' });
+        out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500), ...(interior ? { maxGrade: 0.06 } : {}) }, { phase: 'tool', pump: 'tool' });
         await b.wait(60);
         out.repath = await op({ op: 'lines.repath', types: ['Train', 'Subway'] }, { phase: 'tool' });
         await b.wait(120);
@@ -134,7 +138,7 @@ export async function transit(argv) {
       }
       if (!placed.placed) break;
       await b.wait(60);
-      out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500) }, { phase: 'tool', pump: 'tool' });
+      out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500), ...(interior ? { maxGrade: 0.06 } : {}) }, { phase: 'tool', pump: 'tool' });
       await b.wait(60);
       // the lines' paths were computed before their stations and yard were joined to the track: recompute them
       out.repath = await op({ op: 'lines.repath', types: ['Train', 'Subway'] }, { phase: 'tool' });

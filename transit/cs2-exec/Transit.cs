@@ -6,6 +6,8 @@
 //   prefabs      {}                                  line prefabs (RouteData + TransportLineData), stop prefabs
 //                                                    (TransportStopData objects) and depot prefabs, with transport type
 //   stops.create {stops:[{key,x,z,tx,tz,side,prefab}], inset=1.5, radius=12}   [phase tool]
+//   stops.touch  {}                                  [phase tool] after the last stops.create batch: the stops' road
+//                                                    edges (and nodes) Updated, so CS2 picks the stop composition now
 //                one stop object per entry on the road edge nearest to (x,z), on `side` ("right" | "left" of the
 //                direction (tx,tz)), as a permanent definition attached to that edge (CreationDefinition.m_Attached)
 //   stops.list   {type?}                             TransportStop objects: prefab, type, position, owner, routes
@@ -61,6 +63,7 @@ namespace Cs1ConvTransit
                 case "node.at": return NodeAt(a);
                 case "lines.reach": return TrackLink.Reach(Str(a, "name", null));
                 case "counts": return Counts();
+                case "stops.touch": return StopsTouch();
                 case "vehicles": return Vehicles(Str(a, "match", "Subway"));
                 case "infoviews": return Infoviews(null);
                 case "yards.inspect": return TrackLink.Inspect();
@@ -137,6 +140,31 @@ namespace Cs1ConvTransit
             }
             edges.Dispose();
             return best;
+        }
+
+        /// <summary>After stops.create: marks every road edge that carries a kerbside stop (and its two nodes) Updated, so
+        /// CS2 re-selects the edge composition now (the stop variant with its bus bay), as its own stop tool does. Without
+        /// it the composition changes only on the next load, and lane connections written in session point at the
+        /// wrong lanes afterwards (worker-3, roads changing after save/reload). Call once, in phase tool, after the
+        /// last stops.create batch, then wait a few frames.</summary>
+        static object StopsTouch()
+        {
+            var edges = new HashSet<Entity>();
+            var es = Query(new[] { ComponentType.ReadOnly<Game.Routes.TransportStop>(), ComponentType.ReadOnly<Attached>() });
+            foreach (var e in es)
+            {
+                var parent = Em.GetComponentData<Attached>(e).m_Parent;
+                if (IsReal(parent) && Em.HasComponent<Edge>(parent)) edges.Add(parent);
+            }
+            es.Dispose();
+            int nodes = 0;
+            foreach (var e in edges)
+            {
+                if (!Em.HasComponent<Updated>(e)) Em.AddComponent<Updated>(e);
+                var ed = Em.GetComponentData<Edge>(e);
+                foreach (var n in new[] { ed.m_Start, ed.m_End }) if (IsReal(n) && !Em.HasComponent<Updated>(n)) { Em.AddComponent<Updated>(n); nodes++; }
+            }
+            return new Dictionary<string, object> { { "op", "stops.touch" }, { "edges", edges.Count }, { "nodes", nodes } };
         }
 
         static object StopsCreate(Dictionary<string, object> a)

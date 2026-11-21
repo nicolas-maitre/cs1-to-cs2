@@ -233,7 +233,6 @@ namespace Cs2Importer
             return best;
         }
 
-        /// <summary>Real edges connected to a node.</summary>
         /// <summary>
         /// The edges that start or end at the node. ConnectedEdge also lists local connections: a power line's or pipe's
         /// end joins a road in the middle of the road's edge, and that edge then appears on the line's node too (buildings

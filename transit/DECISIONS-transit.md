@@ -59,3 +59,4 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
     - **Default unchanged:** decision #8 / docs/DECISIONS.md #83 (edge yards, otherwise a "place it yourself" report entry) stays the default.
     - **Why:** on Skibidi's 6 km crop the metro track never leaves the area. So the metro lines, which now have paths, can only get vehicles from an interior yard; this verifies that the chain works end to end.
 
+    - **Grade limit on yard links (also opt-in, with `--interior-yards`):** `tracklink` then only joins the yard to line nodes at least 20 m away and within 6 % grade (`maxGrade`). In run 12, an 8 m link climbing 1.8 m was silently not built. In run 13, the 110 m link at 5.8 % was built, but the yard's trains still stayed parked (QA §5, rail hunt stopped by #133).

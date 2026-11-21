@@ -46,6 +46,8 @@ namespace Cs2Importer
                         var le = subs[i].m_SubLane;
                         if ((subs[i].m_PathMethods & Game.Pathfind.PathMethod.Road) == 0) continue;
                         if (!em.HasComponent<Game.Net.CarLane>(le) || !em.HasComponent<EdgeLane>(le) || em.HasComponent<Game.Net.SecondaryLane>(le) || em.HasComponent<MasterLane>(le)) continue;
+                        // a bus stop's bay ("Car Bay Lane"): not a driving lane of CS1's road (#64; worker-5's IsBayLane rule)
+                        if (w.Prefabs.GetPrefabName(em.GetComponentData<Game.Prefabs.PrefabRef>(le).m_Prefab).Contains("Bay Lane")) continue;
                         var delta = em.GetComponentData<EdgeLane>(le).m_EdgeDelta;
                         bool alongEdge = delta.y > delta.x;
                         var lc = em.GetComponentData<Curve>(le).m_Bezier;
