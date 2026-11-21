@@ -43,7 +43,7 @@ namespace Cs2Buildings
         {
             var a = Prefixed(args, "buildings.");
             string file = P.Str(args, "buildingsPlan", null) ?? PlanFile(args);
-            if (file == null || !HasSection(file, "buildings", true)) return Skipped("no buildings section in the plan");
+            if (file == null || !HasSection(file, "buildings", true)) return Skipped("no buildings in this package");
             a["plan"] = file;
             return (IEnumerator)Placement.Place(a);
         }
@@ -65,7 +65,7 @@ namespace Cs2Buildings
         static IEnumerator Section(Dictionary<string, object> args, string section, string prefix, Func<Dictionary<string, object>, IEnumerator> run)
         {
             var file = ObjectsFile(args, section);
-            if (file == null) return Skipped("no " + section + " section in the plan or in cs1conv-objects.json");
+            if (file == null) return Skipped("none in this package");
             var a = Prefixed(args, prefix);
             a["plan"] = file;
             return run(a);

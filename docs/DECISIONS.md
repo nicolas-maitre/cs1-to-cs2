@@ -209,3 +209,10 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Fixed at scale:** a 27 s placer freeze (it now yields every 20 ms) and a dry 3.5 km river. Sources are now spread over big water regions: 146/150 wet, median depth error 1.07 m.
     - Details in `docs/QA.md` §4.
 78. **Default depots for every transit type without a matched CS1 depot** (BusDepot01 / TramDepot01 / SubwayYard01 / RailYard01; Claude). CS2 lines only get vehicles from a depot of their type. Rail and subway yards still need their track linked, so metro and train lines show 0 trains until that's done.
+79. **Release 0.3.0 accepted through the real user flow** (Claude; `tools/release/acceptance.mjs`, `docs/QA.md` §6).
+    - **Setup:** the mod was installed from the release zip and the package built by the web CLI.
+    - **Steps,** each driven by its own mod button: Install RB configs → restart → new city → Check → Prepare map (15.6 s) → Import (49 s).
+    - **Result:** roads 2035/2035, zoning 93%, 325 priority signs, buildings 109/109, trees 3380/4216, transit 9/9 lines, outside connections 20/20.
+80. **Trees on wider CS2 roads are moved aside (mean 3.1 m) instead of dropped**: 705 moved, 654 dropped, down from 1359 (Claude).
+81. **Building fallback passes: nearby 150 m → 400 m → `anywhere` in the crop, chosen per type in the web tool** (Claude). With `anywhere`, Skibidi places 108/108, with a maximum move of 1.2 km for the huge CS2 lots. The distance is reported for every building.
+82. **`tools/release/build.mjs` lands together with the importer's 0.3.0 version bump and changelog** (Claude, coordination). Committed on its own, its version check fails.

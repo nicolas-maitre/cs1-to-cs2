@@ -155,17 +155,21 @@ This is the e2e city (Plains, converted CS1 terrain and water, 2035 roads), save
 
 Screenshots are in `.gamectl/buildings/<ts>/` (git-ignored).
 
-## 5. Oversized lots: the nearby fallback
+## 5. Oversized lots: the nearby, wide and anywhere fallbacks
 
 When neither a slide along its own road nor an alternative prefab fits, the placer searches for **free land nearby**:
 - **Candidates:** every imported road edge within `nearbyRadius` m (default 150) of the CS1 position, both sides, every 6 m. It skips spots within `endMargin` m of the edge's ends, and road sides with an embankment or trench wall (`Raised` / `Lowered`).
 - **Order:** closest first, measured as the distance of the lot centre to the CS1 centre. The match and its alternatives are tried at each spot, with the same fit test.
 
-Per item, the report gives `moved` (m) and `movedToOtherRoad`.
+**Passes:** `nearby` (default) searches within `nearbyRadius` (150 m), then within `wideRadius` (400 m; 0 turns it off). `anywhere` does the same, then searches every imported road in the crop, closest to the CS1 spot first (up to `maxAnywhereTries`, 20 000). Each pass only tries spots farther than the previous radius.
 
-**Choosing per building type:** a plan item's `fallback` is `"nearby"` or `"skip"`. The run option `fallback` (default `"nearby"`) applies when an item has none.
-- `buildBuildingsPlan(…, { fallback, fallbackByType: { [cs1Name]: 'nearby' | 'skip' } })` writes the field only when one is chosen, so the default plan doesn't change.
-- Run options: `nearbyRadius`, `maxNearbyTries` (4000).
+**Report:** every placed item has `distance` (m between the placed and the CS1 lot centre) and, when a pass moved it, `fallbackPass` and `moved`. The summary has `movedByPass` and `distanceStats` (median, p90, max, over 50/150/400 m). On Skibidi with `anywhere`: 108/108 placed, max 1222 m (the University, Prison, Cargo Center and Combustion Plants; decision #28).
+
+**Choosing per building type:** a plan item's `fallback` is `"nearby"`, `"anywhere"` or `"skip"`. The run option `fallback` (default `"nearby"`) applies when an item has none.
+- `buildBuildingsPlan(…, { fallback, fallbackByType: { [cs1Name]: 'nearby' | 'anywhere' | 'skip' } })` writes the field only when one is chosen, so the default plan doesn't change.
+- Run options: `nearbyRadius`, `wideRadius`, `maxNearbyTries` (4000), `maxAnywhereTries`.
+
+**Default depots:** when the plan has transit lines of a type with no depot among the items, `buildBuildingsPlan` (via `addDefaultDepots`, also used by the web tool) adds one `BusDepot01` / `TramDepot01` / `SubwayYard01` / `RailYard01` item at the line's first stop, `default: true`. Rail yards are flagged `needsTrackLink`: their track has to be linked to the line by hand (decision #30).
 
 **Idempotent:** an item whose prefab (or an alternative) already stands within 30 m + the slide range of its spot is `alreadyPlaced`, so re-runs on a saved city don't stack duplicates.
 
@@ -191,7 +195,7 @@ node buildings/run.mjs objects --objects .gamectl\buildings\o.json --buildings .
 - **Skibidi:** Tree2variant → NA_LondonPlaneTree01, Tree3variant → EU_PoplarTree01, Beech01low → OakTree01, Bush01 → GreenBushWild01, the 8 rocks → the 8 boulders.
 
 **Placer ops:**
-- **`objects`:** a Permanent object definition per tree or prop, 2000 per frame. Trees on a road surface (+1.5 m) or inside a building lot are skipped.
+- **`objects`:** a Permanent object definition per tree or prop, 2000 per frame. A tree on a CS2 road surface (+1.5 m, `roadClearance`) is moved perpendicular to just past the road edge when that is at most `roadsideMove` m (6) and the spot is free; otherwise it is skipped, as are trees inside a building lot. Skibidi: 705 moved (mean 3.1 m), 654 dropped (was 1359; decision #27).
 - **`areas`:** one area definition per district or surface (CreationDefinition + `Node` polygon).
   - Districts are then named the way `NameSystem.SetCustomName` does it, and get their policies as a `Game.Policies.Modify` event, the way `PoliciesUISystem.SetPolicy` does it.
   - Both are done with the EntityManager: those methods use end-frame command buffers, which exec code may not create.

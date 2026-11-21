@@ -44,7 +44,9 @@ namespace Cs2Buildings
             public float Slide;
             public bool NearJunction;
             public string RoadSide;
-            public string Fallback;          // "nearby" | "skip" | null (run option)
+            public string Fallback;          // "nearby" | "anywhere" | "skip" | null (run option)
+            public float Distance = -1;      // metres between the placed lot centre and the CS1 lot centre (every placed item)
+            public string FallbackPass;      // "nearby" | "wide" | "anywhere" when a fallback pass placed it
             public float Moved = -1;         // metres from the CS1 position when the nearby fallback placed it
             public bool MovedToOtherRoad; // flags of the road side the lot faces, e.g. "Sidewalk" or "Raised"
             public int AccessSegment;
@@ -92,13 +94,20 @@ namespace Cs2Buildings
             string defaultFallback = P.Str(a, "fallback", "nearby");
             float nearbyRadius = (float)P.Num(a, "nearbyRadius", 150);
             int maxNearbyTries = (int)P.Num(a, "maxNearbyTries", 4000);
-            if (defaultFallback != "nearby" && defaultFallback != "skip") throw new ArgumentException("fallback must be \"nearby\" or \"skip\"");
+            double frameBudgetMs = P.Num(a, "frameBudgetMs", 20);
+            // Second pass of the nearby search with a larger radius (0 = none), and the "anywhere" fallback: every imported
+            // road in the crop, closest first to the CS1 spot.
+            float wideRadius = (float)P.Num(a, "wideRadius", 400);
+            int maxAnywhereTries = (int)P.Num(a, "maxAnywhereTries", 20000);
+            if (defaultFallback != "nearby" && defaultFallback != "anywhere" && defaultFallback != "skip") throw new ArgumentException("fallback must be \"nearby\", \"anywhere\" or \"skip\"");
+            var movedByPass = new Dictionary<string, int>();
             int moved = 0;
 
             var items = LoadItems(P.Required(a, "plan"), limit);
             var roads = RoadEdges(em);
             var existing = ExistingLots(em);
-            var already = FindBuildings(em); // for idempotency: an item already built near its spot is not placed again
+            // for idempotency: an item already built near its spot is not placed again (run option idempotent=false turns it off, for stress tests)
+            var already = P.Bool(a, "idempotent", true) ? FindBuildings(em) : new List<Found>();
             int alreadyPlaced = 0;
             var placedLots = new List<float2[]>();
             var heights = terrain.GetHeightData(true);
@@ -111,8 +120,13 @@ namespace Cs2Buildings
             var slides = new List<float> { 0f };
             for (float s = 4f; s <= maxSlide + 0.01f; s += 4f) { slides.Add(s); slides.Add(-s); }
             var grid = new RoadGrid(roads);
+            // Frame budget: the fit checks (slides, alternatives, fallback passes over thousands of road edges) yield a
+            // frame whenever frameBudgetMs is used up, so the game keeps rendering (a 14 km city stalled CS2 for 27 s).
+            double frameStart = sw.Elapsed.TotalMilliseconds;
+            int resolveFrames = 0;
             foreach (var it in items)
             {
+                if (frameBudgetMs > 0 && sw.Elapsed.TotalMilliseconds - frameStart > frameBudgetMs) { yield return null; resolveFrames++; frameStart = sw.Elapsed.TotalMilliseconds; }
                 // Snap the front point to the nearest real road edge once; every attempt reuses it.
                 RoadEdge road = null;
                 float roadT = 0, roadLen = 0;
@@ -210,11 +224,21 @@ namespace Cs2Buildings
                 // Nearby free land: every road edge within the radius, both sides, every 6 m away from the edge ends,
                 // tried closest-first (distance between the would-be lot centre and the CS1 centre).
                 string fallback = it.Fallback ?? defaultFallback;
-                if (!done && fallback == "nearby" && nearbyRadius > 0)
+                var passes = new List<KeyValuePair<string, float>>();
+                if (fallback == "nearby" || fallback == "anywhere")
                 {
-                    float depth0 = em.GetComponentData<BuildingData>(prefabs[0].Value).m_LotSize.y * 4f;
+                    if (nearbyRadius > 0) passes.Add(new KeyValuePair<string, float>("nearby", nearbyRadius));
+                    if (wideRadius > nearbyRadius) passes.Add(new KeyValuePair<string, float>("wide", wideRadius));
+                }
+                if (fallback == "anywhere") passes.Add(new KeyValuePair<string, float>("anywhere", float.PositiveInfinity));
+                float prevRadius = 0;
+                float depth0 = em.GetComponentData<BuildingData>(prefabs[0].Value).m_LotSize.y * 4f;
+                foreach (var pass in passes)
+                {
+                    if (done) break;
+                    float radius = pass.Value;
                     var cands = new List<KeyValuePair<float, float4>>(); // distance → (edge index, t, side, unused)
-                    var near = grid.Query(centre - nearbyRadius - 64f, centre + nearbyRadius + 64f);
+                    var near = float.IsInfinity(radius) ? roads : grid.Query(centre - radius - 64f, centre + radius + 64f);
                     for (int ri = 0; ri < near.Count; ri++)
                     {
                         var r = near[ri];
@@ -232,31 +256,36 @@ namespace Cs2Buildings
                                 if ((sideFlags & (CompositionFlags.Side.Raised | CompositionFlags.Side.Lowered)) != 0) continue;
                                 var n = new float2(-tan.y, tan.x) * sd;
                                 float d = math.distance(c + n * (r.HalfWidth + depth0), centre);
-                                if (d <= nearbyRadius) cands.Add(new KeyValuePair<float, float4>(d, new float4(ri, t, sd, 0)));
+                                // Later passes only try what the earlier ones didn't reach.
+                                if (d <= radius && d > prevRadius) cands.Add(new KeyValuePair<float, float4>(d, new float4(ri, t, sd, 0)));
                             }
                         }
                     }
+                    prevRadius = radius;
                     cands.Sort((x, y) => x.Key.CompareTo(y.Key));
-                    int tries = 0;
+                    int tries = 0, maxTries = pass.Key == "anywhere" ? maxAnywhereTries : maxNearbyTries;
                     foreach (var cand in cands)
                     {
-                        if (done || ++tries > maxNearbyTries) break;
+                        if (done || ++tries > maxTries) break;
+                        if (frameBudgetMs > 0 && sw.Elapsed.TotalMilliseconds - frameStart > frameBudgetMs) { yield return null; resolveFrames++; frameStart = sw.Elapsed.TotalMilliseconds; }
                         var r = near[(int)cand.Value.x];
                         for (int ni = 0; ni < prefabs.Count && !done; ni++)
                             if (TryOnRoad(it, prefabs[ni], ni, r, cand.Value.y, cand.Value.z, grid, existing, placedLots, checkCollisions, ref heights, ref lastHit))
                             {
                                 done = true;
                                 it.Moved = math.distance(it.Position.xz, centre);
+                                it.FallbackPass = pass.Key;
                                 it.RoadEdge = r.Entity;
                                 it.MovedToOtherRoad = road == null || r.Entity != road.Entity;
                                 var sf = cand.Value.z > 0 ? r.Flags.m_Left : r.Flags.m_Right;
                                 it.RoadSide = sf.ToString();
                             }
                     }
-                    if (done) moved++;
+                    if (done) { moved++; int c0; movedByPass.TryGetValue(pass.Key, out c0); movedByPass[pass.Key] = c0 + 1; }
                 }
+                if (done) it.Distance = math.distance(it.Position.xz, centre);
                 if (!done) Fail(it, failures, "collision", "lot overlaps a " + lastHit + " (tried " + prefabs.Count + " prefab(s), slides up to ±" + maxSlide + " m"
-                    + (fallback == "nearby" && nearbyRadius > 0 ? ", free land within " + nearbyRadius + " m" : ", fallback " + fallback) + ")");
+                    + (passes.Count > 0 ? ", free land " + (fallback == "anywhere" ? "anywhere in the crop" : "within " + passes[passes.Count - 1].Value + " m") : ", fallback " + fallback) + ")");
             }
 
             // Create the definitions in batches, a few frames apart.
@@ -308,7 +337,7 @@ namespace Cs2Buildings
                 if (road != Entity.Null) { connected++; if (road == it.RoadEdge) connectedToSnapEdge++; }
                 it.Reason = (road != Entity.Null ? "connected" : "placed, not connected to a road" + (it.RoadSide != null ? " (road side: " + it.RoadSide + ")" : ""))
                     + (it.Alternative > 0 ? "; alternative #" + it.Alternative : "") + (it.Slide != 0 ? "; slid " + it.Slide + " m along the road" : "") + (it.NearJunction ? "; front near a junction" : "")
-                    + (it.Moved >= 0 ? "; moved " + it.Moved.ToString("F0") + " m to free land" + (it.MovedToOtherRoad ? " on another road" : " on the same road") : "");
+                    + (it.Moved >= 0 ? "; moved " + it.Moved.ToString("F0") + " m to free land (" + it.FallbackPass + " pass)" + (it.MovedToOtherRoad ? " on another road" : " on the same road") : "");
             }
 
             var list = new List<object>();
@@ -319,14 +348,14 @@ namespace Cs2Buildings
                     { "x", R(it.Position.x) }, { "y", R(it.Position.y) }, { "z", R(it.Position.z) },
                     { "yaw", R(math.degrees(math.atan2(it.Forward.x, it.Forward.y))) },
                     { "lot", new List<object> { it.Lot.x, it.Lot.y } }, { "snapDistance", R(it.SnapDistance) },
-                    { "alternative", it.Alternative }, { "slide", R(it.Slide) }, { "moved", R(it.Moved) }, { "movedToOtherRoad", it.MovedToOtherRoad },
+                    { "alternative", it.Alternative }, { "slide", R(it.Slide) }, { "moved", R(it.Moved) }, { "distance", R(it.Distance) }, { "fallbackPass", it.FallbackPass }, { "movedToOtherRoad", it.MovedToOtherRoad },
                     { "entity", it.Placed == Entity.Null ? null : (object)it.Placed.Index },
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "usedAlternative", usedAlternative }, { "slid", slid }, { "movedToFreeLand", moved }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "usedAlternative", usedAlternative }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
-                { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames },
+                { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
                 { "offset", new List<object> { ox, oz } }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", list },
             };
             var reportPath = P.Str(a, "report", null);
@@ -667,6 +696,20 @@ namespace Cs2Buildings
                     });
                 }
             return new Dictionary<string, object> { { "count", list.Count }, { "buildings", list }, { "roads", roadsNear }, { "edges", edgesNear } };
+        }
+
+        /// <summary>Distance between placed and CS1 lot centres over the placed items: median, p90, max and counts over 50/150/400 m.</summary>
+        static Dictionary<string, object> DistanceStats(List<Item> items)
+        {
+            var d = new List<float>();
+            foreach (var it in items) if (it.Status == "placed" && it.Distance >= 0) d.Add(it.Distance);
+            d.Sort();
+            Func<float, object> q = f => d.Count == 0 ? null : (object)R(d[Math.Min(d.Count - 1, (int)(f * (d.Count - 1)))]);
+            return new Dictionary<string, object>
+            {
+                { "placed", d.Count }, { "median", q(0.5f) }, { "p90", q(0.9f) }, { "max", q(1f) },
+                { "over50m", d.FindAll(x => x > 50).Count }, { "over150m", d.FindAll(x => x > 150).Count }, { "over400m", d.FindAll(x => x > 400).Count },
+            };
         }
 
         static Dictionary<string, object> ToObj(Dictionary<string, int> d)

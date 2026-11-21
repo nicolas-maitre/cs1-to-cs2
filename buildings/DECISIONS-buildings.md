@@ -146,3 +146,28 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
     - **Why Windows:** gamectl's tests and helpers resolve Windows paths; a Linux runner would test something else.
     - **Not built in CI:** anything compiled against the games' DLLs (both mods, both bridges, `buildings/src`, terrain's CS2 apply). The DLLs aren't on runners and can't be redistributed. The workflow says so in its header.
     - **Checked locally** with the same commands and an empty `LOCALAPPDATA`: all green (web 67 + 2 skipped, gamectl 46, terrain 13, buildings 23, release 3, CoreTests 20).
+
+## Quality pass (2026-11-21, after QA)
+
+27. **Trees on a wider CS2 road are moved, not dropped.** A tree within `halfWidth + roadClearance` of a road is pushed along the perpendicular from that road's closest point to `halfWidth + roadClearance + 0.25 m`. It's kept when that's at most `roadsideMove` m (default 6) and the new spot is off every road and lot; otherwise it's dropped as before.
+    - **Why perpendicular to the nearest road:** CS1 trees along a road sit on its sidewalk or verge, so "the same side, just past the wider CS2 surface" keeps the CS1 look. A free-spot search would scatter them.
+    - **Skibidi 3 km:** 3404 trees created (was 2744), 705 moved (mean 3.1 m), 654 dropped (was 1359), 158 in a lot. Screenshot `.gamectl/buildings/objects-20261121-090240/trees-close.png`: trunks on the verges, crowns overhanging the road as in a normal CS2 city.
+
+28. **Huge lots: a wider pass and an "anywhere" fallback.** `fallback` is `nearby` (default: 150 m, then a second pass to `wideRadius` 400 m), `anywhere` (then every imported road in the crop, closest to the CS1 spot first, up to `maxAnywhereTries` 20 000 candidates), or `skip`. Later passes only try candidates farther than the earlier pass's radius.
+    - **Every placed building now reports `distance`** (placed vs CS1 lot centre) and `fallbackPass`. The summary has `movedByPass` and `distanceStats` (median, p90, max, over 50/150/400 m).
+    - **Skibidi 3 km, all items "anywhere":** **108/108 placed** (was 96), 105 connected. Passes: nearby 20, wide 3, anywhere 9. Median distance 9.6 m, p90 151 m, max 1222 m. The 9 "anywhere" moves (620–1222 m) are the University, Prison, Cargo Center and five Combustion Plants: lots no free land near home can hold.
+    - **Per type in the web tool (worker-2):** "anywhere" when the CS2 lot has more than 400 cells, else "nearby", and a per-type select in the Assets tab.
+
+29. **Districts accept the web tool's shape.** `plan.districts.items[]` with `outlines` (several polygons) and no `prefab` become one "District Area" per outline, each with the name and policies. `plan.districts.cityPolicies` are set on the city entity with the same `Modify` event as district policies.
+    - **Why here, not in the web:** the web shape (outlines, area, cs1Policies) is the published plan format (schema §2), and one reader in C# is cheaper than two writers.
+    - **Verified in game:** 2 outlines → 2 districts, both named "QA Twin District", Heavy Traffic Ban + Recycling set on both, Fire Safety Sprinkler System set city-wide.
+
+30. **Default depots for transit lines** (`addDefaultDepots` in `lib/plan.mjs`, also exported for the web tool). CS2 lines get vehicles only from a depot of their type; CS1 metro and train lines need none, so converted cities often have lines and no depot (worker-4: Metro Line 3 had 0 trains).
+    - **What it adds:** for every CS1 line type (Bus, Tram, Metro, Train) with lines but no matched depot of that type, one item: `BusDepot01` / `TramDepot01` / `SubwayYard01` / `RailYard01`, `default: true`, fallback "nearby", at the first stop of the first line.
+    - **Rail yards** sit at the first *station* stop and get `needsTrackLink: true` plus a reason saying the track must be linked by hand. A CS2 yard dispatches only over track connected to the line, and snapping a yard's built-in track onto an imported track end needs more than lot placement.
+    - **Skibidi:** adds RailYard01 (Train Line 1) and SubwayYard01 (Metro Lines 1–3); bus depots already exist.
+
+31. **Release acceptance test as a script** (`tools/release/acceptance.mjs`): build the release, install the importer mod **from the release zip** (the dev build in Mods is backed up and restored), make the package with the web CLI, then press the mod's own Options buttons (Install Road Builder configs → restart → new city → Check → Import) through the exec library's `op mod`. It calls the same `Actions` methods the buttons do; no import code runs by exec. Results: `docs/QA.md` "Release acceptance".
+
+32. **The placer's fit checks yield frames** (`frameBudgetMs`, default 20 ms): the resolve loop and the fallback candidate loop yield whenever the budget is used up. Before, every item's slides, alternatives and fallback passes ran in one frame, before the first creation batch; worker-4's 14 km Skibidi run froze CS2 for 26.8 s (bridge status age, 0 fps).
+    - **Verified** on that city (`cs1conv-e2e-20261121-1025`, 253 items) with idempotency off (`idempotent: false`, new run option for stress tests), so every item collides with its twin and runs the full search: **max status age 0.94 s, min 14.4 fps**, 2803 yielded frames, 92 s. A real import does far less searching.

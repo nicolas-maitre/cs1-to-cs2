@@ -10,7 +10,7 @@
 | Component | Declared in (source of truth) | Must match | Artefact |
 | --- | --- | --- | --- |
 | CS1 exporter mod | `cs1-exporter/src/Exporter.cs` (`ModInfo.Version`) | top heading of `cs1-exporter/CHANGELOG.md` | `cs1-exporter-<v>.zip` |
-| CS2 importer mod | `cs2-importer/mod/Mod.cs` (`Mod.Version`) | `<Version>` in `Cs2ImporterMod.csproj` | `cs2-importer-<v>.zip` |
+| CS2 importer mod | `cs2-importer/mod/Mod.cs` (`Mod.Version`) | `<Version>` in `Cs2ImporterMod.csproj`, `ModVersion` in `mod/Properties/PublishConfiguration.xml`, top heading of `cs2-importer/CHANGELOG.md` | `cs2-importer-<v>.zip` (mod folder, `Properties/` for Paradox Mods, changelog) |
 | Web tool | `web/package.json` `version` | – | `web-<v>.zip` |
 | Buildings steps (library) | `buildings/src/Steps.cs` (`Steps.Version`) | – | compiled into the importer mod |
 
@@ -44,6 +44,16 @@ Output goes to `release/<product version>/` (git-ignored):
 **How the mods are built:** `dotnet build -c Release` with the deploy folder pointed into `release/` (`-p:CS1ModsDir=…`, `-p:CS2LocalMods=…`), so a release build never touches the installed games' mod folders. The web tool is built with `npm run build` (`--npm-ci` installs first).
 
 **Checking a release:** unzip with any standard tool (Windows `Expand-Archive` was used) and compare against `SHA256SUMS.txt`. `node --test tools/release/build.test.mjs` checks the zip writer and the notes.
+
+## Acceptance test
+
+`node tools/release/acceptance.mjs` runs the user's flow with the release artefacts (needs local.props and the CS2 lock):
+1. builds the release and installs the importer mod **from its zip** into CS2's Mods folder (the dev build there is backed up and put back; `--keep-mod` leaves the release build);
+2. makes the package with the web CLI (`--cs1x`, default the Skibidi sample; `--auto-crop`, default 3000);
+3. presses the mod's Options buttons as a user would: **Install Road Builder configs**, restart CS2, new city (`--map`, default Corral Riches), **Check**, **Import into this city**;
+4. simulates for 60 s (`--simulate`), takes screenshots, saves `cs1conv-acceptance-<time>`, and writes `.gamectl/acceptance/<time>/summary.json` with each step's time and result.
+
+The buttons are pressed through the Cs2Importer exec library's `op mod`, which calls the same `Actions` methods; there is no other way into the Options page from a script. Results go in [QA.md](QA.md) under "Release acceptance".
 
 ## Publishing (by the owner)
 

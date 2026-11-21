@@ -112,3 +112,45 @@ The saves were read-only, and nothing was saved. Each launch did a single `save.
 - **Scale limits seen:** none in transit (305 stops in batches of 20, 20 lines, one per call), outside connections (10), water sources (15) or the save (35 MB).
   - **Memory:** CS2 grew from 3.5 to 5.0 GB working set over the run.
   - **Main thread:** apart from F2, no step stalled it for more than 1.8 s, and the import ran at a minimum of 6.8 fps.
+
+## 5. Buildings quality pass (buildings worker)
+
+All on worker-3's road-only save `cs1conv-e2e-embank-fix` (Skibidi 3 km), not saved; report `.gamectl/buildings/objects-20261121-090240/`.
+
+| Change | Before | After |
+| --- | --- | --- |
+| **Roadside trees** (`roadsideMove`, 6 m): a tree on a wider CS2 road is pushed perpendicular to just past the road edge if that spot is free | 2744 trees, 1359 dropped on roads | **3404 trees: 705 moved (mean 3.1 m), 654 dropped**, 158 in a lot |
+| **Huge lots:** `fallback` `nearby` (150 m, then a 400 m `wideRadius` pass) or `anywhere` (any imported road in the crop, nearest first) | 96/108 placed, 12 big services failed | **108/108 placed**, 105 connected; passes: nearby 20, wide 3, anywhere 9 |
+| **Distance reported** for every placed building (`distance`, `fallbackPass`; summary `distanceStats`) | only for nearby moves | median 9.6 m, p90 151 m, max 1222 m; 9 over 400 m (University, Prison, Cargo Center, five Combustion Plants) |
+| **Districts in the web tool's shape** (`outlines`, no prefab; `cityPolicies`) | the mod could only read cs1conv-objects.json districts | 2 outlines → 2 districts, named, Heavy Traffic Ban + Recycling; Fire Safety Sprinkler System set city-wide |
+| **Default depots** (`addDefaultDepots`, also called by the web tool) | station lines had 0 vehicles (F5) | Skibidi 3 km: SubwayYard01 added for Metro Line 3, placed in the acceptance run; rail yards flagged `needsTrackLink` |
+| **Frame budget** in the placer (F2) | 26.8 s main-thread stall | 0.94 s |
+
+- **Web tool (worker-2):** the per-type fallback is in the Assets tab ("anywhere" by default for CS2 lots over 400 cells: University, incinerator, prison, coal/gas/solar plants, cargo terminal), and `plan.objects` / `plan.surfaces` are now in the package, so the mod places trees and IMT surfaces without cs1conv-objects.json.
+- Decisions: `buildings/DECISIONS-buildings.md` #27–32.
+
+## 6. Release acceptance
+
+**Release 0.3.0 accepted** (exporter 1.2.0, importer 0.3.0, web 0.5.0, buildings 0.3.0): the user's flow with the release artefacts, `node tools/release/acceptance.mjs` → `.gamectl/acceptance/20261121-100459`, **ok=true**, saved as `cs1conv-acceptance-20261121-100459`.
+
+How: the importer mod was installed **from `release/0.3.0/cs2-importer-0.3.0.zip`** (zip: `Cs2Importer/Cs2ImporterMod.dll`, `Properties/PublishConfiguration.xml` + `Thumbnail.png`, `CHANGELOG.md`; the dev build in Mods was backed up and restored afterwards). The package came from the web CLI. In CS2 the mod's Options buttons were pressed through the exec library's `op mod`, which calls the same `Actions` methods as the buttons; no import code ran by exec.
+
+| # | User step | Time | Result (the mod's own status text) |
+| --- | --- | --- | --- |
+| 1 | Build the release (`build.mjs`) | 9 s | 3 zips, versions agree |
+| 2 | Make the package (web CLI, Skibidi, auto-crop 3 km) | 2.5 s | 2035 roads, 33 RB types, 109 buildings (incl. 1 default SubwayYard), 4216 trees/rocks, 9 transit lines |
+| 3 | Install the mod from the zip, start CS2 | 56 s | – |
+| 4 | Options → **Install Road Builder configs** | 0.6 s | "Copied 33 Road Builder configs. Restart Cities: Skylines II so Road Builder loads them, then import." |
+| 5 | Restart CS2, new city (Corral Riches) | 78 s | – |
+| 6 | Options → package, **Check** | 0.8 s | "All 37 road types are available. 9 roads already in the area: keep "Clear the area first" on. Map: terrain …, sea level 182 m, 13 water sources, 20 outside connections. In a new city, press "Prepare map" before importing." |
+| 7 | **Prepare map** | 15.6 s | "Removed 378 roads and tracks and 18 buildings of the base map. Terrain applied … within 0 m of the package at 95 % of 181 check points. Water: sea level 182 m, 13 CS1 water sources." |
+| 8 | Unpause 20 s | 20 s | – |
+| 9 | **Import into this city** | 49 s (roads 4.3 s) | "2035 of 2035 roads built. Problems: 1 not-elevated. Traffic: 1 lights added, 121 removed, 66 turn bans, 41 crosswalk changes. Traffic mod: 325 priority signs. Zoning: 71356 of 76658 cells (93.08 %). **Buildings: 109 of 109. Objects: 3380 of 4216.** districts/surfaces skipped (none in this crop). **Transit: 9 of 9 lines, 145 of 145 stops. Outside connections: 20 of 20.**" |
+| 10 | Simulate 60 s, screenshots, save | 72 s | Skibidi on its own terrain, dry land, roads, rail, services; 116 citizens after 60 s |
+
+Problems found on the way, all fixed or explained:
+- **A1 (user flow):** without **Prepare map** the base map stays: on Corral Riches its lake flooded the whole imported city (run `20261121-095410`, screenshot `acceptance-oblique.png`). Check tells the user to press it, and the user guide's step 7 has it. The acceptance script presses it.
+- **A2 (release build):** the importer was still versioned 0.2.0 with the M3 steps in it. Worker-3 bumped it to 0.3.0 with a changelog and Paradox Mods packaging; `build.mjs` checks the new version twins and ships `Properties/` (without the thumbnail script).
+- **A3 (wording, mine):** the skipped steps said "no districts section in the plan or in cs1conv-objects.json"; now "none in this package" (`buildings/src/Steps.cs`; in the next mod build, not in this run).
+- **A4 (process):** two release builds failed while the web tree was mid-edit (`npm run build` typecheck). Not a release defect; the build gate did its job.
+- **Not in this release, by decision:** IMT junction fills on roads, TM:PE lane connections/arrows (Traffic mod limits), rail yard track links (reported per yard), CS1 park/industry areas.

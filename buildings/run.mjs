@@ -135,6 +135,7 @@ async function main() {
         await b.pause();
         const args = { op: 'place', plan: bfile, offsetX: ox, offsetZ: oz, report: path.join(dir, 'report.json') };
         if (opt('limit')) args.limit = Number(opt('limit'));
+        if (opt('opts')) Object.assign(args, JSON.parse(opt('opts'))); // any run option, e.g. '{"idempotent":false,"frameBudgetMs":20}'
         const res = await execTool(b, args);
         if (flag('shots')) await shots(b, bfile, ox, oz, dir);
         if (opt('write-save')) { log(`saving ${opt('write-save')}`); await b.saveWrite(opt('write-save')); }

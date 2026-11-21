@@ -77,6 +77,9 @@ namespace Cs2Buildings
             float ox = (float)P.Num(a, "offsetX", 0), oz = (float)P.Num(a, "offsetZ", 0);
             int batch = (int)P.Num(a, "batchSize", 2000);
             float roadClearance = (float)P.Num(a, "roadClearance", 1.5f);
+            // A tree on a (wider) CS2 road surface is pushed out perpendicular to that road, to just past its edge, if
+            // that is at most roadsideMove metres and the new spot is free (no road, no lot). Otherwise it is dropped.
+            float roadsideMove = (float)P.Num(a, "roadsideMove", 6f);
             int limit = (int)P.Num(a, "limit", int.MaxValue);
             var root = Load(P.Required(a, "plan"));
             var section = Section(root, "objects");
@@ -114,7 +117,8 @@ namespace Cs2Buildings
             }
 
             var rows = section["items"] as List<object>;
-            int created = 0, onRoad = 0, inLot = 0, noPrefab = 0, frames = 0;
+            int created = 0, onRoad = 0, inLot = 0, noPrefab = 0, frames = 0, moved = 0;
+            double movedSum = 0;
             var perPrefab = new int[names.Count];
             double checkMs = 0, createMs = 0;
             var rnd = new Unity.Mathematics.Random(0x7EE5u);
@@ -130,17 +134,18 @@ namespace Cs2Buildings
 
                 var t0 = sw.Elapsed.TotalMilliseconds;
                 bool blocked = false;
-                foreach (var e in grid.Query(p - 40f, p + 40f))
+                Placement.RoadEdge hit;
+                float hitT;
+                if (OnRoad(grid, p, roadClearance, out hit, out hitT))
                 {
-                    float t;
-                    if (MathUtils.Distance(e.Curve.xz, p, out t) < e.HalfWidth + roadClearance) { blocked = true; onRoad++; break; }
+                    var np = roadsideMove > 0 ? PushOff(hit, hitT, p, roadClearance + 0.25f) : p;
+                    float dist = math.distance(np, p);
+                    Placement.RoadEdge h2;
+                    float t2;
+                    if (roadsideMove > 0 && dist <= roadsideMove && !OnRoad(grid, np, roadClearance, out h2, out t2) && !InLot(lotGrid, np)) { p = np; moved++; movedSum += dist; }
+                    else { blocked = true; onRoad++; }
                 }
-                if (!blocked)
-                {
-                    List<float2[]> lst;
-                    if (lotGrid.TryGetValue(((long)(int)math.floor(p.x / 64) << 32) ^ (uint)(int)math.floor(p.y / 64), out lst))
-                        foreach (var l in lst) if (Inside(l, p)) { blocked = true; inLot++; break; }
-                }
+                if (!blocked && InLot(lotGrid, p)) { blocked = true; inLot++; }
                 checkMs += sw.Elapsed.TotalMilliseconds - t0;
                 if (blocked) continue;
 
@@ -186,10 +191,45 @@ namespace Cs2Buildings
                     byPrefab[(string)names[i]] = new Dictionary<string, object> { { "created", perPrefab[i] }, { "inCity", found[i] } };
             yield return new Dictionary<string, object>
             {
-                { "items", rows.Count }, { "created", created }, { "skippedOnRoad", onRoad }, { "skippedInBuildingLot", inLot }, { "noPrefab", noPrefab },
+                { "items", rows.Count }, { "created", created }, { "movedOffRoad", moved }, { "movedMeanM", moved > 0 ? Math.Round(movedSum / moved, 2) : 0 }, { "roadsideMove", roadsideMove }, { "skippedOnRoad", onRoad }, { "skippedInBuildingLot", inLot }, { "noPrefab", noPrefab },
                 { "missingPrefabs", missing }, { "byPrefab", byPrefab }, { "frames", frames }, { "batchSize", batch },
                 { "checkMs", Math.Round(checkMs) }, { "createMs", Math.Round(createMs) }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) },
             };
+        }
+
+        static bool OnRoad(Placement.RoadGrid grid, float2 p, float clearance, out Placement.RoadEdge hit, out float hitT)
+        {
+            hit = null;
+            hitT = 0;
+            float best = float.MaxValue;
+            foreach (var e in grid.Query(p - 40f, p + 40f))
+            {
+                float t;
+                float d = MathUtils.Distance(e.Curve.xz, p, out t) - (e.HalfWidth + clearance);
+                if (d < 0 && d < best) { best = d; hit = e; hitT = t; }
+            }
+            return hit != null;
+        }
+
+        /// <summary>p moved along the perpendicular from the road's closest point to halfWidth + margin from its centre line.</summary>
+        static float2 PushOff(Placement.RoadEdge e, float t, float2 p, float margin)
+        {
+            var c = MathUtils.Position(e.Curve.xz, t);
+            var n = p - c;
+            if (math.lengthsq(n) < 1e-4f)
+            {
+                var tan = MathUtils.Tangent(e.Curve.xz, t);
+                n = new float2(-tan.y, tan.x);
+            }
+            return c + math.normalizesafe(n) * (e.HalfWidth + margin);
+        }
+
+        static bool InLot(Dictionary<long, List<float2[]>> lotGrid, float2 p)
+        {
+            List<float2[]> lst;
+            if (lotGrid.TryGetValue(((long)(int)math.floor(p.x / 64) << 32) ^ (uint)(int)math.floor(p.y / 64), out lst))
+                foreach (var l in lst) if (Inside(l, p)) return true;
+            return false;
         }
 
         static bool Inside(float2[] quad, float2 p)
@@ -217,8 +257,9 @@ namespace Cs2Buildings
             var ps = world.GetOrCreateSystemManaged<PrefabSystem>();
             float ox = (float)P.Num(a, "offsetX", 0), oz = (float)P.Num(a, "offsetZ", 0);
             var root = Load(P.Required(a, "plan"));
-            var section = Section(root, P.Str(a, "section", "districts"));
-            var items = section["items"] as List<object>;
+            var sectionName = P.Str(a, "section", "districts");
+            var section = Section(root, sectionName);
+            var items = WebAreaItems(section["items"] as List<object> ?? new List<object>(), sectionName);
             var results = new List<object>();
             var before = AreaEntities(em);
             var created = new List<KeyValuePair<Dictionary<string, object>, float2>>();
@@ -306,12 +347,62 @@ namespace Cs2Buildings
                     }
                 res["policiesSet"] = set;
             }
+            // City-wide policies (web plan.districts.cityPolicies), on the city entity, as PoliciesUISystem.SetCityPolicy does.
+            var citySet = new List<object>();
+            var cityPol = section.ContainsKey("cityPolicies") ? section["cityPolicies"] as List<object> : null;
+            if (cityPol != null && cityPol.Count > 0)
+            {
+                var city = world.GetOrCreateSystemManaged<Game.Simulation.CitySystem>().City;
+                if (city != Entity.Null)
+                    foreach (var pn in cityPol)
+                    {
+                        PrefabBase pp;
+                        Entity pEnt;
+                        if ((ps.TryGetPrefab(new PrefabID("PolicyTogglePrefab", (string)pn), out pp) || ps.TryGetPrefab(new PrefabID("PolicySliderPrefab", (string)pn), out pp)) && ps.TryGetEntity(pp, out pEnt))
+                        {
+                            var ev = em.CreateEntity(ComponentType.ReadWrite<Game.Common.Event>(), ComponentType.ReadWrite<Game.Policies.Modify>());
+                            em.SetComponentData(ev, new Game.Policies.Modify(city, pEnt, true, 0f));
+                            citySet.Add(pn);
+                        }
+                    }
+            }
             for (int f = 0; f < 5; f++) yield return null;
             yield return new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", found }, { "named", named }, { "policiesSet", policiesSet }, { "failed", failed },
+                { "items", items.Count }, { "placed", found }, { "named", named }, { "policiesSet", policiesSet }, { "failed", failed }, { "cityPoliciesSet", citySet },
                 { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", results },
             };
+        }
+
+        /// <summary>
+        /// Accepts both area item shapes: this module's ({prefab, type, polygon}) and the web tool's plan.districts
+        /// ({name, outlines: [[x,z]…][], policies}, no prefab). A web item becomes one area per outline, all with its
+        /// name and policies; districts default to CS2's only district prefab, "District Area".
+        /// </summary>
+        static List<object> WebAreaItems(List<object> items, string section)
+        {
+            var outList = new List<object>();
+            foreach (var o in items)
+            {
+                var it = o as Dictionary<string, object>;
+                if (it == null) continue;
+                var outlines = it.ContainsKey("outlines") ? it["outlines"] as List<object> : null;
+                if (it.ContainsKey("polygon") || outlines == null) { outList.Add(WithDefaultPrefab(it, section)); continue; }
+                foreach (var ol in outlines)
+                {
+                    var copy = new Dictionary<string, object>(it);
+                    copy.Remove("outlines");
+                    copy["polygon"] = ol;
+                    outList.Add(WithDefaultPrefab(copy, section));
+                }
+            }
+            return outList;
+        }
+
+        static Dictionary<string, object> WithDefaultPrefab(Dictionary<string, object> it, string section)
+        {
+            if (section == "districts" && !it.ContainsKey("prefab")) { it = new Dictionary<string, object>(it); it["prefab"] = "District Area"; it["type"] = "DistrictPrefab"; }
+            return it;
         }
 
         /// <summary>
