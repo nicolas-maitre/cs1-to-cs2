@@ -420,7 +420,7 @@ Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,1
   - it follows the stub's chain of line/pipe edges (CS2 may cut a stub where it crosses something) to the node that touches a road;
   - **split** = that node is a real endpoint of a road edge while another node within 3 m is one too;
   - **notTouchingRoad** = the chain never reaches a road.
-  - `tools/qa/acceptance-stubcheck.patch` runs it after the import and fails on a split or on no marker.
+  - The release acceptance runs it after the import (step `utility-stubs` in `tools/release/acceptance.mjs`, writing `stubcheck.json`): a split or no marker fails the step; `notTouchingRoad` is only reported.
 - **Results** (acceptance saves of §7, markers added after loading, 3 min at speed 3, saved, reloaded, 1 more min):
 
 | | Westfield | Skibidi 3 km | CacaoCity |
