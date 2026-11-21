@@ -16,10 +16,13 @@
 //                the stop object). GenerateRoutesSystem only makes Temp routes (no Permanent path), so frame 1 switches
 //                the active tool's applyMode to Apply for that frame: ToolOutputSystem then runs the vanilla ApplyTool
 //                phase (ApplyRoutesSystem), exactly as a click with the line tool. Then names and numbers are set.
+//   lines.repath {types?:["Train","Subway"]}       mark the lines' route segments Updated: RoutePathSystem then
+//                                                    recomputes their paths (after the track network changed)
 //   lines.name   {routes:[{route:"index:version",name,number}]}   [phase main] custom names + route numbers
 //   lines.list   {}                                  routes: prefab, name, number, colour, stops, segments, complete,
 //                                                    vehicles
 //   counts       {}                                  public-transport vehicles by type, routes, stops, depots
+//   yards.inspect / tracklink                       rail/subway yards → track link to the lines (TrackLink.cs)
 //   infoviews    {} / infoview {name|null}           list the infoview prefabs / switch the view (screenshots of the
 //                                                    transport overlay); name null or "" turns it off
 using System;
@@ -52,8 +55,14 @@ namespace Cs1ConvTransit
                 case "lines.create": return LinesCreate(a);
                 case "lines.list": return LinesList();
                 case "lines.name": return LinesName(a);
+                case "lines.repath": return LinesRepath(a);
+                case "lines.delete": return LinesDelete(a);
+                case "lines.debug": return LinesDebug(Str(a, "name", null));
                 case "counts": return Counts();
                 case "infoviews": return Infoviews(null);
+                case "yards.inspect": return TrackLink.Inspect();
+                case "yards.plan": return TrackLink.Plan(a);
+                case "tracklink": return TrackLink.Link(a);
                 case "infoview": return Infoviews(Str(a, "name", null));
                 default: throw new ArgumentException("unknown op " + op);
             }
@@ -307,7 +316,7 @@ namespace Cs1ConvTransit
 
         /// <summary>ToolSystem.applyMode is the last-updated tool's applyMode (protected setter). The active tool has
         /// already updated this frame, so setting it to Apply makes ToolOutputSystem run the ApplyTool phase.</summary>
-        static bool SetApply()
+        internal static bool SetApply()
         {
             var ts = W.GetOrCreateSystemManaged<ToolSystem>();
             var f = typeof(ToolSystem).GetField("m_LastTool", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -340,6 +349,152 @@ namespace Cs1ConvTransit
             return new Dictionary<string, object> { { "op", "lines.name" }, { "named", n } };
         }
 
+        /// <summary>Deletes the lines of the given transport types (route + its waypoints and segments), so they can be
+        /// re-created once their stations are joined to the track (a line pathfinds when it is created).</summary>
+        static object LinesDelete(Dictionary<string, object> a)
+        {
+            var types = new HashSet<string>();
+            if (a.TryGetValue("types", out var to) && to is IList<object> tl) foreach (var t in tl) types.Add(t.ToString());
+            var names = new List<object>();
+            var ns = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            var es = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var e in es)
+            {
+                var prefab = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                string tt = Em.HasComponent<TransportLineData>(prefab) ? Em.GetComponentData<TransportLineData>(prefab).m_TransportType.ToString() : "?";
+                if (!types.Contains(tt)) continue;
+                string n = null; ns.TryGetCustomName(e, out n); names.Add(n);
+                var parts = new List<Entity>();
+                if (Em.HasBuffer<RouteWaypoint>(e)) { var b = Em.GetBuffer<RouteWaypoint>(e, true); for (int i = 0; i < b.Length; i++) parts.Add(b[i].m_Waypoint); }
+                if (Em.HasBuffer<RouteSegment>(e)) { var b = Em.GetBuffer<RouteSegment>(e, true); for (int i = 0; i < b.Length; i++) parts.Add(b[i].m_Segment); }
+                Em.AddComponent<Deleted>(e);
+                foreach (var x in parts) if (IsReal(x)) Em.AddComponent<Deleted>(x);
+            }
+            es.Dispose();
+            return new Dictionary<string, object> { { "op", "lines.delete" }, { "deleted", names } };
+        }
+
+        static object LinesRepath(Dictionary<string, object> a)
+        {
+            var types = new HashSet<string>();
+            if (a.TryGetValue("types", out var to) && to is IList<object> tl) foreach (var t in tl) types.Add(t.ToString());
+            int routes = 0, segments = 0;
+            var es = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var e in es)
+            {
+                var prefab = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                string tt = Em.HasComponent<TransportLineData>(prefab) ? Em.GetComponentData<TransportLineData>(prefab).m_TransportType.ToString() : "?";
+                if (types.Count > 0 && !types.Contains(tt)) continue;
+                routes++;
+                if (!Em.HasBuffer<RouteSegment>(e)) continue;
+                var sb = Em.GetBuffer<RouteSegment>(e, true);
+                var segs = new List<Entity>();
+                for (int i = 0; i < sb.Length; i++) segs.Add(sb[i].m_Segment);
+                foreach (var sg in segs) if (IsReal(sg) && !Em.HasComponent<Updated>(sg)) { Em.AddComponent<Updated>(sg); segments++; }
+            }
+            es.Dispose();
+            // RoutePathSystem re-checks existing lines' paths only when lanes of their type come with Applied (the tool's
+            // apply step adds it; Permanent definitions and placed buildings' sub-nets never do). Tag one real track
+            // lane per track type for a frame, so every train/subway line is re-checked against the joined network.
+            int tagged = 0;
+            var seen = new HashSet<Game.Net.TrackTypes>();
+            var lanes = Query(new[] { ComponentType.ReadOnly<Game.Net.Lane>(), ComponentType.ReadOnly<Game.Net.TrackLane>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var l in lanes)
+            {
+                var lp = Em.GetComponentData<PrefabRef>(l).m_Prefab;
+                if (!Em.HasComponent<TrackLaneData>(lp)) continue;
+                var tt = Em.GetComponentData<TrackLaneData>(lp).m_TrackTypes;
+                if (seen.Contains(tt)) continue;
+                seen.Add(tt);
+                if (!Em.HasComponent<Applied>(l)) Em.AddComponent<Applied>(l);
+                tagged++;
+            }
+            lanes.Dispose();
+            return new Dictionary<string, object> { { "op", "lines.repath" }, { "routes", routes }, { "segments", segments }, { "appliedLaneTags", tagged } };
+        }
+
+        /// <summary>One line in depth: per waypoint its connected stop (prefab, owner, lanes it can use), per segment the
+        /// PathTargets lanes, path state and element count. Shows why a line gets no path.</summary>
+        static object LinesDebug(string name)
+        {
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            var es = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>() });
+            var r = new List<object>();
+            foreach (var e in es)
+            {
+                string custom = null; names.TryGetCustomName(e, out custom);
+                if (name != null && custom != name) continue;
+                var wps = new List<object>();
+                if (Em.HasBuffer<RouteWaypoint>(e))
+                {
+                    var wb = Em.GetBuffer<RouteWaypoint>(e, true);
+                    for (int i = 0; i < wb.Length && i < 12; i++)
+                    {
+                        var w = wb[i].m_Waypoint; var it = new Dictionary<string, object> { { "wp", Id(w) } };
+                        if (Em.HasComponent<Game.Routes.Connected>(w))
+                        {
+                            var st = Em.GetComponentData<Game.Routes.Connected>(w).m_Connected;
+                            it["stop"] = Id(st);
+                            if (Em.Exists(st))
+                            {
+                                it["stopPrefab"] = Em.HasComponent<PrefabRef>(st) ? PrefabName(Em.GetComponentData<PrefabRef>(st).m_Prefab) : null;
+                                if (Em.HasComponent<Owner>(st)) it["stopOwner"] = PrefabName(Em.GetComponentData<PrefabRef>(Em.GetComponentData<Owner>(st).m_Owner).m_Prefab);
+                                if (Em.HasComponent<Game.Objects.Attached>(st)) { var at = Em.GetComponentData<Game.Objects.Attached>(st); it["attachedTo"] = Id(at.m_Parent); it["attachedReal"] = IsReal(at.m_Parent); }
+                                if (Em.HasComponent<Game.Routes.TransportStop>(st)) it["stopFlags"] = Em.GetComponentData<Game.Routes.TransportStop>(st).m_Flags.ToString();
+                                if (Em.HasComponent<Game.Routes.AccessLane>(st)) { var al = Em.GetComponentData<Game.Routes.AccessLane>(st); it["accessLane"] = Id(al.m_Lane); }
+                                if (Em.HasComponent<Game.Routes.RouteLane>(st)) { var rl = Em.GetComponentData<Game.Routes.RouteLane>(st); it["routeLane"] = Id(rl.m_StartLane) + ">" + Id(rl.m_EndLane); }
+                            }
+                        }
+                        if (Em.HasComponent<Game.Routes.RouteLane>(w)) { var rl = Em.GetComponentData<Game.Routes.RouteLane>(w); it["wpRouteLane"] = Id(rl.m_StartLane) + ">" + Id(rl.m_EndLane); }
+                        wps.Add(it);
+                    }
+                }
+                var segs = new List<object>();
+                if (Em.HasBuffer<RouteSegment>(e))
+                {
+                    var sb = Em.GetBuffer<RouteSegment>(e, true);
+                    for (int i = 0; i < sb.Length && i < 6; i++)
+                    {
+                        var sg = sb[i].m_Segment; var it = new Dictionary<string, object> { { "seg", Id(sg) } };
+                        if (Em.HasComponent<Game.Routes.PathTargets>(sg)) { var pt = Em.GetComponentData<Game.Routes.PathTargets>(sg); it["startLane"] = LaneInfo(pt.m_StartLane); it["endLane"] = LaneInfo(pt.m_EndLane); }
+                        if (Em.HasComponent<Game.Pathfind.PathInformation>(sg)) it["state"] = Em.GetComponentData<Game.Pathfind.PathInformation>(sg).m_State.ToString();
+                        if (Em.HasBuffer<Game.Pathfind.PathElement>(sg)) it["elements"] = Em.GetBuffer<Game.Pathfind.PathElement>(sg, true).Length;
+                        segs.Add(it);
+                    }
+                }
+                r.Add(new Dictionary<string, object> { { "route", Id(e) }, { "name", custom }, { "waypoints", wps }, { "segments", segs } });
+            }
+            es.Dispose();
+            return r;
+        }
+
+        /// <summary>Lane → exists, prefab, owner edge (prefab, owner building, end nodes' edge counts).</summary>
+        static Dictionary<string, object> LaneInfo(Entity lane)
+        {
+            var d = new Dictionary<string, object> { { "lane", Id(lane) }, { "exists", Em.Exists(lane) }, { "real", IsReal(lane) } };
+            if (!Em.Exists(lane)) return d;
+            if (Em.HasComponent<PrefabRef>(lane)) d["prefab"] = PrefabName(Em.GetComponentData<PrefabRef>(lane).m_Prefab);
+            if (Em.HasComponent<Owner>(lane))
+            {
+                var ow = Em.GetComponentData<Owner>(lane).m_Owner;
+                d["owner"] = Id(ow); d["ownerReal"] = IsReal(ow);
+                if (Em.Exists(ow))
+                {
+                    if (Em.HasComponent<PrefabRef>(ow)) d["ownerPrefab"] = PrefabName(Em.GetComponentData<PrefabRef>(ow).m_Prefab);
+                    d["ownerIsEdge"] = Em.HasComponent<Edge>(ow);
+                    if (Em.HasComponent<Owner>(ow)) d["ownerOwner"] = PrefabName(Em.GetComponentData<PrefabRef>(Em.GetComponentData<Owner>(ow).m_Owner).m_Prefab);
+                    if (Em.HasComponent<Edge>(ow))
+                    {
+                        var ed = Em.GetComponentData<Edge>(ow);
+                        int cs = Em.HasBuffer<ConnectedEdge>(ed.m_Start) ? Em.GetBuffer<ConnectedEdge>(ed.m_Start, true).Length : -1;
+                        int ce = Em.HasBuffer<ConnectedEdge>(ed.m_End) ? Em.GetBuffer<ConnectedEdge>(ed.m_End, true).Length : -1;
+                        d["endEdges"] = new List<object> { cs, ce };
+                    }
+                }
+            }
+            return d;
+        }
+
         static object LinesList()
         {
             var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
@@ -360,10 +515,27 @@ namespace Cs1ConvTransit
                     { "waypoints", Em.HasBuffer<RouteWaypoint>(e) ? Em.GetBuffer<RouteWaypoint>(e, true).Length : 0 },
                     { "segments", Em.HasBuffer<RouteSegment>(e) ? Em.GetBuffer<RouteSegment>(e, true).Length : 0 },
                     { "vehicles", Em.HasBuffer<RouteVehicle>(e) ? Em.GetBuffer<RouteVehicle>(e, true).Length : 0 },
+                    { "pathElements", PathStats(e, out int failed) }, { "failedSegments", failed },
                 });
             }
             es.Dispose();
             return r;
+        }
+
+        /// <summary>Path elements over all route segments; failed = segments whose PathInformation says Failed.</summary>
+        static int PathStats(Entity route, out int failed)
+        {
+            failed = 0; int n = 0;
+            if (!Em.HasBuffer<RouteSegment>(route)) return 0;
+            var sb = Em.GetBuffer<RouteSegment>(route, true);
+            for (int i = 0; i < sb.Length; i++)
+            {
+                var sg = sb[i].m_Segment;
+                if (!Em.Exists(sg)) continue;
+                if (Em.HasBuffer<Game.Pathfind.PathElement>(sg)) n += Em.GetBuffer<Game.Pathfind.PathElement>(sg, true).Length;
+                if (Em.HasComponent<Game.Pathfind.PathInformation>(sg) && (Em.GetComponentData<Game.Pathfind.PathInformation>(sg).m_State & Game.Pathfind.PathFlags.Failed) != 0) failed++;
+            }
+            return n;
         }
 
         static object Counts()

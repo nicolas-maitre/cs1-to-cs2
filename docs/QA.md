@@ -179,3 +179,37 @@ Problems found on the way, all fixed or explained:
 - **Metro and train vehicles: pending.** Neither city has transit lines, and Skibidi's station lines wait for worker-4's crop-edge yard + track-link step (DECISIONS.md #83), which hadn't landed at this run. The prerequisite is done: placed buildings now get their sub-nets (station and yard tracks; buildings decision #34, verified with 0 missing).
 - **A5 (importer, worker-3), fixed in their next build:** CacaoCity is a **left-hand-traffic** CS1 city (477 of 684 segments inverted), so every lane flows the other way and all 265 lane connections were rejected ("source lane leaves the node" 373, "lane count differs" 212). Worker-3's lanes step now tries mirrored ordinals and says so in the status line. The exporter (1.2.1, mine) now records it: `manifest.traffic.leftHand` (verified: CacaoCity → `true`); worker-2 passes it into the plan.
 - **A6 (policy names, worker-2 + mine):** Westfield's city policy "Small Business Enthusiast" (from CS1 SmallBusiness) has no CS2 policy prefab of that name, so nothing was set and the status said only "0 of 0". The districts step now reports such names as `policiesMissing`; the CS2 policy names were listed from the game for worker-2's map: 18 PolicyTogglePrefab + 5 PolicySliderPrefab. Neither "Small Business Enthusiast" nor "Fire Safety Sprinkler System" is one. The latter had looked set in §5 because a name lookup returned a non-policy prefab; the districts step now accepts only real policy prefabs.
+
+## 5. Trains and metros (terrain/transit worker): depots and track links, not running yet
+
+Goal: converted metro and train lines get vehicles. The user's decision (docs/DECISIONS.md #83):
+- a rail or subway yard goes only at the crop edge, where the line's own track leaves the crop;
+- otherwise nothing is placed, and the report says to place one yourself.
+
+Test runs:
+- **6 km Skibidi crop:** `--crop 1870,-165,6000` → e2e `.gamectl/e2e/20261121-111610`, ok=true, save `cs1conv-e2e-20261121-1221`. It contains Train Line 1 and Metro Lines 1–3.
+- **Full city:** `cs1conv-e2e-20261121-1137`.
+- **Runner:** `node transit/run-tracklink.mjs --load <save> --plan <package plan> [--recreate]` → `.gamectl/tracklink/6k-run1…6`, `full-run1/2`.
+
+What works (verified in game):
+
+| Step | Result |
+| --- | --- |
+| `transit.mjs depots` → `yards.plan` (open track ends of each rail type within 80 m of the crop bounds) | 6 km: Train → 5 edge track ends, one `RailYard02` item. Metro → no metro track leaves the crop, so the report has "Metro Line N: its track does not leave the converted area, so no depot was placed: place a subway yard yourself…" for Metro Lines 1–3. |
+| Buildings placer, with `requireRoad` / `maxDistance` (buildings worker) | 6 km: RailYard02 placed and road-connected, 265 m from the track end. Full city: no non-highway spot within 2.5 km (crop edge = map edge), so the line gets the "no free land with road access … place a rail yard yourself" report entry. |
+| Sub-nets of placed buildings (buildings worker, new) | yards and stations now get their own tracks: RailYard02 81 sub-net entities, SubwayStation01/03 13, TrainStation02/03; `subNetsMissing` 0 |
+| `tracklink`: yard → line track | yard linked; a clean Permanent course when possible, otherwise a Temp course plus one forced apply frame (CS2 builds the level crossings over highways). Yard `connected: true`. |
+| `tracklink`: station platforms → imported track | CS1 platforms are building sub-nets (not imported), so CS2 station platform tracks ended loose. Each open end is now joined to the nearest imported dead end within 200 m: 6 km, 2 train stations + 5 subway stations, every end linked. |
+| Inside-only metro | the report message as designed |
+
+**Not working: trains and metros still don't run** (Train Line 1 and Metro Lines 1–3: 0 vehicles after 6 minutes).
+- **Symptom:** every rail-line route segment has **0 path elements, and its path state is 0 (never requested), not Failed**. The bus lines on the same city, created by the same op, get paths (7 elements per segment) and 80–95 buses.
+- **Ruled out:**
+  1. **Stop lanes:** the segments' `PathTargets` point at real `Oneway Train Lane 4` lanes of the stations' platform `Double Train Track` edges, and those edges are joined (end nodes with 2 edges).
+  2. **Updated segments:** marking the route segments `Updated` changes nothing.
+  3. **Applied lanes:** tagging train/subway lanes `Applied` (RoutePathSystem re-checks paths when lanes come with Applied) changes nothing.
+  4. **Recreating the lines** after the stations are joined (`--recreate`) changes nothing.
+- **Next hypotheses:**
+  - **Station sub-nets' lanes:** the station platform edges come from the placer's OwnerDefinition sub-net courses; maybe their lanes lack something the pathfinder needs (e.g. a pathfind graph entry for owned edges).
+  - **Station stops:** the integrated station stops have no `Attached` (bus stops are attached to their road edge); maybe they need their access lanes set.
+  - **Decisive next test:** in a plain new city, build a station by hand-equivalent means (the vanilla object tool through the same forced-apply trick that works for lines and tracks), then a line on it. If that line pathfinds, the difference is in how the placer creates station sub-nets.

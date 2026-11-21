@@ -33,3 +33,14 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
 7. **Vehicles come from depots, which transit doesn't place.**
    - **Why:** a line with no depot of its type exists but has no vehicles. Depots belong to the buildings step (BusDepot01 / SubwayYard / RailYard from the plan's `buildings` section).
    - **Verification:** `run-transit.mjs --depot` borrows the buildings placer (unchanged) for one bus depot.
+
+8. **Rail and subway yards only at the crop edge** (docs/DECISIONS.md #83, the user's decision).
+   - **Where:** `yards.plan` looks for the open ends of each rail type's imported track within 80 m of the crop bounds, places the compact prefab there (`SubwayYard02` / `RailYard02`, `requireRoad`, `maxDistance` 2500), then `tracklink` joins the yard to the line.
+   - **No yard:** a type whose track doesn't leave the crop, a manual `depotMode`, or a yard that won't fit gets a report entry per line: "… place a subway/rail yard yourself and connect its track to the line".
+
+9. **`tracklink` also joins station platforms to the imported track** (each open end to the nearest imported dead end within 200 m).
+   - **Why:** CS1 station platforms are building sub-nets (not imported), so the CS2 station's own platform tracks end loose next to the line.
+
+10. **Link course recipe:** a Permanent course when the straight course crosses nothing; otherwise the player's way, a Temp definition plus one forced apply frame. ApplyNetSystem then makes the level crossings and junctions; a Permanent course across an existing edge leaves Temp ghosts (Spike 1).
+
+11. **Open:** train and metro lines still get no path (QA §5). Depots, links and report entries are in place, but no rail vehicle runs yet.

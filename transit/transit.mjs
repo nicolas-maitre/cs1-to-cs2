@@ -6,11 +6,14 @@
 //        after the road import (and after the buildings, for stations and depots): creates the kerbside stops,
 //        waits, then creates the lines (bus lines on those stops; metro/train lines on station stops near the CS1
 //        stations, skipped when none are found). Writes nothing else.
+//   node transit/transit.mjs depots --plan <cs1conv-plan.json>
+//        after apply and the buildings: metro/train yard at the crop edge where that type's track leaves the crop
+//        (yards.plan → buildings placer → tracklink), or report entries "place a depot yourself" (DECISIONS.md #83)
 //   node transit/transit.mjs plan --plan f          offline: what apply would do (counts, stops, lines)
 //   node transit/transit.mjs prefabs | list | stops [--type Bus] | counts
 //
 // Build the exec library first: dotnet build -c Release transit/cs2-exec
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connect } from '../tools/gamectl/lib/index.js';
@@ -18,6 +21,7 @@ import { transitJobs } from './lib/plan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DLL = join(HERE, 'cs2-exec', 'bin', 'Release', 'net48', 'Cs1ConvTransit.dll');
+const BUILDINGS_DLL = join(HERE, '..', 'buildings', 'bin', 'Release', 'net48', 'Cs2Buildings.dll');
 const TYPE = 'Cs1ConvTransit.Ops';
 
 function opts(argv) {
@@ -84,7 +88,59 @@ export async function transit(argv) {
       out.check = { lines: await op({ op: 'lines.list' }), counts: await op({ op: 'counts' }) };
       break;
     }
-    default: throw new Error('unknown command ' + cmd + ' (apply, plan, prefabs, list, stops, counts)');
+    case 'depots': {
+      // docs/DECISIONS.md #83: metro/train yards only at the crop edge where the line's track leaves, linked to it
+      if (!a.plan) throw new Error('depots needs --plan');
+      const plan = JSON.parse(readFileSync(a.plan, 'utf8'));
+      const lines = (plan.transit?.lines ?? []).map(l => ({ name: l.name, cs1Type: l.cs1Type, stops: (l.stops ?? []).map(s => ({ x: s.x, z: s.z })) }));
+      const yp = await op({ op: 'yards.plan', bounds: plan.bounds, lines, depotMode: plan.transit?.depotMode ?? null, edgeMargin: Number(a.edgeMargin ?? 80) });
+      out = { types: yp.types, report: yp.report, items: yp.buildings.items };
+      // train/metro lines pathfind when they are created; created before their stations were joined to the track
+      // they keep no path, so --recreate deletes and re-creates them afterwards
+      const recreateRailLines = async (planFile) => {
+        const del = await op({ op: 'lines.delete', types: ['Train', 'Subway'] }, { phase: 'tool' });
+        await b.wait(30);
+        const names = (del.deleted ?? []).filter(Boolean);
+        if (!names.length) return { deleted: [] };
+        const r = await transit(['apply', '--plan', planFile, '--only', names.join(',')]);
+        return { deleted: names, created: r.lines?.created, skipped: r.lines?.skipped };
+      };
+      if (!yp.buildings.items.length) {
+        // no yard to place: still join the stations' platform tracks to the line track, and recompute the paths
+        out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500) }, { phase: 'tool', pump: 'tool' });
+        await b.wait(60);
+        out.repath = await op({ op: 'lines.repath', types: ['Train', 'Subway'] }, { phase: 'tool' });
+        await b.wait(120);
+        if (a.recreate) out.recreate = await recreateRailLines(a.plan);
+        break;
+      }
+      if (!existsSync(BUILDINGS_DLL)) { out.error = 'buildings placer not built: dotnet build -c Release buildings'; break; }
+      const dir = resolve(a.workDir ?? join(HERE, '..', '.gamectl', 'transit'));
+      mkdirSync(dir, { recursive: true });
+      const itemsFile = join(dir, 'edge-yards.json');
+      writeFileSync(itemsFile, JSON.stringify({ buildings: yp.buildings }, null, 1));
+      const placed = await b.exec(BUILDINGS_DLL, { phase: 'tool', pump: 'tool', timeout: 600,
+        args: { op: 'place', plan: itemsFile, offsetX: 0, offsetZ: 0, fallback: 'nearby', nearbyRadius: Number(a.nearbyRadius ?? 600), report: join(dir, 'edge-yards-report.json') } });
+      out.placed = { placed: placed.placed, failed: placed.failed, sample: placed.sample };
+      // a yard the placer could not fit (no free land with road access within reach): the line needs a manual depot
+      for (const r of (placed.sample ?? []).filter(r => r.status !== 'placed' && r.status !== 'alreadyPlaced')) {
+        const item = yp.buildings.items.find(i => i.id === r.id) ?? {};
+        const kind = /Subway/.test(item.prefab ?? '') ? 'subway yard' : 'rail yard';
+        for (const n of item.lines ?? []) out.report.push({ level: 'warning', kind: 'depot-noroom', line: n,
+          message: `${n}: no free land with road access for a ${kind} within ${item.maxDistance ?? 2500} m of where its track leaves the converted area, so no depot was placed: place a ${kind} yourself and connect its track to the line.`, reason: r.reason });
+      }
+      if (!placed.placed) break;
+      await b.wait(60);
+      out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500) }, { phase: 'tool', pump: 'tool' });
+      await b.wait(60);
+      // the lines' paths were computed before their stations and yard were joined to the track: recompute them
+      out.repath = await op({ op: 'lines.repath', types: ['Train', 'Subway'] }, { phase: 'tool' });
+      await b.wait(120);
+      if (a.recreate) out.recreate = await recreateRailLines(a.plan);
+      out.yards = (await op({ op: 'yards.inspect' })).yards;
+      break;
+    }
+    default: throw new Error('unknown command ' + cmd + ' (apply, depots, plan, prefabs, list, stops, counts)');
   }
   if (a.out) writeFileSync(resolve(a.out), JSON.stringify(out, null, 2) + '\n');
   return out;
