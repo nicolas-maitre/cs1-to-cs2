@@ -99,16 +99,38 @@ namespace CoreTests
             Assert.Eq(5.15, j.Segments[1].MiddleElevation, "middle");
         }
 
+        public static void TestExactHeights()
+        {
+            const string json = @"{""format"":""cs1conv-plan"",""formatVersion"":1,""prefabs"":{""p"":{""name"":""Small Road""}},
+              ""nodes"":[{""id"":1,""x"":0,""z"":0,""heightAboveTerrain"":-1.7},{""id"":2,""x"":90,""z"":0,""heightAboveTerrain"":-20},{""id"":3,""x"":180,""z"":0,""heightAboveTerrain"":12.3}],
+              ""segments"":[{""id"":1,""prefab"":""p"",""start"":1,""end"":2,""kind"":""ground""},{""id"":2,""prefab"":""p"",""start"":2,""end"":3,""elevationStart"":0,""elevationEnd"":12.3,""kind"":""elevated""}]}";
+            var flat = ImportPlanner.Build(PlanParser.Parse(json), null);
+            Assert.Eq(0.0, flat.Nodes[1].PositionHeight, "flat: small offset snaps to the terrain");
+            Assert.Eq(-11.5, flat.Nodes[2].PositionHeight, "flat: trench clamped");
+            var exact = ImportPlanner.Build(PlanParser.Parse(json), new ImportOptions { Heights = "exact" });
+            Assert.Eq(-1.7, exact.Nodes[1].PositionHeight, "exact: CS1 height kept");
+            Assert.Eq(0.0, exact.Nodes[1].Elevation, "exact: still ground for CS2's composition");
+            Assert.Eq(-11.5, exact.Nodes[2].PositionHeight, "exact: -20 is more than ExactLimit (4.5 m) off its clamped composition elevation, so it keeps -11.5");
+            var deep = ImportPlanner.Build(PlanParser.Parse(json.Replace("-20", "-14")), new ImportOptions { Heights = "exact" });
+            Assert.Eq(-14.0, deep.Nodes[2].PositionHeight, "exact: -14 is within 4.5 m of -11.5, so the CS1 depth is kept");
+            Assert.Eq(-11.5, exact.Nodes[2].Elevation, "exact: composition elevation still clamped (open cut)");
+            Assert.Eq(12.3, exact.Nodes[3].PositionHeight, "exact: elevated");
+        }
+
+        const string TrenchPlan = @"{""format"":""cs1conv-plan"",""formatVersion"":1,""prefabs"":{""p"":{""name"":""Small Road""}},
+              ""nodes"":[{""id"":1,""x"":0,""z"":0,""heightAboveTerrain"":-11.2},{""id"":2,""x"":90,""z"":0,""heightAboveTerrain"":-11.0},{""id"":3,""x"":180,""z"":0,""heightAboveTerrain"":-3.9},{""id"":4,""x"":0,""z"":50,""heightAboveTerrain"":6},{""id"":5,""x"":0,""z"":-90,""heightAboveTerrain"":-20}],
+              ""segments"":[{""id"":1,""prefab"":""p"",""start"":1,""end"":2,""kind"":""ground""},{""id"":2,""prefab"":""p"",""start"":2,""end"":3,""kind"":""ground""},{""id"":3,""prefab"":""p"",""start"":1,""end"":4,""kind"":""ground""},{""id"":4,""prefab"":""p"",""start"":1,""end"":5,""kind"":""ground""}]}";
+
         public static void TestTerrainFeaturesKept()
         {
             // a CS1 highway in an 11 m trench (ground segments) crossed by a road at ground level
-            var j = ImportPlanner.Build(PlanParser.Parse(@"{""format"":""cs1conv-plan"",""formatVersion"":1,""prefabs"":{""p"":{""name"":""Small Road""}},
-              ""nodes"":[{""id"":1,""x"":0,""z"":0,""heightAboveTerrain"":-11.2},{""id"":2,""x"":90,""z"":0,""heightAboveTerrain"":-11.0},{""id"":3,""x"":180,""z"":0,""heightAboveTerrain"":-3.9},{""id"":4,""x"":0,""z"":50,""heightAboveTerrain"":6},{""id"":5,""x"":0,""z"":-90,""heightAboveTerrain"":-20}],
-              ""segments"":[{""id"":1,""prefab"":""p"",""start"":1,""end"":2,""kind"":""ground""},{""id"":2,""prefab"":""p"",""start"":2,""end"":3,""kind"":""ground""},{""id"":3,""prefab"":""p"",""start"":1,""end"":4,""kind"":""ground""},{""id"":4,""prefab"":""p"",""start"":1,""end"":5,""kind"":""ground""}]}"), null);
+            var j = ImportPlanner.Build(PlanParser.Parse(TrenchPlan), null);
             Assert.Eq(-11.2, j.Nodes[1].Elevation, "trench node keeps its depth");
             Assert.Eq(-11.0, j.Nodes[2].Elevation, "trench node");
             Assert.Eq(0.0, j.Nodes[3].Elevation, "-3.9 is under the 4 m threshold: ground");
-            Assert.Eq(6.0, j.Nodes[4].Elevation, "embankment node keeps its height");
+            Assert.Eq(0.0, j.Nodes[4].Elevation, "embankments snap to the terrain by default (buildings can't connect to Raised sides)");
+            var keep = ImportPlanner.Build(PlanParser.Parse(TrenchPlan), new ImportOptions { KeepEmbankments = true });
+            Assert.Eq(6.0, keep.Nodes[4].Elevation, "KeepEmbankments: embankment node keeps its height");
             Assert.Eq(-11.1, j.Segments[0].MiddleElevation, "trench segment middle");
             Assert.Eq(-11.5, j.Nodes[5].Elevation, "a 20 m trench is clamped to -11.5 so CS2 keeps it an open cut");
         }

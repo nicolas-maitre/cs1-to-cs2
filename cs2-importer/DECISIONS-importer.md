@@ -56,3 +56,57 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
     - Once the terrain worker's heightmap lands, the offset becomes 0 and the map becomes the converted terrain.
 
 16. **CS2 lock**: `run.mjs start` takes `%LOCALAPPDATA%\cs1-to-cs2\cs2.lock` and refuses while another worker's lock is under 2 h old; `run.mjs stop` releases it. It reads both lock formats in use (`{owner, time}` and the terrain worker's `{session, since}`).
+
+## M2 (2026-11-21, still overnight)
+
+18. **The "turn the 4 m+ terrain offsets off" issue was a false alarm; they stay** (Claude, checked against the data).
+    - In the `.cs1x`, node `y` equals the exported terrain plus `heightAboveTerrain` to within 0.28 m at all 1670 plan nodes. At the highway trench the exported terrain is about 11 m *above* the road.
+    - So the heightmap is the undug terrain, and once `terrain/` has applied it, CS2 terrain + offset is the CS1 height. Nothing is counted twice.
+    - With real terrain the importer only drops the M1 test offset (back to 0). It keeps the flat-mode height rules, which on real terrain place every node within a few metres of CS1.
+19. **New height mode `heights: "exact"` (CS2 terrain + full CS1 `heightAboveTerrain`) exists but is experimental and off by default** (Claude).
+    - On freshly converted terrain it natively crashed CS2 in 5 of 5 runs, always about 1.5 s into the import: batch 3 of 400, or batch 26 of 25 (different segments each time).
+    - The same plan with flat heights on the same terrain never crashed: 2035/2035 in three runs.
+    - What I ruled out:
+      - a single bad segment (the crashing batches have ordinary slopes, ≤ 0.17);
+      - the terrain still settling (30 s wait);
+      - water (it crashed with and without the water step);
+      - a cold terrain-modification state (a 24-segment warm-up import first didn't help).
+    - It did work once, when a flat import had built and cleared the same roads first.
+    - `ExactLimit` (4.5 m) caps how far a position may differ from the composition elevation. That was a first guess at the cause and wasn't enough on its own.
+    - Left for later; the e2e uses flat heights (`--heights exact` opts in).
+20. **The e2e clears the base map with the importer's clear, not `terrain/mapprep.mjs clear`.** The terrain worker's clear (in progress) natively crashed CS2 twice on a fresh Plains city; I reported it to them. `--mapprep-clear` opts in.
+21. **Water is the terrain worker's step, called from e2e when `terrain/mapprep.mjs` exists.**
+    - CS1 water from the `.cs1x` `water.json`; without it, a dry map (`water.set` with no sources, then `water.reset`).
+    - Why it matters: with only the sea level lowered, the base map's river (Plains) kept flowing over the converted terrain and flooded the imported roads.
+22. **Base map for e2e with terrain: Plains** (little water at its centre). Its pre-built nets (372 edges) are bulldozed before the terrain goes in.
+23. **The mod is a separate assembly (`Cs2ImporterMod`) compiled from the same sources; the exec library stays `Cs2Importer`** (Claude).
+    - Two assemblies with one name would collide when `exec` hot-loads the library next to the loaded mod (Mono returns the copy already loaded).
+    - The script test hook lives in the exec library (op `mod`), which finds the loaded mod by reflection and calls the same `Actions` as the Options page buttons.
+24. **The status shown in game is a locale entry** (the label of a multiline-text option), rewritten and reloaded on every progress step. The game's settings UI has no read-only bound text field. Scripts read the same text from the hidden `StatusText` setting.
+25. **Import runs in the mod's own `ImportSystem` (ToolUpdate), one coroutine step per frame**, the same pacing as exec `pump:"tool"`. Loading or leaving the city aborts it with a message.
+26. **Locks:** `%LOCALAPPDATA%\cs1-to-cs2\cs1.lock` (new) and `cs2.lock`, same rules: another owner's lock under 2 h old means wait. The e2e waits up to 60 min. The terrain worker once overwrote my live lock and restarted CS2 under a running e2e; I told them about the format and the rule.
+
+27. **e2e defaults after the terrain worker's verified commands** (Claude).
+    - Terrain only with `--apply-terrain` (coordinator).
+    - Base map Sunshine Peninsula (fewest base nets, per the terrain worker's survey).
+    - Water and outside connections from `terrain/mapprep.mjs`.
+    - **The base-map clear stays the importer's.** With `mapprep clear` (which keeps power lines and seaways), CS2 crashed natively while creating batch 4 of the road import (e2e `20261121-044148`); the import's own pre-import clear had deleted 5 of those kept edges inside the crop just before. The same export on the same map with the importer clear passed (`20261121-045036`).
+    - `--clear-with mapprep` keeps theirs available.
+
+28. **Embankments snap to the terrain; trenches stay** (Claude, from the M3 buildings worker's report). This revises #7.
+    - **What went wrong:** ground nodes 4 m or more *above* CS1's terrain kept that offset as their elevation, so CS2 gave the edges Raised sides (embankment walls). Buildings can't connect to those: 6 of 77 placed buildings in `cs1conv-e2e-20261121-0530` were left unconnected.
+    - **Why it's safe to drop:** positive offsets aren't needed for grade separation, because bridges carry their own segment elevation. Trenches (≤ −4 m) are still needed to keep cross streets above sunken highways, so they stay.
+    - **Option:** `keepEmbankments` (default false) brings back the old rule.
+    - **Measured on converted terrain, same city and plan:** edges with Raised sides 94 → 26; Lowered sides 148 → 148; still 2035/2035 built, 0 Temp.
+    - **New in verify:** `edges_raised_sides` / `edges_lowered_sides`.
+
+### Open issues (M2)
+
+- **Shallow grade separations get joined.** In the whole-city run (4740 segments), 8 segments in two spots weren't built as planned:
+  - (548, −2518): a Two Lane Highway in a 5.2 m cut next to a ground road;
+  - (−942, −650): a one-way road in a 4.6 m cut under 12 m elevated ramps.
+
+  CS2 creates a junction where courses cross with too little clearance. Fix idea: for crossings without a shared node, make sure the clearance is at least about 8 m, by pushing the lower road down or the upper one up within the CS1 tolerance, or report them.
+- **CS1 tunnels sometimes become open cuts** (30 in the whole city, 1 in the geometry plan). CS2 picks the composition; forcing a tunnel would need elevation ≤ −12 m on both ends and in the middle.
+- **`heights: "exact"` crash:** see #19.
+- **Not driven yet:** the Options page itself was not opened on screen; scripts drive it through `Actions`. The dropdown of found packages is untested in game.

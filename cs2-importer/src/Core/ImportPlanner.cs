@@ -12,6 +12,9 @@ namespace Cs2Importer.Core
         /// <summary>Height above the CS2 terrain (metres): 0 for ground nodes, &gt; 0 elevated, &lt; 0 tunnel.</summary>
         public double Elevation;
         public double Cs1HeightAboveTerrain;
+        /// <summary>Height above the CS2 terrain at which the node is placed: Elevation ("flat" heights), or the full CS1
+        /// heightAboveTerrain ("exact" heights, once the CS1 terrain has been applied to CS2).</summary>
+        public double PositionHeight;
         public int Uses;
     }
 
@@ -34,11 +37,24 @@ namespace Cs2Importer.Core
         public double TerrainFeature = 4.0;     // a ground node at least this far above/below CS1's terrain keeps that offset
         public double FeatureMin = -11.5;       // ...clamped so CS2 keeps it an open cut (a tunnel starts at -12 m = -3 x limit)
         public double FeatureMax = 7.5;         // ...and a quay/embankment (a bridge with pillars starts at +8 m = 2 x limit)
+        /// <summary>Keep embankments (positive terrain features) too. Off by default: CS2 gives those edges Raised sides
+        /// (retaining walls), and buildings can't connect to them (M3 buildings worker). Trenches are always kept: they
+        /// are what keeps crossing roads grade-separated.</summary>
+        public bool KeepEmbankments = false;
         public double MapHalfSize = 7168;       // CS2 playable area is 14 336 m square, centred on the origin
         public double MinLength = 0.5;          // shorter segments are skipped
         public double ShortLength = 4.0;        // shorter segments are built but reported
         public double MergeDistance = 0.05;     // distinct CS1 nodes closer than this end up as one CS2 node
         public double OffsetX, OffsetZ;         // test placement: shifts the whole plan (0 = the plan's own CS2 coordinates)
+        /// <summary>
+        /// "flat": nodes sit at CS2 terrain + Elevation (M1; the CS2 terrain is a stand-in for CS1's).
+        /// "exact": the CS1 terrain has been applied to CS2 (terrain/), so CS2 terrain + CS1 heightAboveTerrain is the CS1
+        /// node height itself; every node is placed there. Elevation still drives CS2's composition choice.
+        /// </summary>
+        public string Heights = "flat";
+        /// <summary>"exact" heights: a node whose CS1 height differs from its composition elevation by more than this keeps
+        /// the composition elevation as its position too (a clamped trench). See DECISIONS-importer.md M2.</summary>
+        public double ExactLimit = 4.5;
     }
 
     public sealed class ImportJob
@@ -149,8 +165,9 @@ namespace Cs2Importer.Core
             {
                 List<double> l;
                 if (!ends.TryGetValue(n.Id, out l)) continue;
-                double feature = Math.Abs(n.Cs1HeightAboveTerrain) >= job.Options.TerrainFeature
-                    ? Math.Max(job.Options.FeatureMin, Math.Min(job.Options.FeatureMax, Math.Round(n.Cs1HeightAboveTerrain, 2))) : 0;
+                double hat = n.Cs1HeightAboveTerrain;
+                bool isFeature = hat <= -job.Options.TerrainFeature || (job.Options.KeepEmbankments && hat >= job.Options.TerrainFeature);
+                double feature = isFeature ? Math.Max(job.Options.FeatureMin, Math.Min(job.Options.FeatureMax, Math.Round(hat, 2))) : 0;
                 double best = 0, lo = double.MaxValue, hi = double.MinValue;
                 foreach (var e in l)
                 {
@@ -162,6 +179,10 @@ namespace Cs2Importer.Core
                 if (hi - lo > 1)
                     job.Warnings.Add(new Issue("info", "elevation-mismatch", "segments at node " + n.Id + " disagree on its elevation (" + lo.ToString("0.0") + " .. " + hi.ToString("0.0") + " m); using " + best.ToString("0.0")) { Node = n.Id });
             }
+            bool exact = job.Options.Heights == "exact";
+            foreach (var n in job.Nodes.Values)
+                n.PositionHeight = exact && !double.IsNaN(n.Cs1HeightAboveTerrain) && Math.Abs(n.Cs1HeightAboveTerrain - n.Elevation) <= job.Options.ExactLimit
+                    ? Math.Round(n.Cs1HeightAboveTerrain, 2) : n.Elevation;
             foreach (var s in job.Segments) s.MiddleElevation = (s.Start.Elevation + s.End.Elevation) / 2;
         }
 

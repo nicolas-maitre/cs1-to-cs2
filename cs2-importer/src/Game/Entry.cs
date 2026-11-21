@@ -41,6 +41,7 @@ namespace Cs2Importer
                 case "import": return Import(args);
                 case "terrain": return TerrainStats(args);
                 case "inspect": return Inspect(args);
+                case "mod": return ModScript.Drive(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify)");
             }
         }
@@ -57,6 +58,10 @@ namespace Cs2Importer
             o.ShortLength = P.Num(a, "shortLength", o.ShortLength);
             o.OffsetX = P.Num(a, "offsetX", 0);
             o.OffsetZ = P.Num(a, "offsetZ", 0);
+            o.KeepEmbankments = P.Bool(a, "keepEmbankments", false);
+            o.Heights = P.Str(a, "heights", "flat");
+            o.ExactLimit = P.Num(a, "exactLimit", o.ExactLimit);
+            if (o.Heights != "flat" && o.Heights != "exact") throw new ArgumentException("heights must be \"flat\" or \"exact\"");
             return o;
         }
 
@@ -115,7 +120,7 @@ namespace Cs2Importer
                 { "cs2_min", any ? new List<object> { R(job.MinX), R(job.MinZ) } : null },
                 { "cs2_max", any ? new List<object> { R(job.MaxX), R(job.MaxZ) } : null },
                 { "inside_cs2_map", !any || (Math.Max(Math.Abs(job.MinX), Math.Abs(job.MaxX)) <= o.MapHalfSize && Math.Max(Math.Abs(job.MinZ), Math.Abs(job.MaxZ)) <= o.MapHalfSize) },
-                { "map_half_size", o.MapHalfSize }, { "offset", new List<object> { o.OffsetX, o.OffsetZ } },
+                { "map_half_size", o.MapHalfSize }, { "offset", new List<object> { o.OffsetX, o.OffsetZ } }, { "heights", o.Heights },
             };
         }
 
@@ -307,10 +312,15 @@ namespace Cs2Importer
         static IEnumerator Import(Dictionary<string, object> a)
         {
             var total = Stopwatch.StartNew();
+            // in-process callers (the mod's options page) can pass a progress callback; exec callers can't (JSON args)
+            var progress = a != null && a.TryGetValue("_progress", out object pcb) ? pcb as Action<string> : null;
             var job = LoadJob(a);
             var w = new GameWorld();
             int settle = Math.Max(1, (int)P.Num(a, "settleFrames", 2));
             int verifyFrames = Math.Max(1, (int)P.Num(a, "verifyFrames", 30));
+            // trace: segment ids of each batch, appended (and flushed) before the batch is created, to find the batch
+            // in which the game dies (a native crash leaves no managed stack)
+            var trace = P.Str(a, "trace", null);
             double margin = P.Num(a, "margin", 50);
             var report = new Dictionary<string, object>
             {
@@ -347,7 +357,7 @@ namespace Cs2Importer
             var nodes = new Dictionary<long, NodeState>();
             foreach (var n in job.Nodes.Values)
             {
-                float y = w.TerrainHeight(n.X, n.Z) + (float)n.Elevation;
+                float y = w.TerrainHeight(n.X, n.Z) + (float)n.PositionHeight;
                 nodes[n.Id] = new NodeState { Job = n, Pos = new float3((float)n.X, y, (float)n.Z) };
             }
 
@@ -360,6 +370,12 @@ namespace Cs2Importer
             for (int bi = 0; bi < job.Batches.Count; bi++)
             {
                 var batch = job.Batches[bi];
+                if (!string.IsNullOrEmpty(trace))
+                {
+                    var ids = new StringBuilder("batch " + bi + ":");
+                    foreach (var s in batch) ids.Append(' ').Append(s.Id);
+                    File.AppendAllText(trace, ids.Append('\n').ToString());
+                }
                 var sw = Stopwatch.StartNew();
                 int created = 0, attached = 0;
                 var touched = new HashSet<long>();
@@ -443,10 +459,12 @@ namespace Cs2Importer
                 };
                 batchRows.Add(row);
                 Log.Info("import: batch " + (bi + 1) + "/" + job.Batches.Count + " " + MiniJson.Write(row));
+                if (progress != null) progress("batch " + (bi + 1) + " of " + job.Batches.Count + ": " + attempted.Count + " of " + job.Segments.Count + " segments placed");
             }
             report["batches"] = batchRows;
 
             // 5. verify after the game has settled
+            if (progress != null) progress("checking what was built");
             for (int f = 0; f < verifyFrames; f++) yield return null;
             var verify = Verify(w, job, prefabs, nodes, attempted);
             failures.AddRange((List<Issue>)verify["_failures"]);
@@ -483,7 +501,7 @@ namespace Cs2Importer
             foreach (var n in job.Nodes.Values)
             {
                 // the roads have reshaped the terrain since the import, so match on x/z and take the nearest height
-                var pos = new float3((float)n.X, w.TerrainHeight(n.X, n.Z) + (float)n.Elevation, (float)n.Z);
+                var pos = new float3((float)n.X, w.TerrainHeight(n.X, n.Z) + (float)n.PositionHeight, (float)n.Z);
                 float3 at;
                 var e = idx.Find(pos, 1.0f, 30.0f, out at);
                 nodes[n.Id] = new NodeState { Job = n, Pos = e != Entity.Null ? at : pos, Entity = e, Failed = e == Entity.Null };
@@ -521,7 +539,7 @@ namespace Cs2Importer
                 }
                 if (ns.Entity != Entity.Null) { planNodeEntities.Add(ns.Entity); nodesOk++; }
             }
-            int built = 0, pieces = 0, wrongPrefab = 0, elevatedEdges = 0, tunnelEdges = 0, wantElevated = 0, wantTunnel = 0;
+            int built = 0, pieces = 0, wrongPrefab = 0, elevatedEdges = 0, tunnelEdges = 0, wantElevated = 0, wantTunnel = 0, raisedSides = 0, loweredSides = 0;
             var builtEdges = new HashSet<Entity>();
             foreach (var s in attempted)
             {
@@ -556,6 +574,9 @@ namespace Cs2Importer
                     var g = w.EdgeGeneralFlags(e);
                     if ((g & Game.Prefabs.CompositionFlags.General.Elevated) != 0) elev = true;
                     if ((g & Game.Prefabs.CompositionFlags.General.Tunnel) != 0) tun = true;
+                    var sides = w.EdgeSideFlags(e);
+                    if ((sides & Game.Prefabs.CompositionFlags.Side.Raised) != 0) raisedSides++;
+                    if ((sides & Game.Prefabs.CompositionFlags.Side.Lowered) != 0) loweredSides++;
                 }
                 if (!prefabOk) { wrongPrefab++; failures.Add(new Issue("warning", "wrong-prefab", "segment " + s.Id + ": the CS2 edge has a different prefab than planned") { Segment = s.Id }); }
                 if (elev) elevatedEdges++;
@@ -577,6 +598,8 @@ namespace Cs2Importer
                 { "segments_failed", attempted.Count - built }, { "cs2_edges_for_plan", pieces }, { "nodes_found", nodesOk }, { "nodes_planned", nodes.Count },
                 { "wrong_prefab", wrongPrefab }, { "elevated_planned", wantElevated }, { "elevated_built", elevatedEdges },
                 { "tunnel_planned", wantTunnel }, { "tunnel_built", tunnelEdges }, { "other_cs2_edges_in_area", extra },
+                // edges with retaining-wall sides: buildings can't connect to a Raised/Lowered side
+                { "edges_raised_sides", raisedSides }, { "edges_lowered_sides", loweredSides },
                 { "_failures", failures },
             };
         }

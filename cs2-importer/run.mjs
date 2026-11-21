@@ -4,7 +4,7 @@
 //   node cs2-importer/run.mjs start                      lock CS2 (%LOCALAPPDATA%\cs1-to-cs2\cs2.lock) and start it
 //   node cs2-importer/run.mjs new [--map "<name|id>"] [--name cs1conv-city]
 //   node cs2-importer/run.mjs check <plan dir|json>
-//   node cs2-importer/run.mjs import <plan dir|json> [--clear] [--batch 400] [--tag name]
+//   node cs2-importer/run.mjs import <plan dir|json> [--clear] [--batch 400] [--tag name] [--heights flat|exact]
 //   node cs2-importer/run.mjs verify <plan dir|json>
 //   node cs2-importer/run.mjs shots <plan dir|json> [--tag name]   overview + close-ups of the plan's area
 //   node cs2-importer/run.mjs save cs1conv-<name>
@@ -13,19 +13,18 @@
 //
 // Reports and screenshots go to <repo>/.gamectl/import/ (git-ignored). The importer DLL is built on demand
 // (dotnet build -c Release); exec loads a fresh copy on every call, so a rebuild needs no game restart.
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connect, start, stop, status } from '../tools/gamectl/lib/index.js';
+import {
+  buildImporter, planPath, readPlan, planShots, summary, CS2_MODSDATA_RB as modsDataRb,
+  takeLock as takeGameLock, releaseLock as releaseGameLock, readLock as readGameLock,
+} from './lib/driver.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..');
 const outDir = path.join(repo, '.gamectl', 'import');
-const dll = path.join(here, 'bin', 'Release', 'net48', 'Cs2Importer.dll');
-const lockFile = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2', 'cs2.lock');
-const modsDataRb = path.join(os.homedir(), 'AppData', 'LocalLow', 'Colossal Order', 'Cities Skylines II', 'ModsData', 'RoadBuilder');
 const LOCK_OWNER = 'cs2-importer';
 // M1 test placement (DECISIONS-importer.md): Corral Riches, plan shifted to the flattest dry 3.2 km square of the map
 const DEFAULT_MAP = process.env.CS1CONV_MAP ?? 'Corral Riches';
@@ -33,119 +32,33 @@ const DEFAULT_OFFSET = process.env.CS1CONV_OFFSET ?? '2000,-4000';
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-const VALUE_FLAGS = new Set(['--map', '--name', '--batch', '--tag', '--offset']);
+const VALUE_FLAGS = new Set(['--map', '--name', '--batch', '--tag', '--offset', '--heights']);
 const pos = argv.slice(1).filter((a, i, all) => !a.startsWith('--') && !(i > 0 && VALUE_FLAGS.has(all[i - 1])));
 const opt = (name, def) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : def; };
 const flag = (name) => argv.includes(name);
 
 function log(...a) { console.error('[run]', ...a); }
 
-/** --offset x,z (default DEFAULT_OFFSET; "0,0" = the plan's own coordinates) */
+/**
+ * --offset x,z (default DEFAULT_OFFSET; "0,0" = the plan's own coordinates) and --heights flat|exact (exact = the CS1
+ * terrain has been applied, see terrain/; it implies --offset 0,0 unless one is given).
+ */
 function offset() {
-  const [x, z] = String(opt('--offset', DEFAULT_OFFSET)).split(',').map(Number);
+  const heights = opt('--heights', 'flat');
+  const [x, z] = String(opt('--offset', heights === 'exact' ? '0,0' : DEFAULT_OFFSET)).split(',').map(Number);
   if (!Number.isFinite(x) || !Number.isFinite(z)) throw new Error('--offset must be x,z');
-  return { offsetX: x, offsetZ: z };
+  return { offsetX: x, offsetZ: z, heights };
 }
-
-function planPath(p) {
-  if (!p) throw new Error('missing plan path');
-  const abs = path.resolve(p);
-  return fs.statSync(abs).isDirectory() ? path.join(abs, 'cs1conv-plan.json') : abs;
-}
-
-function readPlan(p) { return JSON.parse(fs.readFileSync(planPath(p), 'utf8')); }
-
-function buildDll() {
-  execFileSync('dotnet', ['build', '-c', 'Release', '--nologo', '-v', 'q'], { cwd: here, stdio: ['ignore', 'ignore', 'inherit'] });
-  return dll;
-}
-
-// ------------------------------------------------------------------ lock
-
-function readLock() {
-  try { return JSON.parse(fs.readFileSync(lockFile, 'utf8')); } catch { return null; }
-}
-
-function takeLock() {
-  const l = readLock();
-  if (l && l.owner !== LOCK_OWNER) {
-    // other workers write {session, since}; ours is {owner, time}
-    const who = l.owner ?? l.session ?? 'unknown', when = l.time ?? l.since;
-    const ageH = (Date.now() - Date.parse(when)) / 3600e3;
-    if (!(ageH >= 2)) throw new Error(`CS2 is locked by ${who} since ${when} (${Number.isFinite(ageH) ? ageH.toFixed(2) + ' h' : 'unknown age'}): wait and retry`);
-    log(`taking over a stale lock from ${who} (${ageH.toFixed(1)} h old)`);
-  }
-  fs.mkdirSync(path.dirname(lockFile), { recursive: true });
-  const now = new Date().toISOString();
-  fs.writeFileSync(lockFile, JSON.stringify({ owner: LOCK_OWNER, session: 'cs2-importer worker (M1: cs2-importer/, tools/cs2-bridge/)', since: now, time: now, pid: process.pid }) + '\n');
-}
-
-function releaseLock() {
-  const l = readLock();
-  if (l && l.owner === LOCK_OWNER) fs.rmSync(lockFile);
-}
-
-// ------------------------------------------------------------------ helpers
 
 async function bridge() { return connect('cs2'); }
 
-function bounds(plan) {
-  const { offsetX, offsetZ } = offset();
-  const xs = plan.nodes.map((n) => n.x + offsetX), zs = plan.nodes.map((n) => n.z + offsetZ);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
-  return { minX, maxX, minZ, maxZ, cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, size: Math.max(maxX - minX, maxZ - minZ), ox: offsetX, oz: offsetZ };
-}
-
-function summary(r) {
-  const res = r.result ?? r;
-  const lines = [
-    `planned ${res.segments_planned} segments, attempted ${res.segments_attempted}, built ${res.segments_built}, failed ${res.segments_failed}`,
-    `nodes ${res.nodes_found}/${res.nodes_planned}; CS2 edges ${res.cs2_edges_for_plan}; elevated ${res.elevated_built}/${res.elevated_planned}; tunnel ${res.tunnel_built}/${res.tunnel_planned}; other edges in area ${res.other_cs2_edges_in_area}`,
-  ];
-  if (r.failures_by_reason) lines.push(`failures: ${JSON.stringify(r.failures_by_reason)}`);
-  if (r.plan?.skipped_by_reason) lines.push(`skipped in plan: ${JSON.stringify(r.plan.skipped_by_reason)}`);
-  if (r.temp_after ?? r.temp) lines.push(`temp: ${JSON.stringify(r.temp_after ?? r.temp)}`);
-  if (r.seconds !== undefined) lines.push(`${r.seconds} s, ${r.batches?.length ?? 0} batches`);
-  return lines.join('\n');
-}
+function buildDll() { return buildImporter(); }
+function takeLock() { takeGameLock('cs2', LOCK_OWNER, 'cs2-importer (cs2-importer/run.mjs)', { log }); }
+function releaseLock() { releaseGameLock('cs2', LOCK_OWNER); }
+function readLock() { return readGameLock('cs2'); }
 
 async function shots(planArg, tag) {
-  const plan = readPlan(planArg);
-  const b = await bridge();
-  const bb = bounds(plan);
-  fs.mkdirSync(outDir, { recursive: true });
-  const files = [];
-  const views = [
-    { name: 'overview', x: bb.cx, z: bb.cz, distance: Math.max(400, bb.size * 1.1), yaw: 0, pitch: 75 },
-    { name: 'oblique', x: bb.cx, z: bb.cz, distance: Math.max(300, bb.size * 0.8), yaw: 30, pitch: 40 },
-  ];
-  // close-ups: elevated / tunnel segments, plus the busiest node
-  const elevated = plan.segments.filter((s) => (s.elevationStart ?? 0) > 1 || (s.elevationEnd ?? 0) > 1);
-  if (elevated.length) {
-    const n = plan.nodes.find((x) => x.id === elevated[Math.floor(elevated.length / 2)].start);
-    if (n) views.push({ name: 'elevated', x: n.x + bb.ox, z: n.z + bb.oz, distance: 250, yaw: 60, pitch: 30 });
-  }
-  const tunnel = plan.segments.filter((s) => (s.elevationStart ?? 0) < -1 || (s.elevationEnd ?? 0) < -1);
-  if (tunnel.length) {
-    const n = plan.nodes.find((x) => x.id === tunnel[0].start);
-    if (n) views.push({ name: 'tunnel', x: n.x + bb.ox, z: n.z + bb.oz, distance: 250, yaw: 120, pitch: 35 });
-  }
-  const deg = new Map();
-  for (const s of plan.segments) for (const id of [s.start, s.end]) deg.set(id, (deg.get(id) ?? 0) + 1);
-  const busiest = [...deg.entries()].sort((a, c) => c[1] - a[1])[0];
-  if (busiest) {
-    const n = plan.nodes.find((x) => x.id === busiest[0]);
-    views.push({ name: 'junction', x: n.x + bb.ox, z: n.z + bb.oz, distance: 180, yaw: 20, pitch: 55 });
-  }
-  for (const v of views) {
-    await b.cameraSet({ x: v.x, z: v.z, distance: v.distance, yaw: v.yaw, pitch: v.pitch });
-    await b.wait(45, 1.5);
-    const f = path.join(outDir, `${tag}-${v.name}.png`);
-    await b.screenshot(f);
-    files.push(f);
-    log('shot', f);
-  }
-  return files;
+  return planShots(await bridge(), readPlan(planArg), { dir: outDir, tag, ...offset(), log });
 }
 
 // ------------------------------------------------------------------ commands

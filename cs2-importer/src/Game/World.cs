@@ -213,6 +213,16 @@ namespace Cs2Importer
             return Em.GetComponentData<NetCompositionData>(c.m_Edge).m_Flags.m_General;
         }
 
+        /// <summary>Left | right side flags of an edge's composition (Raised = embankment wall, Lowered = cutting wall).</summary>
+        public CompositionFlags.Side EdgeSideFlags(Entity edge)
+        {
+            if (!Em.HasComponent<Composition>(edge)) return 0;
+            var c = Em.GetComponentData<Composition>(edge);
+            if (c.m_Edge == Entity.Null || !Em.HasComponent<NetCompositionData>(c.m_Edge)) return 0;
+            var f = Em.GetComponentData<NetCompositionData>(c.m_Edge).m_Flags;
+            return f.m_Left | f.m_Right;
+        }
+
         public int Count(params ComponentType[] types)
         {
             using (var q = Em.CreateEntityQuery(types)) return q.CalculateEntityCount();
