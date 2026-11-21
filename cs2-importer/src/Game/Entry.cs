@@ -48,6 +48,7 @@ namespace Cs2Importer
                 case "drivingside": return SetDrivingSide(args);
                 case "traffic": return M2Ops.Traffic(args);
                 case "trafficmod": return M2Ops.TrafficMod(args);
+                case "settle": return M2Ops.Settle(args);
                 case "lanes": return LaneOps.Apply(args);
                 case "lanedata": return LaneOps.LoaderCheck(args);
                 case "lanesrepair": args["repair"] = true; return LaneOps.Apply(args);

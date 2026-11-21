@@ -342,6 +342,7 @@ namespace Cs2ImporterMod
                 if (!InCity()) throw new InvalidOperationException(T.S("err.noCity"));
                 if (ImportSystem.Busy) throw new InvalidOperationException(T.S("err.busy"));
                 var args = Args(s, "import");
+                if (s.AddTransformers) args["powerhook.transformers"] = true; // the buildings worker's powerhook (Steps.Prefixed strips the prefix)
                 // #63: a left-hand plan never goes into a right-hand city (or the other way round) unless asked for
                 var planLht = MapSteps.PlanLeftHand((Dictionary<string, object>)MiniJson.Parse(File.ReadAllText((string)args["plan"])));
                 var side = Cs2Importer.Core.DrivingSide.Mismatch(planLht, MapSteps.CityLeftHand());
@@ -412,6 +413,9 @@ namespace Cs2ImporterMod
             if (s.ApplyConnections) steps.Add(new KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>("connections", MapSteps.Connections));
             // after every step that may split or replace road edges: junctions whose lane connections now point at edges that
             // are gone would be dropped by the Traffic mod on reload; they are written again (#126)
+            // after every step: roads whose composition still carries side upgrades CS2 has since dropped are re-selected now,
+            // so the city doesn't change when it's saved and loaded (#64); before lanesrepair, which then sees the final lanes
+            if (s.ApplyTrafficSettings) steps.Add(Op("settle"));
             if (s.ApplyLaneConnections && !(MapSteps.CityLeftHand() && !LeftHandLanesReady)) steps.Add(Op("lanesrepair"));
             foreach (var st in steps)
             {
@@ -487,11 +491,36 @@ namespace Cs2ImporterMod
             foreach (var kv in all)
             {
                 if (kv.Key == "import" || kv.Key == "cancelled" || kv.Key == "undo") continue;
-                sb.Append(StepLine(kv.Key, kv.Value as Dictionary<string, object>)).Append('\n');
+                var line = StepLine(kv.Key, kv.Value as Dictionary<string, object>);
+                if (!string.IsNullOrEmpty(line)) sb.Append(line).Append('\n');
             }
             object u;
             if (all.TryGetValue("undo", out u) && u is Dictionary<string, object> ud && ud.ContainsKey("total")) sb.Append(T.S("imp.recorded", ud["total"])).Append('\n');
             sb.Append(T.S("report", report));
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// The buildings worker's report lines, under their step's line: warnings ("no power plant placed"), powerhook's
+        /// plants that need a transformer station, and buildings to connect to a road. Up to 5 of each, then a count.
+        /// </summary>
+        static string ReportLines(Dictionary<string, object> d)
+        {
+            var sb = new StringBuilder();
+            foreach (var key in new[] { "warnings", "needTransformer", "connectRoad" })
+            {
+                object v;
+                if (!d.TryGetValue(key, out v) || !(v is System.Collections.IEnumerable list) || v is string) continue;
+                int n = 0;
+                foreach (var x in list)
+                {
+                    var t = x as string;
+                    if (string.IsNullOrEmpty(t)) continue;
+                    if (n < 5) sb.Append('\n').Append(T.S("line.stepWarning", t));
+                    n++;
+                }
+                if (n > 5) sb.Append('\n').Append(T.S("line.moreInReport", n - 5));
+            }
             return sb.ToString();
         }
 
@@ -519,6 +548,9 @@ namespace Cs2ImporterMod
                         if (left > 0) unsure = T.S("line.lanesArmCheck", left);
                         return T.S("line.lanes", d["connections"], d["nodes_done"], d["nodes_planned"], d["lane_refs_matched"], d["lane_refs"], ((string)d["handedness"]).StartsWith("mirrored") ? T.S("line.lanesMirrored") : "") + unsure;
                     }
+                case "settle":
+                    // quiet unless it had something to do
+                    return Convert.ToInt32(d["edges_reselected"]) > 0 ? T.S("line.settle", d["edges_reselected"]) : null;
                 case "lanesrepair":
                     {
                         var rp = d.TryGetValue("repair", out v) ? v as Dictionary<string, object> : null;
@@ -544,15 +576,12 @@ namespace Cs2ImporterMod
                             already != null && Convert.ToInt32(already) > 0 ? T.S("line.already", already) : "",
                             failedN != null && Convert.ToInt32(failedN) > 0 ? T.S("line.failedN", failedN) : "");
                         // buildings (#128): buildings to place by hand, and warnings such as "no power plant placed"
-                        object py, warns;
+                        object py;
                         if (d.TryGetValue("placeYourself", out py) && py is System.Collections.ICollection pyc && pyc.Count > 0)
                             line += T.S("line.placeYourself", pyc.Count);
-                        if (d.TryGetValue("warnings", out warns) && warns is System.Collections.IEnumerable we && !(warns is string))
-                            foreach (var x in we)
-                                if (x is string ws && ws.Length > 0) line += "\n" + T.S("line.stepWarning", ws);
-                        return line;
+                        return line + ReportLines(d);
                     }
-                    return T.S("line.done", title);
+                    return T.S("line.done", title) + ReportLines(d);
             }
         }
 

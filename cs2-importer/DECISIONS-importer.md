@@ -471,4 +471,19 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
       - Op `edgestate` (new: per edge prefab, composition flags and lanes, Upgraded, sub-lanes with master/slave/secondary) shows it on all of them: the composition sides go from `L 0 | R 0` in session to `L PrimaryStop | R PrimaryStop` after load, plus a Car Bay Lane. Lane indices shift (e.g. 1516: the bay takes index 1).
       - All 19 carry a bus stop from the transit step. `transit/cs2-exec` `StopsCreate` marks only its CreationDefinition `Updated`, not the attached edge, so CS2 re-selects the composition only on the next load. The other 85 stops of that road type are on compositions without a stop variant.
       - Fix with worker-4 (transit): mark the attached edges `Updated`. Worker-5's final `lanesrepair` step rewrites junctions whose lanes changed after the lanes step.
+    - **Bus stops fixed:** worker-4's `stops.touch` marks the stop edges `Updated` after placing the stops, called from `mod/TransitStep.cs`. Worker-5's final `lanesrepair` rewrites the bay-shifted junctions (13 on Skibidi), so no step reorder is needed.
+      - Verified (`.gamectl/reload/{skibidi,cacao}-c`): car lanes unchanged on reload for every segment (Skibidi 0 of 2035, was 19; Cacao 0 of 684).
+      - Turn check right after the import 117/117 and 167/167, including the 22 Skibidi junctions with connections on bus-stop roads.
+      - `lanedirs` skips "Bay Lane" lanes, worker-5's rule.
+    - **Turn bans and crosswalk changes at nodes that aren't junctions:**
+      - Before the fix: the side flags were lost on reload on 4 Skibidi and 2 Cacao roads, and on 26 Skibidi roads with only roads + traffic.
+      - CS1's TM:PE allows turn bans and crosswalk changes at dead ends and at nodes between two segments. CS2 keeps them only where 3 or more roads meet: it drops them when it validates the upgrades, and the composition follows only on the next load.
+      - Every lost rule end was at a node of degree 1 or 2 (27 of the 30 such ends in the bisect), none of the 62 at degree 3–4.
+      - Fixed: the traffic op skips side upgrades at CS2 nodes with fewer than 3 edges and reports them (`ends_not_at_a_junction`, with examples). CS2 wouldn't keep them.
+      - That wasn't all: CacaoCity also lost crosswalk changes at real junctions (12 roads, several elevated, where CS2 draws no crosswalk), and a different set from run to run. CS2's acceptance rules aren't predictable from the plan.
+      - So the mod now ends with a `settle` step (op `settle`, before `lanesrepair`): every plan edge whose composition's turn-ban/crosswalk bits differ from its `Upgraded` flags is marked `Updated`, with its nodes, so CS2 re-selects it in session. Status line only when it did something: "Roads: N updated to the crosswalks and turn rules CS2 keeps there …".
+    - **Verified with everything on** (`.gamectl/reload/{skibidi,cacao}-f`: lane connections, transit with `stops.touch`, `settle`, `lanesrepair`):
+      - CacaoCity: 684/684 roads, 0 car-lane and 0 composition changes on reload, turn check 167/167.
+      - Skibidi: 2035/2035, 0 composition changes, turn check 117/117, `lanesrepair` rewrote the 13 bay-shifted junctions (18 turns rechecked, 0 wrong), 1 car-lane change.
+      - That one (segment 3712) has its lanes split at mid-edge in session (EdgeDelta 0–0.5 / 0.5–1) and whole after the reload. It comes from the new powerhook step's low-voltage line joining the road mid-edge, handed to the buildings worker.
     - **Acceptance:** step `roads-reload` dumps `lanedirs` and `edgestate` before a save and after reloading it, and fails on any segment whose car lanes, prefab or composition differ (`roads-reload.json`).

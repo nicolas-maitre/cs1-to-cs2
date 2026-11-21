@@ -481,6 +481,7 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
     - Where a CS1 power line or pipe ends on a road node, CS2 gives the line its own node at the same position. That node lists the road edge in `ConnectedEdge` as a local connection (how a line joins a road), not as an endpoint.
     - The importer's node lookup could pick that node, and its path walk followed the local connection (buildings worker's analysis, confirmed against `inspect-missing.json`).
     - Fixed in the importer: `GameWorld.EdgesOf` returns only edges the node starts or ends, and the node index ranks utility nodes last (DECISIONS-importer.md #64).
+    - Confirmed on the saved city: `heights` and `lanedirs` now resolve 4738 segments with 2 missing (the import's 2 failures), down from 20.
     - The buildings worker also pulls line ends 3 m back from road nodes, with a road guard.
   - **Roads that change on reload (#142):** 19 segments on Skibidi.
     - They carry bus stops placed by the transit step. The edge's composition picks the stop variant (`PrimaryStop`, plus a Car Bay Lane) only on the next load, which shifts lane indices, so lane connections written in session break.

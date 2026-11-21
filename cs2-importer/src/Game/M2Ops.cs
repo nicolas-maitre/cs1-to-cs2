@@ -356,7 +356,8 @@ namespace Cs2Importer
 
             // per segment end: turn bans and crosswalks on the edge's side for that end (left = start node, right = end
             // node: CompositionSelectSystem mirrors the edge's flags for the end node's composition)
-            int endsMissing = 0, forbidEnds = 0, crosswalkAdded = 0, crosswalkRemoved = 0;
+            int endsMissing = 0, forbidEnds = 0, crosswalkAdded = 0, crosswalkRemoved = 0, endsNotAtJunction = 0;
+            var notAtJunction = new List<object>();
             var forbidPlan = new List<object[]>();
             foreach (var se in t.SegmentEnds)
             {
@@ -365,6 +366,16 @@ namespace Cs2Importer
                 bool isEnd;
                 var e = res.EdgeAt(w, se.Segment, se.Node, out isEnd);
                 if (e == Entity.Null) { endsMissing++; continue; }
+                // CS2 keeps turn bans and crosswalk changes only where roads meet (3 or more edges): at a dead end or a
+                // node between two roads it drops them when it validates the upgrades, and the composition only follows on
+                // the next load, so the road changed on reload (#64). CS1's TM:PE allowed them there; not expressible
+                Entity cs2Node;
+                if (res.Node.TryGetValue(se.Node, out cs2Node) && w.EdgesOf(cs2Node).Count < 3)
+                {
+                    endsNotAtJunction++;
+                    if (notAtJunction.Count < 20) notAtJunction.Add(se.Segment + "@" + se.Node);
+                    continue;
+                }
                 CompositionFlags.Side add = 0, remove = 0;
                 foreach (var f in se.Forbid)
                 {
@@ -426,6 +437,7 @@ namespace Cs2Importer
                 { "turn_ban_ends", forbidEnds }, { "turn_bans_in_node_composition", forbidSeenSameSide + forbidSeenOtherSide },
                 { "turn_bans_composition_side", new Dictionary<string, object> { { "left", forbidSeenSameSide }, { "right", forbidSeenOtherSide } } },
                 { "crosswalks_added", crosswalkAdded }, { "crosswalks_removed", crosswalkRemoved },
+                { "ends_not_at_a_junction", endsNotAtJunction }, { "ends_not_at_a_junction_examples", notAtJunction },
                 { "entities_updated", touched.Count }, { "seconds", Entry.R(sw.Elapsed.TotalSeconds) },
             };
         }
@@ -474,6 +486,47 @@ namespace Cs2Importer
         static MethodInfo Generic(string name, int args, Type t)
         {
             return typeof(EntityManager).GetMethods().First(m => m.Name == name && m.IsGenericMethodDefinition && m.GetParameters().Length == args && m.GetParameters()[0].ParameterType == typeof(Entity)).MakeGenericMethod(t);
+        }
+
+        /// <summary>
+        /// op settle {plan}: after every step, the roads' compositions must be what CS2 rebuilds on load (#64). CS2 drops
+        /// side upgrades it doesn't accept at a node (a crosswalk change on an elevated road or where it draws no crosswalk,
+        /// a turn ban at a node between two roads) from the edge's Upgraded, but keeps the composition it chose with them
+        /// until the edge is next updated: the road changes on reload. Every plan edge whose composition's turn-ban and
+        /// crosswalk bits differ from its Upgraded flags is marked Updated (with its nodes) so CS2 re-selects it now.
+        /// </summary>
+        public static IEnumerator Settle(Dictionary<string, object> a)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var job = Entry.LoadJob(a);
+            var w = new GameWorld();
+            var res = Resolve(w, job);
+            const CompositionFlags.Side Mask = CompositionFlags.Side.ForbidLeftTurn | CompositionFlags.Side.ForbidRightTurn
+                | CompositionFlags.Side.ForbidStraight | CompositionFlags.Side.RemoveCrosswalk | CompositionFlags.Side.AddCrosswalk;
+            var stale = new HashSet<Entity>();
+            var examples = new List<object>();
+            foreach (var kv in res.Edges)
+                foreach (var e in kv.Value)
+                {
+                    if (!w.IsReal(e) || !w.Em.HasComponent<Composition>(e) || stale.Contains(e)) continue;
+                    var ce = w.Em.GetComponentData<Composition>(e).m_Edge;
+                    if (ce == Entity.Null || !w.Em.HasComponent<NetCompositionData>(ce)) continue;
+                    var cf = w.Em.GetComponentData<NetCompositionData>(ce).m_Flags;
+                    var uf = w.Em.HasComponent<Upgraded>(e) ? w.Em.GetComponentData<Upgraded>(e).m_Flags : default(CompositionFlags);
+                    if ((cf.m_Left & Mask) == (uf.m_Left & Mask) && (cf.m_Right & Mask) == (uf.m_Right & Mask)) continue;
+                    stale.Add(e);
+                    if (examples.Count < 20) examples.Add(kv.Key + ": composition L " + (cf.m_Left & Mask) + " R " + (cf.m_Right & Mask) + ", Upgraded L " + (uf.m_Left & Mask) + " R " + (uf.m_Right & Mask));
+                }
+            foreach (var e in stale)
+            {
+                MarkUpdated(w, e);
+                var ed = w.Em.GetComponentData<Edge>(e);
+                MarkUpdated(w, ed.m_Start);
+                MarkUpdated(w, ed.m_End);
+            }
+            var f = Frames(stale.Count > 0 ? 30 : 1);
+            while (f.MoveNext()) yield return null;
+            yield return new Dictionary<string, object> { { "op", "settle" }, { "edges_reselected", stale.Count }, { "examples", examples }, { "seconds", Entry.R(sw.Elapsed.TotalSeconds) } };
         }
 
         public static IEnumerator TrafficMod(Dictionary<string, object> a)

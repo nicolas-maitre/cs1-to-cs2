@@ -117,6 +117,11 @@ namespace Cs2ImporterMod
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyBuildings { get; set; } = true;
 
+        /// <summary>The buildings worker's powerhook step: a transformer station by each imported coal, gas or incineration
+        /// plant, with a high-voltage line to it. Off: the report names each plant that needs one.</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool AddTransformers { get; set; } = false;
+
         /// <summary>After the buildings: CS1 bus/tram stops and transit lines (transit/ worker's library).</summary>
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyTransit { get; set; } = true;
@@ -193,6 +198,7 @@ namespace Cs2ImporterMod
             ApplyLaneConnections = true;
             KeepMapTerrain = false;
             AllowOtherDrivingSide = false;
+            AddTransformers = false;
             RecentPackages = "";
             OffsetX = OffsetZ = 0;
             StatusText = "";

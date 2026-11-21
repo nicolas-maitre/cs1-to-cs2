@@ -1,6 +1,6 @@
 // Release acceptance test: the real user flow with the release artefacts, no exec of import code.
 //
-//   node tools/release/acceptance.mjs [--cs1x <file>] [--map "Corral Riches"] [--auto-crop 3000 | --crop cx,cz,size] [--simulate 60] [--skip-build] [--keep-mod]
+//   node tools/release/acceptance.mjs [--cs1x <file>] [--map "Corral Riches"] [--auto-crop 3000 | --crop cx,cz,size] [--simulate 60] [--skip-build] [--keep-mod] [--mod-set '{"AddTransformers":true}']
 //
 // 1. build      node tools/release/build.mjs (unless --skip-build)
 // 2. install    the importer mod from release/<v>/cs2-importer-<v>.zip into CS2's Mods folder (the dev build there is
@@ -31,6 +31,8 @@ import { buildQa, measureUtilities, summariseUtilities } from '../qa/lib/utiliti
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : d; };
 const flag = (n) => argv.includes('--' + n);
+// --mod-set '{"AddTransformers":true}': extra Options values for this run (opt-ins); booleans are switched back after the save
+const MOD_SET = JSON.parse(opt('mod-set', '{}'));
 const log = (...a) => console.error(`[acceptance ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const OWNER = 'acceptance', SESSION = 'release acceptance test (tools/release/acceptance.mjs, buildings worker)';
 
@@ -152,7 +154,7 @@ try {
     return { pid: r.pid, ready_s: r.ready_s, city };
   });
   await step('check', async () => {
-    const r = await modExec(b, { set: { PackageFolder: S.package, ClearArea: true, ApplyZoning: true, ApplyTrafficSettings: true, ApplyTrafficMod: true, ApplyBuildings: true, ApplyTransit: true, OffsetX: 0, OffsetZ: 0 }, press: 'Check' });
+    const r = await modExec(b, { set: { PackageFolder: S.package, ClearArea: true, ApplyZoning: true, ApplyTrafficSettings: true, ApplyTrafficMod: true, ApplyLaneConnections: true, ApplyBuildings: true, ApplyTransit: true, ApplyConnections: true, OffsetX: 0, OffsetZ: 0, ...MOD_SET }, press: 'Check' });
     return { status: r.StatusText, result: r };
   });
   // Check tells a new city to press "Prepare map" first (terrain, water, map clearing from the package).
@@ -288,6 +290,7 @@ try {
     return planShots(b, plan, { dir: runDir, tag: 'acceptance', log });
   });
   await step('save', () => b.saveWrite(`cs1conv-acceptance-${tag}`));
+  if (Object.keys(MOD_SET).length) await step('mod-set-restore', () => modExec(b, { set: Object.fromEntries(Object.entries(MOD_SET).filter(([, v]) => typeof v === 'boolean').map(([k, v]) => [k, !v])) }).then(() => ({ restored: Object.keys(MOD_SET) })));
   await step('stop', () => stop('cs2', {}));
   S.ok = S.steps.every((s) => s.ok);
 } catch (e) {
