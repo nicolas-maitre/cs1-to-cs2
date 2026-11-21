@@ -25,7 +25,7 @@ For each save, the runner loads it, lets it run `--minutes` of real time at top 
 
 Output: `.gamectl/qa/utilities-<save>.json` (the summary and the full result), plus a summary on stdout. The exit code is 1 when a city has any `problems`, or less than 90 % of consumers supplied for electricity, water or sewage. That threshold isn't a verdict on CS2's economy, but below it something structural is missing.
 
-**CS2 is shared.** The runner takes `%LOCALAPPDATA%\cs1-to-cs2\cs2.lock`. It waits up to 2 h while another owner's lock is younger than 2 h, then releases it at the end. It stops CS2 at the end only if it started it (`--keep` leaves it running).
+**CS2 is shared.** The runner takes `%LOCALAPPDATA%\cs1-to-cs2\cs2.lock`. It waits up to 2 h while another owner's lock is younger than 2 h, then releases it at the end. Before releasing it, it stops CS2, whoever started it and also after an error: a free lock means no game is running, so the next queued run starts its own. `--keep` leaves CS2 running for an interactive follow-up; stop it yourself before anyone else needs the game.
 
 **In the release acceptance:** `acceptance-utilities.patch` adds a read-only `utilities` step to `tools/release/acceptance.mjs`, which is the buildings worker's file. The step runs right after the simulation and the vehicle count, and its lines go into `summary.json`. The step is informational: it doesn't fail the run.
 

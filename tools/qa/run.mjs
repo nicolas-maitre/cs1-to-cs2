@@ -10,10 +10,10 @@
 //        the result as a new save (the loaded save is never overwritten).
 //
 // CS2 is shared: takes %LOCALAPPDATA%\cs1-to-cs2\cs2.lock (waits while another owner holds a lock younger than 2 h)
-// and releases it at the end; stops CS2 at the end only when this script started it (unless --keep).
+// and releases it at the end; stops CS2 before releasing it, also on error (unless --keep).
 import fs from 'node:fs';
 import path from 'node:path';
-import { connect, start, stop } from '../gamectl/lib/index.js';
+import { connect, start, stop, status } from '../gamectl/lib/index.js';
 import { waitAndTakeLock, releaseLock, REPO } from '../../cs2-importer/lib/driver.mjs';
 import { buildQa, measureUtilities, summariseUtilities } from './lib/utilities.mjs';
 import { DLL as TERRAIN_DLL } from '../../terrain/apply.mjs';
@@ -25,19 +25,24 @@ const cmd = argv[0];
 const opt = (name, def) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : def; };
 const flag = (name) => argv.includes(`--${name}`);
 
+// A free cs2.lock means no CS2 running: other workers' queued runs start their own game. So the game is stopped before
+// the lock is released, whoever started it and also on error (unless --keep, for an interactive follow-up).
 async function withCs2(fn) {
   await waitAndTakeLock('cs2', OWNER, 'QA checks (tools/qa/run.mjs, web worker)', { log, timeoutMin: 120 });
-  let started = false;
   try {
     let bridge;
     try { bridge = await connect('cs2'); await bridge.ping(); } catch {
       log('starting CS2');
       ({ bridge } = await start('cs2', { onProgress: log }));
-      started = true;
     }
     return await fn(bridge);
   } finally {
-    if (started && !flag('keep')) { try { log('stopping CS2'); await stop('cs2'); } catch (e) { log('stop failed:', e.message); } }
+    if (flag('keep')) log('--keep: CS2 left running; stop it (gamectl stop cs2) before anyone else needs it');
+    else {
+      try {
+        if ((await status('cs2').catch(() => null))?.running) { log('stopping CS2'); await stop('cs2'); }
+      } catch (e) { log('stop failed:', e.message); }
+    }
     releaseLock('cs2', OWNER);
   }
 }
