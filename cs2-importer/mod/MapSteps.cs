@@ -246,9 +246,10 @@ namespace Cs2ImporterMod
             var list = oc != null && oc.TryGetValue("connections", out var co) ? co as List<object> : null;
             if (list == null || list.Count == 0)
             {
-                var u = UtilityConnections();
+                var ud = new UtilityRun();
+                while (ud.MoveNext()) yield return null;
                 for (int i = 0; i < 30; i++) yield return null;
-                yield return new Dictionary<string, object> { { "skipped", "no outside connections in the package" }, { "utilities", u } };
+                yield return new Dictionary<string, object> { { "skipped", "no outside connections in the package" }, { "utilities", ud.Summary() } };
                 yield break;
             }
             double ox = P.Num(args, "offsetX", 0), oz = P.Num(args, "offsetZ", 0);
@@ -260,7 +261,9 @@ namespace Cs2ImporterMod
             }
             int before = ((List<object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.list" } })).Count;
             var created = (Dictionary<string, object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.create" }, { "connections", conns } });
-            var utilities = UtilityConnections();
+            var run = new UtilityRun();
+            while (run.MoveNext()) yield return null;
+            var utilities = run.Summary();
             for (int i = 0; i < 30; i++) yield return null;
             var after = (List<object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.list" } });
             int ok = 0, withLanes = 0;
@@ -282,23 +285,47 @@ namespace Cs2ImporterMod
 
         /// <summary>
         /// Electricity + water-pipe outside connections (#136): Prepare map's clear removes the base map's power line and
-        /// its marker, and base maps have no water-pipe connection, so the city could import neither. Returns
-        /// {electricity, water} = markers created (or the error).
+        /// its marker, and base maps have no water-pipe connection, so the city could import neither. MapPrep oc.utilities
+        /// (a coroutine: short low-voltage line / pipe stubs from edge road nodes, then a marker on each stub's far node).
+        /// An error never fails the step: Summary() reports it. {electricity, water} = markers created (or the error).
         /// </summary>
-        static Dictionary<string, object> UtilityConnections()
+        sealed class UtilityRun : IEnumerator
         {
-            var r = new Dictionary<string, object>();
-            try
+            IEnumerator m_E;
+            object m_Result;
+            string m_Error;
+            bool m_Started;
+            public bool MoveNext()
             {
-                var u = (Dictionary<string, object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.utilities" } });
+                try
+                {
+                    if (!m_Started)
+                    {
+                        m_Started = true;
+                        var r = MapPrep.Run(new Dictionary<string, object> { { "op", "oc.utilities" } });
+                        m_E = r as IEnumerator;
+                        if (m_E == null) { m_Result = r; return false; }
+                    }
+                    if (m_E == null || !m_E.MoveNext()) return false;
+                    if (m_E.Current != null) m_Result = m_E.Current;
+                    return true;
+                }
+                catch (Exception e) { m_Error = e.Message; return false; }
+            }
+            public object Current { get { return null; } }
+            public void Reset() { }
+            public Dictionary<string, object> Summary()
+            {
+                var r = new Dictionary<string, object>();
+                if (m_Error != null) { r["error"] = m_Error; return r; }
+                var u = m_Result as Dictionary<string, object>;
                 foreach (var k in new[] { "electricity", "water" })
                 {
-                    var d = u.TryGetValue(k, out var v) ? v as Dictionary<string, object> : null;
+                    var d = u != null && u.TryGetValue(k, out var v) ? v as Dictionary<string, object> : null;
                     r[k] = d == null ? null : d.TryGetValue("error", out var e) ? e : d.TryGetValue("created", out var c) ? c : null;
                 }
+                return r;
             }
-            catch (Exception e) { r["error"] = e.Message; }
-            return r;
         }
 
         // ---------------------------------------------------------------- helpers

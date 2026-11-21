@@ -89,5 +89,6 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 | --- | --- | --- | --- |
 | Tuyaux et lignes électriques le long des routes | Posés par CS2 avec les routes | converti | Les routes CS2 transportent elles-mêmes l'eau, les eaux usées et la basse tension. |
 | Tuyaux et lignes électriques hors des routes | Tuyaux et lignes électriques CS2 au même endroit | converti, approché | Posés par l'étape bâtiments de l'importeur ; une ligne qui longe une route convertie sur la plus grande partie de sa longueur est laissée à la route. |
+| Électricité et eau achetées hors du carré | Connexions extérieures CS2 d'électricité et d'eau | converti | L'étape Connexions extérieures de l'importeur les ajoute au bord des routes importées (une courte ligne électrique et un tuyau, avec la connexion au bout) : un carré sans ses propres centrales et pompes reçoit quand même électricité, eau et évacuation des eaux usées. |
 | Arbres et rochers isolés | Arbres CS2 (même espèce, ou même genre et hauteur la plus proche) et rochers | converti | Les arbres sur une route sont déplacés juste après son bord ; ceux dans le terrain d'un bâtiment sont laissés de côté. |
 | Autres décorations isolées (bancs, lampadaires, ornements) | – | non converti | Pas d'équivalent CS2 raisonnable ; comptées dans le rapport. |

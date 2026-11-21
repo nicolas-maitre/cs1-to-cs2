@@ -60,7 +60,7 @@ if (cmd === 'utilities') {
       if (flag('oc-utilities')) {
         if (!fs.existsSync(TERRAIN_DLL)) throw new Error('terrain exec library not built: dotnet build -c Release terrain/cs2-apply');
         await b.pause();
-        oc = await b.exec(TERRAIN_DLL, { type: 'Cs1ConvTerrain.MapPrep', args: { op: 'oc.utilities' }, phase: 'tool', timeout: 300 });
+        oc = await b.exec(TERRAIN_DLL, { type: 'Cs1ConvTerrain.MapPrep', args: { op: 'oc.utilities' }, phase: 'tool', pump: 'tool', timeout: 300 });
         await b.wait(30);
         log(`oc.utilities: electricity ${oc.electricity?.created ?? oc.electricity?.error}, water ${oc.water?.created ?? oc.water?.error}`);
       }

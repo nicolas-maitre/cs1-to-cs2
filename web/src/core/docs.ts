@@ -209,6 +209,7 @@ export const DOCS_EN: Docs = {
     { area: 'Districts', cs1: 'Parks, industry areas, campuses, airports', cs2: '–', status: 'report', notes: 'Their buildings are placed as single buildings.' },
     { area: 'Other', cs1: 'Pipes and power lines along roads', cs2: 'Built by CS2 with the roads', status: 'yes', notes: 'CS2 roads carry water, sewage and low-voltage power themselves.' },
     { area: 'Other', cs1: 'Pipes and power lines away from roads', cs2: 'CS2 pipes and power lines at the same place', status: 'approx', notes: 'Placed by the importer\'s buildings step; a line that runs along a converted road for most of its length is left to the road.' },
+    { area: 'Other', cs1: 'Electricity and water bought from outside the square', cs2: 'CS2 electricity and water outside connections', status: 'yes', notes: 'The importer\'s Outside connections step adds them at the edge of the imported roads (a short power line and pipe with the connection at the end), so a square without its own plants and pumps still gets power, water and sewage.' },
     { area: 'Other', cs1: 'Free-standing trees and rocks', cs2: 'CS2 trees (same species, or same kind and closest height) and boulders', status: 'yes', notes: 'Trees on a road are moved just past its edge; trees inside building lots are left out.' },
     { area: 'Other', cs1: 'Other free-standing props (benches, lamps, decorations)', cs2: '–', status: 'no', notes: 'No sensible CS2 equivalent; counted in the report.' },
   ],

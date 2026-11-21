@@ -147,7 +147,7 @@ export async function mapprep(argv) {
 
 /** Electricity + water-pipe outside connections on the imported roads (#136): MapPrep oc.utilities, then oc.list. */
 export async function utilities(bridge, a = {}) {
-  const r = await op(bridge, { op: 'oc.utilities', dryRun: !!a.dryRun, max: Number(a.max ?? 8) }, { phase: 'tool' });
+  const r = await op(bridge, { op: 'oc.utilities', dryRun: !!a.dryRun, max: Number(a.max ?? 8), mode: a.mode ?? 'stub' }, { phase: 'tool', pump: 'tool' });
   if (a.dryRun) return r;
   await bridge.wait(30);
   const after = await op(bridge, { op: 'oc.list' });

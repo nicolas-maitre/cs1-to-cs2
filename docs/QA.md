@@ -390,6 +390,29 @@ Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,1
   - Electricity can be kept (spare the power line chain that owns the marker) or recreated: a high-voltage line node at the crop edge plus a "Powerline Outside Connection" marker. A high-voltage line still needs a transformer to feed the roads' low-voltage grid.
   - This needs in-game tests. Not done yet.
 
+**Utility outside connections: fixed and verified** (web worker, #136, 2026-11-21; `.gamectl/qa/oc136-stub.json`, saves `cs1conv-ocutil-{skibidi,westfield,cacao}-stub`).
+- **What map prep does now:** MapPrep `oc.utilities` (terrain/cs2-apply), run by the importer's last step (Outside connections, mod `MapSteps.Connections`) and by `terrain/mapprep.mjs connections` / `utilities`.
+  - It picks imported road nodes at the edge of the road network: one per road island of at least 8 nodes, plus the main grid's west, east, south and north extremes; at most 8 per kind.
+  - From each it builds a 24 m **Low-voltage Line** (and a 32 m **Combined Small Pipe**, 10 m down) outward. CS2 connects the stub to the road's low-voltage line and pipes.
+  - On each stub's far node it puts a **Powerline Outside Connection** / **Water Outside Connection** marker. The game's `Electricity/WaterPipeOutsideConnectionGraphSystem` links the marker's owner node to the trade source and sink. It doesn't check voltage, so no transformer is needed.
+  - The marker prefabs carry no `OutsideConnectionData`, which is why `oc.prefabs` doesn't list them; `oc.utilities` finds them through `ObjectData.m_Archetype`.
+- **Why the stub:** a first version hung the markers on the road nodes themselves. Supply jumped the same way, but 3 min later Skibidi had 2 of 4 markers left and Westfield 1 of 5. When a node is updated (a building grows beside it), `SubObjectSystem` deletes every sub-object of that node that isn't a building, service upgrade or `Secondary` object [IL]. The stub's far node has only the stub edge, so nothing updates it, like the base map's high-voltage marker.
+- **Results** (acceptance saves of §7; markers added after loading; 3 min at speed 3, then saved, reloaded, 1 more min):
+
+| | Skibidi 3 km (`…-133435`) | Westfield (`…-140001`) | CacaoCity (`…-134438`) |
+| --- | --- | --- | --- |
+| Markers electricity + water: created / after 3 min / after reload | 4+4 / 4+4 / 4+4 | 5+5 / 5+5 / 5+5 | 4+4 / 4+4 / 4+4 |
+| Residential electricity / water / sewage supplied | 99.2 / 98.6 / 98.6 % (before: 0 / 0 / 0) | 99.2 / 98.6 / 98.6 % (before: ~3 / 0 / 0) | 100 / 99.4 / 99.4 % (before: 99 % electricity, 669 buildings without water) |
+| Electricity: production, import | 0, **135 930** of 156 444 | 0, **27 155** of 27 155 | own plants, export 52 607 (after reload: import 100 498) |
+| Water fulfilled (capacity of own pumps) | 233 983 of 237 733 (0) | 111 395 of 111 395 (0) | 182 855 of 245 855 (101 694) |
+| Outside-connection lanes before → after 3 min | 173 → 179 | 188 → 188 | 51 → 51 |
+
+- **Notes:**
+  - The markers add no traffic lanes. `Net.OutsideConnectionSystem` excludes `Electricity/WaterPipeOutsideConnection` from both its queries [IL]. Skibidi's +6 lanes appeared during the simulation, not when the markers were created.
+  - Cacao still shows its own facilities' problems: its plants aren't on the high-voltage grid, and its pumps aren't connected (buildings worker: `powerhook`, `utilities`). The city imports what they don't give.
+  - "Remove imported" should delete the stubs with the rest, since they are new top-level edges and nodes in the importer's snapshot. Not tested.
+  - These runs were on right-hand cities (e2e had skipped the driving side, #138). Driving side doesn't affect lines and pipes.
+
 **Rail hunt stopped (coordinator #133).** In run 13 (`cs1conv-train6k-st3-yards2`), the opt-in interior SubwayYard02's 110 m link to the elevated metro line **was built**: the yard node has the link edge, and the line node has 3 edges (`.gamectl/tracklink/yardjoint-run13.json`). Metro Lines 1 and 3 have paths (27 and 78 elements). Even so, the yard's 2 trains stayed parked for 480 s and the lines show 0 vehicles.
 - **Open lead:** the depot doesn't dispatch to the lines. Possibly it can't pathfind from the yard to a line waypoint (lane direction), or the dispatch request needs something else.
 - **Status:** trains and metros remain a known limit for this release. Interior yards and bridges stay opt-in or default as recorded in DECISIONS-transit #12–14.

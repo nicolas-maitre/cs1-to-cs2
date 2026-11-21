@@ -89,5 +89,6 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | --- | --- | --- | --- |
 | Pipes and power lines along roads | Built by CS2 with the roads | converts | CS2 roads carry water, sewage and low-voltage power themselves. |
 | Pipes and power lines away from roads | CS2 pipes and power lines at the same place | converts, approximated | Placed by the importer's buildings step; a line that runs along a converted road for most of its length is left to the road. |
+| Electricity and water bought from outside the square | CS2 electricity and water outside connections | converts | The importer's Outside connections step adds them at the edge of the imported roads (a short power line and pipe with the connection at the end), so a square without its own plants and pumps still gets power, water and sewage. |
 | Free-standing trees and rocks | CS2 trees (same species, or same kind and closest height) and boulders | converts | Trees on a road are moved just past its edge; trees inside building lots are left out. |
 | Other free-standing props (benches, lamps, decorations) | – | not converted | No sensible CS2 equivalent; counted in the report. |

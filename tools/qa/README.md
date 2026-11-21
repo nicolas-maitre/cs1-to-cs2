@@ -21,6 +21,8 @@ For each save, the runner loads it, lets it run `--minutes` of real time at top 
 | `buildingNotifications` | How many buildings show each utility notification (no electricity, no water, sewage backup, not connected, …). | `IconElement` |
 | `outsideConnections` | Electricity and water outside connections in the city, and all outside connections for context. | `Game.Objects.ElectricityOutsideConnection`, `WaterPipeOutsideConnection`, `OutsideConnection` |
 
+`--oc-utilities` adds the electricity and water outside connections that the importer now creates (MapPrep `oc.utilities`, docs/DECISIONS.md #136) right after loading, before simulating. Use it to measure an old save as a current import would be. The output file is then `utilities-<save>-oc.json`. `--save-as <name>` keeps the result as a new save.
+
 Output: `.gamectl/qa/utilities-<save>.json` (the summary and the full result), plus a summary on stdout. The exit code is 1 when a city has any `problems`, or less than 90 % of consumers supplied for electricity, water or sewage. That threshold isn't a verdict on CS2's economy, but below it something structural is missing.
 
 **CS2 is shared.** The runner takes `%LOCALAPPDATA%\cs1-to-cs2\cs2.lock`. It waits up to 2 h while another owner's lock is younger than 2 h, then releases it at the end. It stops CS2 at the end only if it started it (`--keep` leaves it running).

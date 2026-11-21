@@ -465,3 +465,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Walls burn:** Skibidi has 2035/2035 roads, tunnels equal to CS1's 10, 0 ground roads built as tunnels or elevated, and 6 ground roads over 2 m off. CacaoCity has 684/684 roads, 4 ground roads over 2 m off (was 44), and the user's ramp within 1 m as an embankment. The user's trench corridor is an open cut with no portals.
      - **Split with shifts:** each half keeps its own shift; segment 25425 is within 0.6 m.
      - **Without the walls burn:** a few ground tunnels and elevated pieces remain where CS2 cuts long segments itself. That's documented, and the walls burn is the default.
+144. **Utility outside connections sit on stubs, verified in game** (Claude; replaces the first version in 38e6f31).
+     - **Why stubs:** CS2's `SubObjectSystem` deletes a road node's non-building sub-objects whenever the node updates (e.g. a building grows next to it), so markers placed directly on road nodes vanished (Westfield kept 1 of 5 after 3 min).
+     - **How:** `oc.utilities` builds a 24 m low-voltage line and a 32 m combined pipe outward from each chosen edge road node, and puts the Powerline / Water Outside Connection marker on each stub's far node, which nothing else touches. No high-voltage line or transformer is needed, because the trade link doesn't check voltage.
+     - **Results:** markers survive 3 min of simulation and a save/reload. Homes supplied with electricity / water / sewage: Skibidi 99.2 / 98.6 / 98.6% (was 0), Westfield the same, CacaoCity 100 / 99.4 / 99.4%. Electricity is imported even with 0 local production.
+     - **Still to test:** a fresh Prepare map → Import through the mod, and "Remove imported" deleting the stubs. RC3 covers both.

@@ -12,12 +12,18 @@
 //   oc.list     {}                                outside connections in the city
 //   oc.create   {connections:[{x,z,type:"road"|"train",prefab?}], radius=3}  [phase tool]
 //                                                 one marker per connection, owned by the real node at (x,z)
-//   oc.utilities {kinds=["electricity","water"], perSide=1, minNodes=8, max=8, nodes?:[{x,z}], radius=3, dryRun=false}  [phase tool]
-//                                                 electricity and water-pipe outside connections (docs/DECISIONS.md #136):
-//                                                 a "Powerline" / water-pipe marker owned by an imported road node near
-//                                                 the edge of the road network, one per road island (+ one per side for
-//                                                 the largest); roads carry low voltage and pipes, and the game's graph
-//                                                 systems link the marker's owner node to the trade source/sink
+//   oc.utilities {kinds=["electricity","water"], mode="stub"|"node", stubLength=24 (pipes +8), perSide=1, minNodes=8, max=8,
+//                 nodes?:[{x,z}], radius=3, dryRun=false}                       [phase + pump tool; a coroutine]
+//                                                 electricity and water-pipe outside connections (docs/DECISIONS.md #136)
+//                                                 at imported road nodes near the edge of the road network, one per road
+//                                                 island (+ one per side for the largest). Roads carry low voltage and
+//                                                 pipes, and the game's graph systems link a marker's owner node to the
+//                                                 trade source/sink. mode "stub": a short "Low-voltage Line" / "Combined
+//                                                 Small Pipe" from the road node outward, the marker on its far end node
+//                                                 (a node nothing else touches). mode "node": the marker on the road node
+//                                                 itself, which SubObjectSystem deletes as soon as the node is updated
+//                                                 (a building growing beside it): kept for diagnostics only.
+//   node.info   {ids:["index:version",…]}         diagnostics: does each entity still exist, its edges and sub-objects
 //   water.reset {mode:"sea"|"empty"="sea"}        WaterSystem.ResetToSealevel() / Reset() (the editor's buttons)
 //   counts      {}                                vehicles (cars, trains, personal, delivery, cargo) and outside-connection
 //                                                 lanes, to see whether through traffic spawns
@@ -27,6 +33,7 @@
 //                                                 only ever gives a Temp source, see NOTES §8)
 using System;
 using System.Collections.Generic;
+using Colossal.Mathematics;
 using Game.Buildings;
 using Game.Common;
 using Game.Net;
@@ -53,6 +60,7 @@ namespace Cs1ConvTerrain
                 case "oc.list": return OcList();
                 case "oc.create": return OcCreate(a);
                 case "oc.utilities": return OcUtilities(a);
+                case "node.info": return NodeInfo(a);
                 case "water.reset": return WaterReset(Str(a, "mode", "sea"));
                 case "water.set": return WaterSet(a);
                 case "water.sample": return WaterSample(a);
@@ -303,8 +311,13 @@ namespace Cs1ConvTerrain
             return false;
         }
 
-        static object OcUtilities(Dictionary<string, object> a)
+        struct UtilityPick { public string Kind; public ComponentType Conn; public Entity Marker; public Entity Node; public float3 Pos; public Dictionary<string, object> Item; public float3 End; }
+
+        static System.Collections.IEnumerator OcUtilities(Dictionary<string, object> a)
         {
+            string mode = Str(a, "mode", "stub");
+            float stubLength = F(a, "stubLength", 24f);
+            var pending = new List<UtilityPick>();
             var kinds = new List<string>();
             if (a.TryGetValue("kinds", out var ko) && ko is IList<object> kl) foreach (var k in kl) kinds.Add(k.ToString());
             else { kinds.Add("electricity"); kinds.Add("water"); }
@@ -419,6 +432,15 @@ namespace Cs1ConvTerrain
                     info["islandsUsed"] = big;
                 }
 
+                // existing markers of this kind: a re-run adds none within reach of them
+                var existing = new List<float3>();
+                var ex = Query(new[] { tag, ComponentType.ReadOnly<Game.Objects.Transform>() });
+                foreach (var e in ex) existing.Add(Em.GetComponentData<Game.Objects.Transform>(e).m_Position);
+                ex.Dispose();
+                float cx = 0, cz = 0;
+                foreach (var p in pos) { cx += p.x; cz += p.z; }
+                cx /= pos.Length; cz /= pos.Length;
+
                 var made = new List<object>();
                 var used = new HashSet<int>();
                 int skippedOwned = 0;
@@ -427,25 +449,192 @@ namespace Cs1ConvTerrain
                     if (made.Count >= max) break;
                     if (!used.Add(pk.Key)) continue;
                     var node = cand[pk.Key];
-                    if (OwnsMarker(node, tag)) { skippedOwned++; continue; }
-                    made.Add(new Dictionary<string, object> { { "node", Id(node) }, { "pos", V(pos[pk.Key]) }, { "why", pk.Value } });
-                    if (dry) continue;
-                    var def = Em.CreateEntity();
-                    Em.AddComponentData(def, new CreationDefinition { m_Prefab = prefab, m_Owner = node, m_Flags = CreationFlags.Permanent });
-                    Em.AddComponentData(def, new ObjectDefinition
-                    {
-                        m_Position = pos[pk.Key], m_LocalPosition = float3.zero, m_Scale = new float3(1f), m_Rotation = quaternion.identity, m_LocalRotation = quaternion.identity,
-                        m_Intensity = 1f, m_ParentMesh = -1, m_GroupIndex = -1, m_Probability = 100, m_PrefabSubIndex = -1,
-                    });
-                    Em.AddComponent<Updated>(def);
-                    Em.AddComponent<Deleted>(def);
+                    bool near = OwnsMarker(node, tag);
+                    foreach (var q in existing) if (math.distance(q.xz, pos[pk.Key].xz) < stubLength + 16f) near = true;
+                    if (near) { skippedOwned++; continue; }
+                    var item = new Dictionary<string, object> { { "node", Id(node) }, { "pos", V(pos[pk.Key]) }, { "why", pk.Value } };
+                    made.Add(item);
+                    // outward: away from the network's centre of mass (the picks are at its edge)
+                    var dir = pos[pk.Key].xz - new float2(cx, cz);
+                    dir = math.lengthsq(dir) < 1f ? new float2(1, 0) : math.normalize(dir);
+                    pending.Add(new UtilityPick { Kind = kind, Conn = conn, Marker = prefab, Node = node, Pos = pos[pk.Key], Item = item,
+                        // pipes 8 m longer, so a line's and a pipe's far nodes never share a spot
+                        End = pos[pk.Key] + new float3(dir.x, 0, dir.y) * (stubLength + (elec ? 0f : 8f)) });
                 }
-                info["created"] = dry ? 0 : made.Count;
+                info["created"] = 0;
                 info["alreadyThere"] = skippedOwned;
                 info["markers"] = made;
             }
+            result["mode"] = mode;
+            if (dry || pending.Count == 0) { result["frame"] = UnityEngine.Time.frameCount; yield return result; yield break; }
+
+            if (mode == "node")
+            {
+                foreach (var p in pending) { CreateMarker(p.Marker, p.Node, p.Pos); p.Item["owner"] = Id(p.Node); }
+            }
+            else
+            {
+                // mode "stub": the nets first; CS2 connects a line or pipe end locally to the road it starts on
+                var t = W.GetOrCreateSystemManaged<TerrainSystem>();
+                var heights = t.GetHeightData(true);
+                var stubPrefabs = new Dictionary<string, Entity>();
+                var stubElevation = new Dictionary<string, float>();
+                var ids = new Dictionary<string, PrefabID>
+                {
+                    { "electricity", new PrefabID("PowerLinePrefab", Str(a, "powerPrefab", "Low-voltage Line")) },
+                    { "water", new PrefabID("PipelinePrefab", Str(a, "pipePrefab", "Combined Small Pipe")) },
+                };
+                foreach (var kv in ids)
+                {
+                    if (!Prefabs.TryGetPrefab(kv.Value, out PrefabBase pb) || !Prefabs.TryGetEntity(pb, out Entity pe)) continue;
+                    stubPrefabs[kv.Key] = pe;
+                    // the elevation the net tool would use: 0 if allowed, else the nearest end of the prefab's range (pipes)
+                    float el = 0f;
+                    if (Em.HasComponent<PlaceableNetData>(pe)) { var r = Em.GetComponentData<PlaceableNetData>(pe).m_ElevationRange; el = math.clamp(0f, r.min, r.max); }
+                    stubElevation[kv.Key] = el;
+                }
+                var rnd = new Unity.Mathematics.Random(0x0c136u);
+                for (int i = 0; i < pending.Count; i++)
+                {
+                    var p = pending[i];
+                    if (!stubPrefabs.TryGetValue(p.Kind, out var sp)) { p.Item["error"] = "no stub net prefab"; continue; }
+                    float el = stubElevation[p.Kind];
+                    var a0 = new float3(p.Pos.x, TerrainUtils.SampleHeight(ref heights, p.Pos) + el, p.Pos.z);
+                    var d0 = new float3(p.End.x, TerrainUtils.SampleHeight(ref heights, p.End) + el, p.End.z);
+                    var curve = NetUtils.StraightCurve(a0, d0);
+                    var def = Em.CreateEntity();
+                    Em.AddComponentData(def, new CreationDefinition { m_Prefab = sp, m_RandomSeed = rnd.NextInt(), m_Flags = CreationFlags.Permanent | CreationFlags.SubElevation });
+                    Em.AddComponentData(def, new NetCourse
+                    {
+                        m_Curve = curve,
+                        m_StartPosition = CoursePoint(curve, a0, 0f, el, CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight),
+                        m_EndPosition = CoursePoint(curve, d0, 1f, el, CoursePosFlags.IsLast | CoursePosFlags.IsLeft | CoursePosFlags.IsRight),
+                        m_Elevation = new float2(el), m_Length = MathUtils.Length(curve), m_FixedIndex = -1,
+                    });
+                    Em.AddComponent<Updated>(def);
+                    Em.AddComponent<Deleted>(def);
+                    p.Item["stub"] = PrefabName(sp);
+                    p.Item["stubEnd"] = V(d0);
+                    p.End = d0;
+                    pending[i] = p;
+                }
+                // then, once a stub's far node exists and is in its utility's flow graph, the marker on it
+                var done = new bool[pending.Count];
+                int frames = 0;
+                for (; frames < 240; frames++)
+                {
+                    yield return null;
+                    bool all = true;
+                    var ends = Query(new[] { ComponentType.ReadOnly<Game.Net.Node>(), ComponentType.ReadOnly<ConnectedEdge>() });
+                    for (int i = 0; i < pending.Count; i++)
+                    {
+                        var p = pending[i];
+                        if (done[i] || p.Item.ContainsKey("error")) continue;
+                        Entity hit = Entity.Null;
+                        foreach (var n in ends)
+                        {
+                            if (Em.HasComponent<Owner>(n) || !Em.HasComponent(n, p.Conn)) continue;
+                            if (math.distance(Em.GetComponentData<Game.Net.Node>(n).m_Position.xz, p.End.xz) > 1.5f) continue;
+                            hit = n; break;
+                        }
+                        if (hit == Entity.Null) { all = false; continue; }
+                        CreateMarker(p.Marker, hit, Em.GetComponentData<Game.Net.Node>(hit).m_Position);
+                        p.Item["owner"] = Id(hit);
+                        p.Item["ownerEdges"] = Em.GetBuffer<ConnectedEdge>(hit, true).Length;
+                        p.Item["frames"] = frames;
+                        done[i] = true;
+                    }
+                    ends.Dispose();
+                    if (all) break;
+                }
+                result["frames"] = frames;
+                var left = Query(new[] { ComponentType.ReadOnly<Game.Net.Node>() });
+                for (int i = 0; i < pending.Count; i++)
+                {
+                    if (done[i] || pending[i].Item.ContainsKey("error")) continue;
+                    // diagnostics: the nearest node to the stub's end and what it has
+                    Entity near = Entity.Null; float nd = 50f;
+                    foreach (var n in left) { float d = math.distance(Em.GetComponentData<Game.Net.Node>(n).m_Position.xz, pending[i].End.xz); if (d < nd) { nd = d; near = n; } }
+                    pending[i].Item["error"] = near == Entity.Null ? "no node within 50 m of the stub end (stub not built)" : "stub end node not in the flow graph";
+                    if (near != Entity.Null)
+                    {
+                        var comps = new List<object>();
+                        var ct = Em.GetComponentTypes(near, Allocator.Temp);
+                        foreach (var c in ct) { var tn = c.GetManagedType()?.Name; if (tn != null && (tn.Contains("Electric") || tn.Contains("Water") || tn.Contains("Owner") || tn.Contains("Edge"))) comps.Add(tn); }
+                        ct.Dispose();
+                        pending[i].Item["nearest"] = new Dictionary<string, object> { { "id", Id(near) }, { "distance", nd }, { "prefab", Em.HasComponent<PrefabRef>(near) ? PrefabName(Em.GetComponentData<PrefabRef>(near).m_Prefab) : null }, { "components", comps } };
+                    }
+                }
+                left.Dispose();
+            }
+            foreach (var kind in kinds)
+                if (result.TryGetValue(kind, out var io) && io is Dictionary<string, object> d && d.TryGetValue("markers", out var mo))
+                {
+                    int c = 0;
+                    foreach (var m in (List<object>)mo) if (m is Dictionary<string, object> md && md.ContainsKey("owner")) c++;
+                    d["created"] = c;
+                }
+            for (int i = 0; i < 10; i++) yield return null;
             result["frame"] = UnityEngine.Time.frameCount;
-            return result;
+            yield return result;
+        }
+
+        static CoursePos CoursePoint(Bezier4x3 curve, float3 pos, float t, float elevation, CoursePosFlags flags)
+        {
+            return new CoursePos
+            {
+                m_Entity = Entity.Null, m_Position = pos, m_Elevation = new float2(elevation),
+                m_Rotation = NetUtils.GetNodeRotation(MathUtils.Tangent(curve, t)), m_CourseDelta = t, m_ParentMesh = -1, m_Flags = flags,
+            };
+        }
+
+        static void CreateMarker(Entity prefab, Entity node, float3 pos)
+        {
+            var def = Em.CreateEntity();
+            Em.AddComponentData(def, new CreationDefinition { m_Prefab = prefab, m_Owner = node, m_Flags = CreationFlags.Permanent });
+            Em.AddComponentData(def, new ObjectDefinition
+            {
+                m_Position = pos, m_LocalPosition = float3.zero, m_Scale = new float3(1f), m_Rotation = quaternion.identity, m_LocalRotation = quaternion.identity,
+                m_Intensity = 1f, m_ParentMesh = -1, m_GroupIndex = -1, m_Probability = 100, m_PrefabSubIndex = -1,
+            });
+            Em.AddComponent<Updated>(def);
+            Em.AddComponent<Deleted>(def);
+        }
+
+        /// <summary>Diagnostics: does each entity ("index:version") still exist, and what is it (node, edges, sub-objects).</summary>
+        static object NodeInfo(Dictionary<string, object> a)
+        {
+            var res = new List<object>();
+            if (a.TryGetValue("ids", out var io) && io is IList<object> ids)
+                foreach (var o in ids)
+                {
+                    var parts = o.ToString().Split(':');
+                    var e = new Entity { Index = int.Parse(parts[0]), Version = int.Parse(parts[1]) };
+                    var item = new Dictionary<string, object> { { "id", o.ToString() }, { "exists", Em.Exists(e) } };
+                    if (Em.Exists(e))
+                    {
+                        item["deleted"] = Em.HasComponent<Deleted>(e);
+                        item["prefab"] = Em.HasComponent<PrefabRef>(e) ? PrefabName(Em.GetComponentData<PrefabRef>(e).m_Prefab) : null;
+                        if (Em.HasComponent<Game.Net.Node>(e)) item["pos"] = V(Em.GetComponentData<Game.Net.Node>(e).m_Position);
+                        if (Em.HasBuffer<ConnectedEdge>(e)) item["edges"] = Em.GetBuffer<ConnectedEdge>(e, true).Length;
+                        if (Em.HasBuffer<Game.Objects.SubObject>(e))
+                        {
+                            var subs = new List<object>();
+                            var buf = Em.GetBuffer<Game.Objects.SubObject>(e, true);
+                            for (int i = 0; i < buf.Length; i++) { var s = buf[i].m_SubObject; subs.Add(Em.Exists(s) && Em.HasComponent<PrefabRef>(s) ? PrefabName(Em.GetComponentData<PrefabRef>(s).m_Prefab) : "?"); }
+                            item["subObjects"] = subs;
+                        }
+                        item["electricityNode"] = Em.HasComponent<Game.Simulation.ElectricityNodeConnection>(e);
+                        item["waterPipeNode"] = Em.HasComponent<Game.Simulation.WaterPipeNodeConnection>(e);
+                    }
+                    else
+                    {
+                        // same index, newer version: the slot was reused (deleted and something else created)
+                        item["note"] = "gone";
+                    }
+                    res.Add(item);
+                }
+            return new Dictionary<string, object> { { "nodes", res } };
         }
 
         static float Key(float3[] pos, List<int> comp) { float k = float.MaxValue; foreach (int i in comp) k = math.min(k, pos[i].x * 100000f + pos[i].z); return k; }
