@@ -1,0 +1,8 @@
+{
+  "name": "cs1conv-transit",
+  "private": true,
+  "type": "module",
+  "description": "CS1 transit lines (plan.transit) to CS2 stops and lines, through a hot-loaded exec library",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}

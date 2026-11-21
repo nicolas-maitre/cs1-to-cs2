@@ -4,7 +4,7 @@
 //
 //   node terrain/mapprep.mjs survey [--out file.json]                 what the loaded base map ships with
 //   node terrain/mapprep.mjs survey-maps [--maps "A,B"] [--out file]   game.new on every playable map + survey (slow)
-//   node terrain/mapprep.mjs clear [--keep-utilities]                  delete every top-level net of the base map (and with
+//   node terrain/mapprep.mjs clear [--keep-utilities] [--keep-buildings]  delete every top-level net and building of the base map (and with
 //                                                                      the road/rail end nodes their outside connections)
 //                                                                      before terrain/apply.mjs; --keep-utilities keeps
 //                                                                      powerlines, seaways and pipes
@@ -58,7 +58,7 @@ export async function mapprep(argv) {
     case 'survey-maps': out = await surveyMaps(bridge, a); break;
     case 'clear': {
       // structural changes must run in ToolUpdate (phase + pump "tool"): from the main-loop pump CS2 crashes natively
-      out = await op(bridge, { op: 'clear', frames: 10, all: !a.keepUtilities }, { phase: 'tool', pump: 'tool', timeout: 600 });
+      out = await op(bridge, { op: 'clear', frames: 10, all: !a.keepUtilities, keepBuildings: !!a.keepBuildings }, { phase: 'tool', pump: 'tool', timeout: 600 });
       await bridge.wait(60);
       out.check = await op(bridge, { op: 'survey', grid: 5 });
       break;
@@ -89,7 +89,8 @@ export async function mapprep(argv) {
       const we = zip.get('water.json');
       if (!we) throw new Error('.cs1x has no water.json yet');
       const plan = JSON.parse(readFileSync(a.plan, 'utf8'));
-      const terrainMeta = a.terrain ? JSON.parse(readFileSync(resolve(a.terrain, 'terrain-cs2.json'), 'utf8')) : null;
+      const tf = a.terrain ? ['terrain-cs2.json', 'terrain.json'].map(f => resolve(a.terrain, f)).find(f => existsSync(f)) : null;
+      const terrainMeta = tf ? JSON.parse(readFileSync(tf, 'utf8')) : null;
       const wj = JSON.parse(we.read().toString('utf8'));
       const w = convertWater(wj, plan, terrainMeta);
       out = { converted: w.stats };

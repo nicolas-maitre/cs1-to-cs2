@@ -160,3 +160,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 58. **Buildings, objects and districts become importer steps** through `buildings/src/Steps.cs`. The CS2 importer mod includes these sources and registers them; a plan without those sections imports as before (Claude).
 59. **Transit lines go into the CS2 importer mod, not only the e2e script** (Claude). A release-grade user flow can't depend on Node scripts. The mod includes `transit/`'s sources the way it includes `buildings/`.
 60. **QA on 3 more of the user's cities** (Rennmont, CacaoCity, Westfield; read-only): every export section is `ok` and nothing crashed. CacaoCity went through the full e2e: 684/684 roads, 160/160 traffic lights, 33/43 buildings, 10 393 trees, traffic after 60 s. Its water converts poorly (42/150 wet points) and is being worked on. Details in `docs/QA.md`.
+61. **Transit lines go through CS2's own line-tool pipeline** (route definition, then one forced apply frame), with kerbside stops attached to the nearest imported road edge (Claude). Details in `transit/DECISIONS-transit.md`.
+    - Stop prefabs follow the city theme.
+    - Station lines reuse the station stops within 200 m of the CS1 stations.
+    - Vehicles come from depots placed by the buildings step.
+    - Skibidi: 145/145 stops, 9/9 lines with CS1 names and colours, and 29–34 buses running within 4.5 minutes. The metro line has no trains because the city has no subway yard.
+62. **`mapprep clear` also deletes the base map's own buildings** (Claude). Sunshine Peninsula's ruin landmarks had pulled the new terrain up into pillars. Big lakes get an extra 80 m water source at their deepest point so they fill in minutes. CacaoCity: 105/150 wet points after 5 minutes, up from 42.

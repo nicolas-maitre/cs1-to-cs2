@@ -42,7 +42,7 @@ namespace Cs1ConvTerrain
             switch (op)
             {
                 case "survey": return Survey((int)F(a, "grid", 15f));
-                case "clear": return Clear((int)F(a, "frames", 10f), B(a, "all"));
+                case "clear": return Clear((int)F(a, "frames", 10f), B(a, "all"), !B(a, "keepBuildings"));
                 case "oc.prefabs": return OcPrefabs();
                 case "oc.list": return OcList();
                 case "oc.create": return OcCreate(a);
@@ -266,7 +266,7 @@ namespace Cs1ConvTerrain
         /// sub-objects, which include road/train outside-connection markers), Updated on the rest. Powerlines, seaways,
         /// pipes and their outside connections stay (a blanket delete of every net crashed CS2 natively).
         /// </summary>
-        static System.Collections.IEnumerator Clear(int frames, bool all)
+        static System.Collections.IEnumerator Clear(int frames, bool all, bool buildings)
         {
             var before = Survey(5) as Dictionary<string, object>;
             int edgesDeleted = 0, nodesDeleted = 0, nodesKept = 0, keptOwned = 0, keptOther = 0;
@@ -284,6 +284,15 @@ namespace Cs1ConvTerrain
             }
             edges.Dispose();
             foreach (var e in doomed) { Delete(e); edgesDeleted++; }
+            // base-map buildings (landmarks such as ruins) keep their old height like nets do, and their lots raise the
+            // new terrain into pillars: remove the top-level ones (at clear time, every building is the base map's)
+            int buildingsDeleted = 0;
+            if (buildings)
+            {
+                var bs = Query(new[] { ComponentType.ReadOnly<Building>() });
+                foreach (var e in bs) { if (Em.HasComponent<Owner>(e)) continue; Delete(e); buildingsDeleted++; }
+                bs.Dispose();
+            }
             yield return null;
             foreach (var n in ends)
             {
@@ -306,10 +315,10 @@ namespace Cs1ConvTerrain
             var after = Survey(5) as Dictionary<string, object>;
             yield return new Dictionary<string, object>
             {
-                { "op", "clear" }, { "all", all }, { "edgesDeleted", edgesDeleted }, { "nodesDeleted", nodesDeleted }, { "nodesKept", nodesKept },
+                { "op", "clear" }, { "all", all }, { "buildingsDeleted", buildingsDeleted }, { "edgesDeleted", edgesDeleted }, { "nodesDeleted", nodesDeleted }, { "nodesKept", nodesKept },
                 { "keptOwnedEdges", keptOwned }, { "keptOtherEdges", keptOther },
                 { "before", Pick(before, "edges", "nodes", "edgesByPrefab") },
-                { "after", Pick(after, "edges", "nodes", "edgesByPrefab", "outsideConnections") },
+                { "after", Pick(after, "edges", "nodes", "edgesByPrefab", "buildings", "outsideConnections") },
             };
         }
 

@@ -61,12 +61,14 @@ function round2(v) { return Math.round(v * 100) / 100; }
  * playable area). Wet CS1 cells whose surface is above the sea level are grouped into 8-connected regions; per region of
  * at least `minCells`:
  *   - touching the playable edge band (`edge` m): a source at its deepest cell in the band (river inflow);
- *   - otherwise, if no existing source lies in it: a source at its deepest cell (lake).
+ *   - otherwise, if no existing source lies in it: a source at its deepest cell (lake);
+ *   - a lake that has a source but at least `boostCells` cells (500 × 256 m² ≈ 0.13 km²) also gets one at its deepest
+ *     cell ("lake-boost"), so it fills in minutes instead of hours.
  * height = CS1 water depth there; radius grows with the region (20–80 m).
  * terrain: {meta, heights: Float32Array} (CS1 grid, loadCs1xTerrain); existing: converted sources [{x,z}] (CS2 coords).
  */
 export function regionSources(depthMeta, raw, terrain, plan, seaLevel, existing = [], opts = {}) {
-  const { minCells = 4, edge = 300, margin = 50, minDepth = 1, seaTolerance = 4 } = opts;
+  const { minCells = 4, edge = 300, margin = 50, minDepth = 1, seaTolerance = 4, boostCells = 500 } = opts;
   const res = depthMeta.resolution, size = depthMeta.size, sp = size / (res - 1), sc = depthMeta.heightScale;
   const { dx, dz } = plan.transform;
   const half = CS2.size / 2 - margin;
@@ -107,8 +109,13 @@ export function regionSources(depthMeta, raw, terrain, plan, seaLevel, existing 
     if (band.length) { kind = 'inflow'; pick = band; }
     else {
       const [minX, minZ, maxX, maxZ] = cells.reduce((m, i) => { const [x, z] = pos(i); return [Math.min(m[0], x), Math.min(m[1], z), Math.max(m[2], x), Math.max(m[3], z)]; }, [Infinity, Infinity, -Infinity, -Infinity]);
-      if (existing.some(e => e.x >= minX - sp && e.x <= maxX + sp && e.z >= minZ - sp && e.z <= maxZ + sp)) { regions.push({ cells: cells.length, kind: 'has-source' }); continue; }
-      kind = 'lake'; pick = cells;
+      if (existing.some(e => e.x >= minX - sp && e.x <= maxX + sp && e.z >= minZ - sp && e.z <= maxZ + sp)) {
+        // a big lake with one small CS1 source takes very long to fill in CS2 (one 20 m source per km² lake):
+        // add a source at its deepest cell too
+        if (cells.length < boostCells) { regions.push({ cells: cells.length, kind: 'has-source' }); continue; }
+        kind = 'lake-boost';
+      } else kind = 'lake';
+      pick = cells;
     }
     const best = pick.reduce((p, i) => depth[i] > depth[p] ? i : p, pick[0]);
     const [x, z] = pos(best);

@@ -112,3 +112,12 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
     | Highlands | 1215 | 550 | 43 | 5 | 519 | 306–1039 |
     | Delta | 1458 | 598 | 12 | 12 | 90 | 0–984 |
     | Lakeland | 1860 | 585 | 35 | 18 | 88 | 55–173 |
+
+17. **Large lakes get an extra "lake-boost" source** at their deepest cell, even when a CS1 source feeds them: any lake of at least 500 CS1 cells (about 0.13 km²), radius 80 m, height = CS1 depth.
+    - **Why:** QA Q9 (CacaoCity). Six lakes of 0.7–2 km² each had one CS1 source, converted with a 20 m radius, and filled far too slowly. CS1 also ran its water simulation for years.
+    - **Result after 5 minutes (300 s):** 105/150 CS1-wet points wet (before: 42/150, though that number was taken before any simulation), median depth error 3.2 m (before: 7.6 m), dry 150/150.
+    - The lakes are still filling, so a longer simulation would raise the numbers.
+
+18. **`clear` also deletes the base map's top-level buildings** (`--keep-buildings` opts out).
+    - **Why:** Sunshine Peninsula's 5 ruin landmarks keep the old map height (480–800 m), and their lots raise the converted terrain into tall pillars. That is the "vertical wall at the east edge" in QA Q9.
+    - **Verified on CacaoCity:** 5 buildings + 197 edges deleted, no crash. Terrain = file to max 0.0004 m afterwards.

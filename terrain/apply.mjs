@@ -78,7 +78,10 @@ const r4 = v => Math.round(v * 1e4) / 1e4;
 export async function main(argv) {
   const a = parseArgs(argv);
   const dir = resolve(a.terrain);
-  const meta = JSON.parse(readFileSync(join(dir, 'terrain-cs2.json'), 'utf8'));
+  // convert.mjs writes terrain-cs2.json; the web tool's import package has the same file as terrain/terrain.json
+  const metaFile = ['terrain-cs2.json', 'terrain.json'].map(f => join(dir, f)).find(f => existsSync(f));
+  if (!metaFile) throw new Error('no terrain-cs2.json or terrain.json in ' + dir);
+  const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
   const r16 = readFileSync(join(dir, meta.file));
   const raw = new Uint16Array(r16.buffer, r16.byteOffset, meta.resolution * meta.resolution);
   if (!existsSync(DLL)) throw new Error('exec library not built: dotnet build -c Release terrain/cs2-apply');
