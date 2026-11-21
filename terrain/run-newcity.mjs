@@ -48,8 +48,9 @@ async function run(a) {
   takeLock();
   const { bridge } = await start('cs2', { timeout: 400 });
   const maps = (await bridge.call('maps.list', { limit: 200 })).maps.filter(m => m.playable !== false);
-  const map = a.map ? maps.find(m => m.id === a.map || m.name === a.map) : maps[0];
-  if (!map) throw new Error('map not found: ' + a.map + '; available: ' + maps.map(m => m.name).join(', '));
+  const want = a.map ?? 'Sunshine Peninsula'; // DECISIONS-terrain.md #16
+  const map = maps.find(m => m.id === want || m.name === want);
+  if (!map) throw new Error('map not found: ' + want + '; available: ' + maps.map(m => m.name).join(', '));
   log('new city on map', map.name);
   const created = await bridge.call('game.new', { map: map.id, name: a.name, options: { unlockAll: true, unlimitedMoney: true, unlockMapTiles: true } }, { timeout: 900 });
   await bridge.pause();

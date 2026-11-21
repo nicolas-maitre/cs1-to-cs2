@@ -58,3 +58,57 @@ Decisions taken autonomously (by Claude) on 2026-11-21 while the user was away; 
       - Deleting nets and rebuilding the outside connections is road work, which belongs to the importer's "clear the import area" step (Spike 1 rule).
       - The terrain library shouldn't delete things on its own.
     - `run-newcity.mjs` takes the first playable map unless `--map` is given. A base map without pre-built nets, or clearing them first, is the fix.
+
+## M2: map preparation
+
+Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The evidence is in NOTES-cs2-terrain.md §7–8 and in the run summaries under `.gamectl/mapprep/`.
+
+12. **`clear` deletes every top-level net of the base map (the same as the importer's clear).** The road/train outside-connection markers go with their end nodes.
+    - **Opt-out:** `--keep-utilities` keeps powerlines, seaways and pipes, along with their power and ship connections.
+    - **Why everything:** at first only roads and tracks were cleared, since they are what raise terrain walls. But in worker-3's e2e run 20261121-044148, leftover powerline/seaway pieces inside the crop were then deleted by the importer's pre-import clear, right before a native crash in the import. Clearing everything first, as the importer clear does, passed (run 20261121-045036, 2035/2035).
+    - **Verified:** on Sunshine Peninsula, 125 road/track edges and 128 nodes were deleted (roads-only mode). The terrain then matched the converted file everywhere (max 0.0005 m at 281 points), against 618 m walls before.
+
+13. **Every structural change runs in `ToolUpdate`** (exec `phase:"tool"`, and `pump:"tool"` for coroutines), using the importer's pattern: `Deleted` on edges and their sub-objects, one frame, then orphan nodes, then `Updated` on the survivors.
+    - **Why:** the same deletions made from the main-loop pump crashed CS2 natively, with no managed stack (twice).
+
+14. **Outside connections are rebuilt at the crop edge, not at the map edge.**
+    - **What:** every CS1 highway (class `Highway`, ramps included) or train track (`TrainTrack*AI`) that crosses the crop edge, and whose inner node was imported, gives one marker on that node.
+    - **Prefabs:** a road marker is `Road Outside Connection - Oneway` or `- Twoway`, a train marker `Train Outside Connection - Oneway` or `- Twoway`. The first one by name is used.
+    - **Why:** CS2's `OutsideConnectionSystem` builds the connection lanes from any node that owns a marker, ending 10 m outward from the map centre. Extending the CS1 roads to the map edge would invent network that CS1 didn't have.
+    - **Other roads:** small roads crossing the edge are not connections by default (`--all-roads` makes them so). A connection on every residential street would make CS2 route through traffic through neighbourhoods.
+
+15. **Water: the CS1 sea level is used as is (heights are absolute), then `ResetToSealevel()`. The base map's water sources are removed, and only CS1 `natural` sources are created.**
+    - **Facility sources:** CS1 water and sewage buildings' outlets and intakes come later, with the buildings (M3).
+    - **Height:** CS2 source height = CS1 target level − ground at the source.
+    - **Radius:** a fixed 20 m, because CS1 sources have no radius. The base maps use 8–20 m.
+    - **Region sources:** CS1 rivers and lakes above the sea that no converted source feeds also get one source each, because CS1 feeds many of them from sources outside the playable area. They come from CS1's depth grid: one 8-connected region per lake or river (cells more than 4 m above the sea level; CS1's sea surface varies by ±3 m).
+      - **Inflow:** a region touching the playable edge gets its source at the deepest cell within 300 m of the edge.
+      - **Lake:** a region without a source gets its source at its deepest cell.
+      - **Size:** height = CS1 depth there; radius 20–80 m, growing with the region.
+      - Skibidi gets 4: 2 inflows and 2 lakes.
+    - **Creation:** sources are created as entities directly, not through definitions (NOTES §8). Definitions only ever give Temp sources, which vanish.
+
+16. **Default base map: Sunshine Peninsula.** All 12 built-in maps were surveyed in game (`mapprep.mjs survey-maps`).
+    - **Score:** nets + 5 × buildings + 50 × water sources + 200 if the sea covers part of the map. Every map has some sea, and all of it gets replaced.
+    - **Why Sunshine Peninsula:**
+      - fewest nets to clear (197, of which 125 are roads/tracks);
+      - few buildings (5 ruins landmarks);
+      - 3 water sources;
+      - it is buildable.
+    - **Runner-up:** Corral Riches, with 378 nets and 18 buildings.
+    - The e2e uses Plains, which has 372 nets and 14 buildings, but the more important part is that the clear works on any map.
+
+    | Map | Score | Nets | Buildings | Water sources | Sea level | Terrain (playable) |
+    | --- | ---: | ---: | ---: | ---: | ---: | --- |
+    | Sunshine Peninsula | 572 | 197 | 5 | 3 | 600 | 481–802 |
+    | Corral Riches | 818 | 378 | 18 | 3 | 507 | 339–536 |
+    | Plains | 842 | 372 | 14 | 4 | 370 | 138–2359 |
+    | Coast | 866 | 351 | 33 | 3 | 255 | 58–1544 |
+    | Mountain Village | 953 | 453 | 10 | 5 | 242 | 57–2306 |
+    | Fjords | 1029 | 344 | 7 | 9 | 173 | 0–886 |
+    | River Valley | 1035 | 410 | 15 | 7 | 390 | 333–1479 |
+    | Archipelago | 1051 | 471 | 26 | 5 | 865 | 684–1575 |
+    | Barrier Island | 1076 | 636 | 18 | 3 | 405 | 311–596 |
+    | Highlands | 1215 | 550 | 43 | 5 | 519 | 306–1039 |
+    | Delta | 1458 | 598 | 12 | 12 | 90 | 0–984 |
+    | Lakeland | 1860 | 585 | 35 | 18 | 88 | 55–173 |

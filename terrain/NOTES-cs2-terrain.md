@@ -108,3 +108,43 @@ So pixel *i* is centred at `−7168 + (i + 0.5) × 3.5`, row 0 is the minimum z,
 - **Water:** CS1 sea level, rivers and water sources → CS2 `SeaLevel` and water sources. The `.cs1x` has no water yet.
 - **Leftover water:** old water bodies from the base map stay in the water simulation. A flat or empty map, or a map with no water, avoids that. Picking the map for `game.new` matters here.
 - **Kinks:** bilinear resampling of a 16 m CS1 grid onto 3.5 m pixels is exact on planes. It rounds sharp kinks, such as cliff edges and cone tips, by about `slope × 1.75 m` (0.2 m at a 1:8 slope, 2 m at a cone tip in the synthetic test). CS1 roads sit on CS1's own smoothed terrain, which is well within that.
+
+---
+
+# M2: map preparation (2026-11-21)
+
+## 7. Outside connections [IL]
+
+- **Data model:**
+  - **Prefab side:** a prefab component `Game.Prefabs.OutsideConnection` holds `m_TransferType`, `m_Remoteness`, `m_Commuting` and `m_TradedResources`. It becomes `OutsideConnectionData {m_Type, m_Remoteness}`.
+  - **Transfer types:** `OutsideConnectionTransferType` is Road 1, Train 2, Air 4 or Ship 16.
+  - **In the city:** every connection is an entity carrying the tag `Game.Objects.OutsideConnection`.
+  - **Lanes:** lanes leading out of the map carry `Game.Net.OutsideConnection {m_Delay}`.
+- **`Game.Net.OutsideConnectionSystem`** queries `Game.Objects.OutsideConnection` (excluding Temp and electricity/water-pipe connections). For each one:
+  - **Node path:** if its `Owner` has a `ConnectedEdge` buffer (that is, the marker is owned by a **net node**), `FillNodeData(node, edges, …)` takes the end lanes of that node's edges.
+  - **Free-standing path:** otherwise it uses `FillNodeData(owner, transform, …)` with the prefab's `RouteConnectionData`. Air and ship connections work this way.
+  - It sorts the results by angle around the map centre (`atan2(z, x)`) and creates connection lanes between neighbouring nodes of the same type.
+  - The outward end of each lane is `CalculateEndPos(p) = p + 10 m × normalize(p.xz)`, i.e. 10 m outward from the map centre.
+  - **So a connection does not have to sit on the map edge.** Any dead-end node works, including one at the edge of the imported crop.
+- **Creating a marker:** `GenerateObjectsSystem/CreateObjectsJob.CreateObject` gives the new object `Owner(CreationDefinition.m_Owner)`. A permanent definition therefore creates a marker owned by a node:
+  - `CreationDefinition {m_Prefab = marker, m_Owner = node, m_Flags = Permanent}`;
+  - `ObjectDefinition {m_Position = node position, …}`;
+  - `Updated`.
+  This is the same pipeline as Spike 1's road definitions. The op is `MapPrep oc.create`, run in phase `tool`.
+- **Which CS1 segments become connections:** `lib/connections.mjs` picks every CS1 segment that crosses the crop edge, belongs to class `Highway` (ramps included) or is a `TrainTrack*AI` track, and whose inner node was imported. The inner node becomes the connection, one per node and type. On the Skibidi plan that gives 20: 13 road and 7 train.
+
+## 8. Water [IL]
+
+- **Sea level:** `WaterSystem.SeaLevel` is a public getter and setter, with default 511.7 and maximum 2000.
+- **Resetting water:** `ResetToSealevel()` and `Reset()` (empty) are the editor's buttons (`WaterPanelSystem.ApplySeaLevel` / `ResetWater`).
+- **Sources:**
+  - **Component:** a source is an entity with `Game.Simulation.WaterSourceData {m_ConstantDepth, m_Radius, m_Height, m_Multiplier, m_Polluted, m_Id, m_Modifier}` and a `Transform`.
+  - **Creating one: a definition does not work.** `GenerateWaterSourcesSystem` (Modification1) turns `CreationDefinition` + `WaterSourceDefinition` into a source. But its archetype (`CreateArchetype(WaterSourceData, Transform, Temp, Created, Updated)`) **always includes `Temp`**; `Permanent` only skips filling the Temp data. Only `ApplyWaterSourcesSystem` (ApplyTool phase, when a tool applies) turns those into real sources, and the next tool clear removes them [game: 0 sources after 3 variants].
+    - **What works:** create the entity directly with the generator's archetype minus `Temp` (`WaterSourceData {m_Height, m_Radius, m_Polluted, m_Id, m_Modifier = 1}`, `Transform`, `Created`, `Updated`). That is op `MapPrep water.set`.
+    - **Verified:** 60 s later the water depth at each source equals its `m_Height` (30.0 / 47.6 / 30.0 m) [game].
+  - **Fields used:** the 1.6 editor exposes height, radius and polluted (`WaterPanelSystem.WaterSourceEdit`).
+  - **What the base maps show:** the test map's sources have `m_Height` of 3–8 m at positions on the terrain, so `m_Height` is the water height above the source and not an absolute level.
+- **Sampling depth:** `WaterSystem.GetSurfaceData(out deps)` with `deps.Complete()`, then `WaterUtils.SampleDepth(ref data, pos)` (op `MapPrep water.sample`).
+- **CS1 side:** the `.cs1x` `water.json` (exporter) has `seaLevel`, a depth grid `water.r16` on the terrain lattice, and the sources `{type natural|facility|cleaner, outputPosition, targetHeight, inputRate, outputRate, terrainHeightAtOutput}`.
+  - Only `natural` sources are converted, at `height = targetHeight − ground`.
+  - Facility sources are the outlets and intakes of CS1 buildings, so they go with the buildings (M3).

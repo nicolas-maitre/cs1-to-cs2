@@ -4,7 +4,7 @@
 //
 // Ops (world metres):
 //   info    {}                                       terrain + water state (scale/offset, areas, sea level, sources)
-//   apply   {file, heightScale, heightOffset, worldFile?, seaLevel?, removeWorldmap=false, refresh=true, frames=10, points?}
+//   apply   {file, heightScale, heightOffset, worldFile?, seaLevel?, resetWater=true, removeWorldmap=false, refresh=true, frames=10, points?}
 //           file = absolute path of heightmap.r16 (4096² LE uint16, row 0 = south, 14 336 m). worldFile = the same
 //           for the 57 344 m world (backdrop) map. Sets the height scale/offset, replaces the world map (or drops
 //           it with removeWorldmap) and the heightmap, optionally sets the sea level, queues the playable area for
@@ -129,6 +129,9 @@ namespace Cs1ConvTerrain
 
             float? sea = a.ContainsKey("seaLevel") && a["seaLevel"] != null ? F(a, "seaLevel") : (float?)null;
             if (sea.HasValue) Water.SeaLevel = sea.Value;
+            // a new sea level alone does not drain the base map's water: reset the simulation to it (default on)
+            bool resetWater = sea.HasValue && (!a.ContainsKey("resetWater") || B(a, "resetWater"));
+            if (resetWater) Water.ResetToSealevel();
 
             // ReplaceHeightmap queues nothing for GroundHeightSystem, so trees, props, buildings and nets keep their old
             // y. Queue the whole playable area, as the terrain brush does for its own area.
@@ -140,7 +143,7 @@ namespace Cs1ConvTerrain
             var result = new Dictionary<string, object>
             {
                 { "op", "apply" }, { "file", file }, { "heightScale", scale }, { "heightOffset", offset }, { "seaLevel", sea },
-                { "worldFile", worldTex != null ? worldFile : null }, { "removeWorldmap", removeWorld }, { "refreshed", refreshed },
+                { "worldFile", worldTex != null ? worldFile : null }, { "removeWorldmap", removeWorld }, { "refreshed", refreshed }, { "waterReset", resetWater },
                 { "ms", new Dictionary<string, object> { { "read", readMs }, { "texture", texMs - readMs }, { "replace", replaceMs - texMs }, { "total", sw.ElapsedMilliseconds } } },
                 { "before", before }, { "after", Info() },
             };

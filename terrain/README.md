@@ -113,3 +113,43 @@ Synthetic terrain only, no game. Covered:
 
 **Still open:**
 - **Base map nets:** before the terrain goes in, bulldoze the base map's own nets in the playable area (or pick a base map without any). The outside connections then have to be rebuilt by the importer.
+
+## M2: map preparation (`mapprep.mjs`)
+
+These steps prepare a new CS2 city so the converted CS1 crop works there: no leftover base-map nets, outside connections, and CS1 water. Each is an exec op in `cs2-apply/MapPrep.cs`, driven by `node terrain/mapprep.mjs <command>`, which prints one JSON object. Order in a new city:
+
+| # | When | Command | What it does |
+| --- | --- | --- | --- |
+| 1 | after `game.new` (paused) | `mapprep.mjs clear [--keep-utilities]` | deletes every top-level net of the base map, and with it the road/train outside-connection markers (`--keep-utilities` keeps powerlines, seaways and pipes). Runs in `ToolUpdate`. |
+| 2 | | `convert.mjs …` + `apply.mjs …` | terrain. A new sea level also resets the water simulation. |
+| 3 | | `mapprep.mjs water --cs1x f --plan f --terrain dir` | CS1 sea level, then replaces the base map's water sources with CS1 natural sources plus inflow and lake sources derived from CS1's depth grid, then resets the water. |
+| 4 | | road import (cs2-importer, `heights: "flat"`) | |
+| 5 | after the import | `mapprep.mjs connections --cs1x f --plan f [--all-roads]` | CS1 highways and train tracks cut at the crop edge become CS2 outside connections on their imported end nodes |
+
+Checks:
+
+| Command | Shows |
+| --- | --- |
+| `mapprep.mjs survey` | the loaded map's nets, buildings, connections, water and terrain range |
+| `mapprep.mjs survey-maps` | the same for every built-in map (`game.new` each, about 10 s per map) |
+| `mapprep.mjs counts` | vehicles and outside-connection lanes |
+| `mapprep.mjs water-check --cs1x f --plan f` | CS2 vs CS1 water depth at wet and dry points |
+| `mapprep.mjs oc-prefabs`, `mapprep.mjs oc-list` | marker prefabs, and the connections in the city |
+
+`node terrain/run-mapprep.mjs --cs1x f --plan dir [--map "Sunshine Peninsula"] [--survey-maps] [--sim-seconds 120]` does everything above in game, under the CS2 lock:
+- start, new city, clear, terrain, import, connections, water;
+- simulation with vehicle counts, then the water check;
+- screenshots, then saves `cs1conv-mapprep-test`.
+
+It writes `.gamectl/mapprep/<run>/summary.json`. The default base map is **Sunshine Peninsula**; see DECISIONS-terrain.md #16.
+
+Verified (Skibidi plan, Sunshine Peninsula, run 8, `.gamectl/mapprep/run8/summary.json`):
+- **Clear:** all 197 base-map edges and 203 nodes deleted. Terrain then matches the file to max 0.0005 m (281 points).
+- **Import:** 1970 built, 0 failed, 0 Temp.
+- **Connections:** 20 markers (13 road, 7 train). Outside-connection lanes went from 16 (air only) to 190.
+- **Traffic, 5 min unpaused:** 94–113 cars, up to 28 trains and 28–59 delivery trucks. It all comes through the new connections, because the base map's road and rail connections are gone.
+- **Water:** sea level 182 m (CS1's), plus 5 sources: 1 CS1 natural source, 2 inflows and 2 lakes.
+  - 150/150 CS1-dry points are dry; 143/150 CS1-wet points are wet.
+  - Depth error: median 0.66 m, p90 1.97 m.
+  - The 7 misses are the downstream end of one river channel, still filling after 5 minutes.
+- **Earlier runs, for comparison:** without region sources 130/150 wet (p90 16.7 m); before the source-creation fix, no source took effect at all.
