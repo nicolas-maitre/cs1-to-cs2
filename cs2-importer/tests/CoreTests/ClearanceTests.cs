@@ -62,9 +62,19 @@ namespace CoreTests
         public static void TestLeavesCs1sOwnSmallClearance()
         {
             // CS1 had them 1.5 m apart (e.g. a metro tunnel under a road tunnel): nothing to restore, nothing to report
-            var j = Cross(-9, "tunnel", -9, -10.5, "tunnel", -10.5);
-            Assert.Eq(-10.5, j.Nodes[3].Elevation, "unchanged");
+            var j = Cross(-14, "tunnel", -14, -15.5, "tunnel", -15.5);
+            Assert.Eq(-15.5, j.Nodes[3].Elevation, "unchanged");
             Assert.True(!j.Warnings.Any(w => w.Kind == "shallow-crossing" || w.Kind == "clearance-restored"), "no warnings");
+        }
+
+        public static void TestDeepenedTunnelsKeepTheirCs1OrderAndSpacing()
+        {
+            // the same pair at -9 and -10.5 (too shallow for CS2 tunnels, #58): both go to -12.5, then the lower one goes
+            // 1.5 m further down so they don't meet
+            var j = Cross(-9, "tunnel", -9, -10.5, "tunnel", -10.5);
+            Assert.Eq(-12.5, j.Nodes[1].Elevation, "upper tunnel at CS2's tunnel depth");
+            Assert.True(j.Nodes[3].Elevation <= -13.9, "lower tunnel below it (" + j.Nodes[3].Elevation + ")");
+            Assert.True(!j.Warnings.Any(w => w.Kind == "shallow-crossing"), "no shortfall left");
         }
 
         public static void TestSharedNodeIsNoCrossing()

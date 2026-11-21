@@ -469,6 +469,9 @@ namespace Cs2ImporterMod
             sb.Append(".\n");
             var fails = (Dictionary<string, object>)r["failures_by_reason"];
             if (fails.Count > 0) sb.Append(T.S("imp.problems", string.Join(", ", fails.Select(kv => kv.Value + " " + kv.Key).ToArray()))).Append('\n');
+            object tun;
+            if (r.TryGetValue("tunnels", out tun) && tun is Dictionary<string, object> td && Convert.ToInt32(td["deepened"]) > 0)
+                sb.Append(T.S("imp.tunnelsDeepened", td["deepened"], td["cs1_tunnel_segments"])).Append('\n');
             var plan = (Dictionary<string, object>)r["plan"];
             if (Convert.ToInt32(plan["segments_skipped"]) > 0) sb.Append(T.S("imp.planSkipped", plan["segments_skipped"])).Append('\n');
             var temp = (Dictionary<string, object>)r["temp_after"];
@@ -497,7 +500,14 @@ namespace Cs2ImporterMod
                 case "zoning": return T.S("line.zoning", d["cells_matched"], d["plan_cells"], d["coverage"], d["cells_painted"]);
                 case "traffic": return T.S("line.traffic", d["lights_added"], d["lights_removed"], d["all_way_stops"], d["turn_ban_ends"], Convert.ToInt32(d["crosswalks_added"]) + Convert.ToInt32(d["crosswalks_removed"]));
                 case "trafficmod": return T.S("line.trafficmod", d["priority_signs"], d["edges_with_priorities"]);
-                case "lanes": return T.S("line.lanes", d["connections"], d["nodes_done"], d["nodes_planned"], d["lane_refs_matched"], d["lane_refs"], ((string)d["handedness"]).StartsWith("mirrored") ? T.S("line.lanesMirrored") : "");
+                case "lanes":
+                    {
+                        string unsure = "";
+                        object ac;
+                        if (d.TryGetValue("arm_check", out ac) && ac is Dictionary<string, object> acd && Convert.ToInt32(acd["junctions_left_to_cs2"]) > 0)
+                            unsure = T.S("line.lanesArmCheck", acd["junctions_left_to_cs2"]);
+                        return T.S("line.lanes", d["connections"], d["nodes_done"], d["nodes_planned"], d["lane_refs_matched"], d["lane_refs"], ((string)d["handedness"]).StartsWith("mirrored") ? T.S("line.lanesMirrored") : "") + unsure;
+                    }
                 case "connections": return T.S("line.connections", d["placed"], d["items"], d["road"], d["train"], Convert.ToInt32(d["failed"]) > 0 ? T.S("line.connectionsFailed", d["failed"]) : "");
                 case "transit":
                 {
@@ -514,9 +524,17 @@ namespace Cs2ImporterMod
                         object already, failedN;
                         d.TryGetValue("alreadyPlaced", out already);
                         d.TryGetValue("failed", out failedN);
-                        return T.S("line.generic", title, done ?? 0, v,
+                        var line = T.S("line.generic", title, done ?? 0, v,
                             already != null && Convert.ToInt32(already) > 0 ? T.S("line.already", already) : "",
                             failedN != null && Convert.ToInt32(failedN) > 0 ? T.S("line.failedN", failedN) : "");
+                        // buildings (#128): buildings to place by hand, and warnings such as "no power plant placed"
+                        object py, warns;
+                        if (d.TryGetValue("placeYourself", out py) && py is System.Collections.ICollection pyc && pyc.Count > 0)
+                            line += T.S("line.placeYourself", pyc.Count);
+                        if (d.TryGetValue("warnings", out warns) && warns is System.Collections.IEnumerable we && !(warns is string))
+                            foreach (var x in we)
+                                if (x is string ws && ws.Length > 0) line += "\n" + T.S("line.stepWarning", ws);
+                        return line;
                     }
                     return T.S("line.done", title);
             }

@@ -61,11 +61,18 @@ namespace Cs2Importer
             var idx = w.IndexRealNodes();
             w.RefreshTerrain();
             var planNodes = new HashSet<Entity>();
+            var shifted = ImportPlanner.OffNodeCentres(job); // offNode (Node Controller) nodes sit at their edges' mean end
+            var shiftedEnds = ImportPlanner.OffNodeEnds(job); // ...usually; else their edges' shifted ends find them
             foreach (var n in job.Nodes.Values)
             {
                 var pos = new float3((float)n.X, w.TerrainHeight(n.X, n.Z) + (float)n.PositionHeight, (float)n.Z);
                 float3 at;
-                var e = idx.Find(pos, 1.0f, 30.0f, out at);
+                double[] c;
+                var e = shifted.TryGetValue(n.Id, out c) ? idx.Find(new float3((float)c[0], pos.y, (float)c[1]), 1.0f, 30.0f, out at) : Entity.Null;
+                if (e == Entity.Null) e = idx.Find(pos, 1.0f, 30.0f, out at);
+                List<double[]> offEnds;
+                if (e == Entity.Null && shiftedEnds.TryGetValue(n.Id, out offEnds))
+                    e = w.NodeByEdgeEnds(offEnds.Select(p => new float3((float)p[0], pos.y, (float)p[1])).ToList(), 0.25f, out at);
                 if (e == Entity.Null) continue;
                 r.Node[n.Id] = e;
                 planNodes.Add(e);
@@ -78,7 +85,10 @@ namespace Cs2Importer
                 var path = Entry.FindPath(w, a, b, planNodes, used);
                 if (path == null) continue;
                 foreach (var e in path) used.Add(e);
-                r.Edges[s.Id] = path;
+                // a split segment (#62): the halves' paths joined in plan order, so EdgeAt finds the edge at either plan node
+                List<Entity> prev;
+                if (s.Half == 1 && r.Edges.TryGetValue(s.Id, out prev)) { var all = new List<Entity>(prev); all.AddRange(path); r.Edges[s.Id] = all; }
+                else r.Edges[s.Id] = path;
             }
             return r;
         }

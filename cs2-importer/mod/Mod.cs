@@ -13,7 +13,7 @@ namespace Cs2ImporterMod
 {
     public sealed class Mod : IMod
     {
-        public const string Version = "0.3.2";
+        public const string Version = "0.3.3";
         public static readonly ILog Log = LogManager.GetLogger("Cs2ImporterMod").SetShowsErrorsInUI(false);
 
         /// <summary>The loaded mod instance; exec scripts reach the settings through it (see ScriptApi).</summary>

@@ -24,6 +24,7 @@ namespace Cs2Importer.Core
     {
         const int Pieces = 16;
         const double Tolerance = 0.25;  // deficits below this are rounding
+        const double DeepenedRoom = 12; // how much further a deepened tunnel node may go down for clearance
 
         /// <summary>Restores clearance where it's short, then reports the crossings that are still short.</summary>
         public static void Keep(ImportJob job)
@@ -88,6 +89,10 @@ namespace Cs2Importer.Core
         {
             double hat = n.Cs1HeightAboveTerrain;
             if (double.IsNaN(hat)) return 0;
+            if (n.Conformed) return 0; // the package's terrain is shaped to this node's CS1 height: leave it there
+            // a tunnel node already deepened to CS2's tunnel depth (#58) may go further down: it stays a tunnel, and two
+            // crossing CS1 tunnels deepened to the same depth get their CS1 order and spacing back
+            if (dir < 0 && !double.IsNaN(n.DeepenedFrom)) return DeepenedRoom;
             if (dir < 0) return n.Elevation <= 0 && hat < n.Elevation ? n.Elevation - hat : 0;
             return n.Elevation > 0 && hat > n.Elevation ? hat - n.Elevation : 0;
         }
@@ -136,7 +141,7 @@ namespace Cs2Importer.Core
         static Poly Build(SegmentJob s)
         {
             var p = new Poly { S = s };
-            var b = s.Source.Bezier;
+            var b = s.Bezier;
             V3 b0, b1, b2, b3;
             if (b != null) { b0 = b[0]; b1 = b[1]; b2 = b[2]; b3 = b[3]; }
             else
@@ -197,8 +202,9 @@ namespace Cs2Importer.Core
         static double Height(Poly p, double t)
         {
             var s = p.S;
-            double h0 = s.Start.Cs1Y - s.Start.Cs1HeightAboveTerrain + s.Start.Elevation;
-            double h1 = s.End.Cs1Y - s.End.Cs1HeightAboveTerrain + s.End.Elevation;
+            // CS2 terrain under a node: CS1's own terrain, or the node's CS1 height where the package burned a conform road
+            double h0 = (s.Start.Conformed ? s.Start.Cs1Y : s.Start.Cs1Y - s.Start.Cs1HeightAboveTerrain) + s.Start.Elevation;
+            double h1 = (s.End.Conformed ? s.End.Cs1Y : s.End.Cs1Y - s.End.Cs1HeightAboveTerrain) + s.End.Elevation;
             bool keepBulge = s.Source.Kind != "ground" && (s.Start.Elevation != 0 || s.End.Elevation != 0 || s.Source.Kind == "bridge");
             double f = t * Pieces;
             int i = Math.Min(Pieces - 1, (int)Math.Floor(f));

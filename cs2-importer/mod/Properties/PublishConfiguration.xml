@@ -45,7 +45,7 @@ Known limits:
   <Thumbnail Value="Properties/Thumbnail.png" />
   <Tag Value="Code Mod" />
   <Tag Value="Tools" />
-  <ModVersion Value="0.3.2" />
+  <ModVersion Value="0.3.3" />
   <GameVersion Value="1.*" />
   <!-- Road Builder [BETA] (Paradox Mods 87190) is required. Traffic (80095) is optional: the publish format has no
        optional dependencies, so it is only named in the description. -->

@@ -98,12 +98,21 @@ gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --phase tool --p
 | `trafficmod` | phase tool, pump tool | M2: Traffic mod priority signs (by reflection); lane connections, arrows and U-turns are counted only. Skipped if the mod is missing. |
 | `zoning` | phase tool, pump tool | M2: paints `plan.zoning.cells` onto the zone blocks of the imported roads; `checkOnly` only measures. |
 | `view` | phase main | `{tool: "zone"}` shows the zone overlay for screenshots; `{tool: "default"}` turns it off again. |
+| `heights` | phase main | Height error check: samples every plan segment's CS2 course at five points along its length (t = 0, ¼, ½, ¾, 1) as CS2 road y, CS2 terrain y and CS1 y. `names` (regex) also lists the CS2 street names that match, with their segments; `out` writes the dump to a file. Read-only. |
 
 Options: `keepEmbankments` (false), `heights` (`flat`; `exact` = CS2 terrain + CS1 `heightAboveTerrain`, experimental, see DECISIONS M2), `trace` (file: segment ids per batch, written before the batch), `offsetX` / `offsetZ` (0), `batchSize` (400), `cellSize` (400 m), `settleFrames` (2), `verifyFrames` (30), `groundSnap` (1 m), `minLength` (0.5 m), `shortLength` (4 m), `margin` (50 m).
 
 ## How it builds
 
 1. **Plan → job** (`src/Core`, no game code): skip invalid segments; one elevation per node from the segment ends, plus CS1 trenches of 4 m or more (clamped to −11.5 m). Embankments and smaller offsets snap to the terrain, because buildings can't connect to embankment walls (`keepEmbankments` keeps them, clamped to +7.5 m). Spatial batches.
+   - **Height modes** (DECISIONS-importer.md #57): a plan with `prefabs[key].heightMode` or `terrain.roadConformed` (web 0.7.0 and later) uses the modes for ground and slope segments instead:
+     - `conform`: the package's heightmap already carries the road's CS1 profile, so the node sits at elevation 0 and the course keeps CS1's vertical profile;
+     - `walls`: CS1 height through the elevation (retaining walls or quays within −11.5…+7.5 m; see below for beyond);
+     - `follow`: the natural terrain.
+   - **Where modes meet:** at a node, conform wins (elevation 0, even at an elevated end), then walls, then follow. Plans without modes keep the rule above. A tunnel node is never conformed, and a conform slope is built as walls.
+   - **walls beyond the wall limits** (#61): CS1's elevation kind decides the composition family, so a CS1 ground road is never a tunnel or on pillars. Past −11.5…+7.5 m the node stays at the limit; the package's walls burn (ground beside the road reshaped) gives it its CS1 height, and whatever is still short is listed (`walls_short`). Verify counts tunnel and elevated compositions by CS1 kind (`unexpected-tunnel`, `unexpected-elevated`).
+   - **Tunnels** (DECISIONS-importer.md #58): CS2 builds a tunnel only when the course is at most −2L everywhere and −3L at its deepest (L = 4 for roads and tracks, 2 for paths). CS1 tunnels shallower than that are deepened (deep end to −12.5 m, portal to −8.5 m at most), with the descent extended along the slope if it gets steeper than 20 %; each is listed in the report (`tunnels_deepened`).
+   - **On road-conformed terrain**, elevated, bridge, tunnel and walls nodes get their elevation from the real terrain in game, so they stay at their CS1 height where the burn changed the ground under them (`nodes_kept_on_conformed_terrain`).
 2. **Prefabs**: `PrefabID(type, name)` for every key the segments use. A missing prefab fails its segments and is listed in the report.
 3. **One position per node**: CS2 terrain height + node elevation, computed once, used by every segment at that node.
 4. **Batches** in `ToolUpdate`: `Permanent` road definitions; ends shared within a batch merge into one node; ends on a node built by an earlier batch attach to its entity (`CoursePos.m_Entity`). After each batch the new nodes are looked up (within 1 m) to extend the node map.

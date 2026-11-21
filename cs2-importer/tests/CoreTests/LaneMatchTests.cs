@@ -67,5 +67,27 @@ namespace CoreTests
             Assert.Eq("none", LaneMatch.Compare(new[] { "a" }, new string[0]), "none");
             Assert.Eq("different", LaneMatch.Compare(new[] { "a" }, new[] { "b" }), "different");
         }
-    }
+    
+        /// <summary>#60: the independent arm check compares directions, not our mapping.</summary>
+        public static void TestArmAngle()
+        {
+            Assert.Near(0, LaneMatch.AngleDeg(1, 0, 5, 0), 1e-9, "same direction");
+            Assert.Near(90, LaneMatch.AngleDeg(1, 0, 0, 3), 1e-9, "a neighbouring arm of a 4-way junction");
+            Assert.Near(60, LaneMatch.AngleDeg(1, 0, 0.5, System.Math.Sqrt(3) / 2), 1e-9, "a neighbouring arm of a 6-way junction");
+            Assert.True(double.IsNaN(LaneMatch.AngleDeg(0, 0, 1, 0)), "degenerate");
+        }
+
+        /// <summary>#60: the lane nearest the CS1 lane's position across the road, among lanes flowing the wanted way.</summary>
+        public static void TestPickByPosition()
+        {
+            var lanes = new[] {
+                new EdgeLaneAtNode { Offset = -5.25, Index = 0, Inbound = false }, new EdgeLaneAtNode { Offset = -1.75, Index = 1, Inbound = false },
+                new EdgeLaneAtNode { Offset = 1.75, Index = 2, Inbound = true }, new EdgeLaneAtNode { Offset = 5.25, Index = 3, Inbound = true } };
+            // CS1: 16 m half-width road, curb lane at +11.5 m; CS2 half-width 8 m
+            Assert.Eq(3, LaneMatch.PickByPosition(lanes, 11.5 / 16, 8, true).Value, "curb lane");
+            Assert.Eq(2, LaneMatch.PickByPosition(lanes, 3.5 / 16, 8, true).Value, "inner lane");
+            Assert.Eq(1, LaneMatch.PickByPosition(lanes, -3.5 / 16, 8, false).Value, "outbound inner lane");
+            Assert.True(LaneMatch.PickByPosition(lanes, double.NaN, 8, true) == null, "no CS1 offset");
+        }
+}
 }

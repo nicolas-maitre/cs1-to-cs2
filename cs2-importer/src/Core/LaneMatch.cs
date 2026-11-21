@@ -38,6 +38,38 @@ namespace Cs2Importer.Core
         }
 
         /// <summary>
+        /// Angle (degrees, 0..180) between two horizontal directions. The independent arm check (#60, DECISIONS.md #126):
+        /// the CS2 edge's tangent at the node against the CS1 segment's bezier tangent there, so a junction arm can't
+        /// be swapped by the node/edge mapping without being noticed. NaN when either direction is degenerate.
+        /// </summary>
+        public static double AngleDeg(double ax, double az, double bx, double bz)
+        {
+            double la = Math.Sqrt(ax * ax + az * az), lb = Math.Sqrt(bx * bx + bz * bz);
+            if (la < 1e-6 || lb < 1e-6) return double.NaN;
+            double c = (ax * bx + az * bz) / (la * lb);
+            return Math.Acos(Math.Max(-1, Math.Min(1, c))) * 180 / Math.PI;
+        }
+
+        /// <summary>
+        /// The lane picked by position instead of ordinal (independent lane check, #60): among the edge's lanes flowing
+        /// the wanted way, the one whose offset as a fraction of the CS2 half-width is nearest to the CS1 lane's offset as a
+        /// fraction of the CS1 half-width (sign: + = right of the plan segment). Null when nothing fits.
+        /// </summary>
+        public static int? PickByPosition(IList<EdgeLaneAtNode> lanes, double cs1Fraction, double cs2HalfWidth, bool wantInbound)
+        {
+            if (double.IsNaN(cs1Fraction) || !(cs2HalfWidth > 0)) return null;
+            int? best = null;
+            double bestD = double.MaxValue;
+            foreach (var l in lanes)
+            {
+                if (l.Inbound != wantInbound) continue;
+                double d = Math.Abs(l.Offset / cs2HalfWidth - cs1Fraction);
+                if (d < bestD) { bestD = d; best = l.Index; }
+            }
+            return best;
+        }
+
+        /// <summary>
         /// The same lane counted from the other side: a CS1 city whose traffic handedness differs from the CS2 city's
         /// (left-hand CacaoCity into a right-hand CS2 city) has every lane where CS2 has it but flowing the other way, so
         /// a curb lane is matched with the CS2 curb lane on the other side of the road.

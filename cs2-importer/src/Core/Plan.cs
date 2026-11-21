@@ -22,6 +22,8 @@ namespace Cs2Importer.Core
     public sealed class PlanPrefab
     {
         public string Key, Type, Name, Source;
+        /// <summary>conform | follow | walls for this type's ground segments (NOTES-road-heights.md); null = not set.</summary>
+        public string HeightMode;
     }
 
     public sealed class PlanNode
@@ -41,6 +43,13 @@ namespace Cs2Importer.Core
         public double ElevationStart, ElevationEnd;
         public string Kind = "ground";        // ground, elevated, bridge, slope, tunnel
         public bool Reversed;                 // CS1 Invert flag: start/end swapped in the plan (schema §2 "Orientation")
+        /// <summary>segments[].offNode: the bezier's ends are deliberately off the node centres (CS1 Node Controller shift,
+        /// docs/DECISIONS.md #107); the course keeps them (DECISIONS-nodecontroller.md).</summary>
+        public bool OffNode;
+        /// <summary>segments[].cs1Info: the CS1 NetInfo name (reports only).</summary>
+        public string Cs1Info;
+        /// <summary>segments[].halfWidth: CS1 NetInfo m_halfWidth (web 0.7.0+); NaN when absent.</summary>
+        public double HalfWidth = double.NaN;
     }
 
     public sealed class Plan
@@ -53,6 +62,8 @@ namespace Cs2Importer.Core
         public string HeightMode = "terrain-relative";
         /// <summary>plan.source.leftHandTraffic (exporter 1.2.1+): the CS1 city drove on the left; null in older plans.</summary>
         public bool? LeftHandTraffic;
+        /// <summary>plan.terrain.roadConformed: the package's heightmap has the conform roads' CS1 profiles burned in.</summary>
+        public bool RoadConformed;
         public readonly Dictionary<string, PlanPrefab> Prefabs = new Dictionary<string, PlanPrefab>();
         public readonly Dictionary<long, PlanNode> Nodes = new Dictionary<long, PlanNode>();
         public readonly List<PlanSegment> Segments = new List<PlanSegment>();
@@ -108,13 +119,14 @@ namespace Cs2Importer.Core
             if (plan.HeightMode != "terrain-relative")
                 plan.ParseIssues.Add(new Issue("warning", "height-mode", "heightMode '" + plan.HeightMode + "' is not supported in M1; using terrain-relative"));
 
+            plan.RoadConformed = P.Bool(P.Obj(root, "terrain"), "roadConformed", false);
             var prefabs = P.Obj(root, "prefabs");
             if (prefabs != null)
                 foreach (var kv in prefabs)
                 {
                     var o = kv.Value as Dictionary<string, object>;
                     if (o == null) continue;
-                    plan.Prefabs[kv.Key] = new PlanPrefab { Key = kv.Key, Type = P.Str(o, "type", "RoadPrefab"), Name = P.Str(o, "name", null), Source = P.Str(o, "source", null) };
+                    plan.Prefabs[kv.Key] = new PlanPrefab { Key = kv.Key, Type = P.Str(o, "type", "RoadPrefab"), Name = P.Str(o, "name", null), Source = P.Str(o, "source", null), HeightMode = P.Str(o, "heightMode", null) };
                 }
 
             var nodes = P.List(root, "nodes");
@@ -149,7 +161,10 @@ namespace Cs2Importer.Core
                         ElevationStart = P.Num(o, "elevationStart", 0),
                         ElevationEnd = P.Num(o, "elevationEnd", 0),
                         Kind = P.Str(o, "kind", "ground"),
+                        Cs1Info = P.Str(o, "cs1Info", null),
+                        HalfWidth = P.Num(o, "halfWidth", double.NaN),
                         Reversed = P.Bool(o, "reversed", false),
+                        OffNode = P.Bool(o, "offNode", false),
                         Bezier = ParseBezier(P.List(o, "bezier")),
                     };
                     plan.Segments.Add(s);

@@ -44,11 +44,13 @@ namespace Cs2Importer
                 case "mod": return ModScript.Drive(args);
                 case "zoning": return M2Ops.Zoning(args);
                 case "view": return View(args);
+                case "laneview": return LaneView.Show(args);
                 case "traffic": return M2Ops.Traffic(args);
                 case "trafficmod": return M2Ops.TrafficMod(args);
                 case "lanes": return LaneOps.Apply(args);
                 case "lanedirs": return LaneDirs.Dump(args);
                 case "roadlayouts": return RoadLayouts.Dump(args);
+                case "heights": return Heights.Dump(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify, zoning, traffic, trafficmod, terrain, inspect, mod)");
             }
         }
@@ -61,6 +63,7 @@ namespace Cs2Importer
             o.BatchSize = (int)P.Num(a, "batchSize", o.BatchSize);
             o.CellSize = P.Num(a, "cellSize", o.CellSize);
             o.GroundSnap = P.Num(a, "groundSnap", o.GroundSnap);
+            o.ApplyOffNode = P.Bool(a, "offNode", o.ApplyOffNode);
             o.MinLength = P.Num(a, "minLength", o.MinLength);
             o.ShortLength = P.Num(a, "shortLength", o.ShortLength);
             o.OffsetX = P.Num(a, "offsetX", 0);
@@ -395,6 +398,27 @@ namespace Cs2Importer
 
             // 3. one position per node (terrain + elevation), computed once
             w.RefreshTerrain();
+            // road-conformed terrain: elevated/bridge/tunnel/walls nodes keep their CS1 height over the reshaped ground (#57)
+            // only on the package's own terrain: at a test spot or on a map that kept its terrain, CS1 heights against
+            // that ground would make ground roads elevated or tunnels (#61)
+            bool planTerrain = ImportPlanner.TerrainIsThePlans(job, (x, z) => w.TerrainHeight(x, z));
+            report["terrain_is_the_plans"] = planTerrain;
+            int keptOnConformed = planTerrain ? ImportPlanner.KeepHeightsOnConformedTerrain(job, (x, z) => w.TerrainHeight(x, z)) : 0;
+            if (job.Plan.RoadConformed) report["nodes_kept_on_conformed_terrain"] = keptOnConformed;
+            // CS1 tunnels too shallow for CS2's tunnel rule, checked again on the real terrain (#58)
+            ImportPlanner.DeepenTunnels(job, (x, z) => w.TerrainHeight(x, z));
+            // walls segments whose CS1 height leaves the ground line CS2 would lay them on: split with a node at the CS1
+            // height (#62), on the package's terrain only
+            int splitOverTerrain = planTerrain ? ImportPlanner.SplitOverTerrain(job, (x, z) => w.TerrainHeight(x, z)) : 0;
+            report["segments_split"] = job.SplitSegments;
+            report["segments_split_over_terrain"] = splitOverTerrain;
+            int wallsMiddle = planTerrain ? ImportPlanner.KeepWallsProfile(job, (x, z) => w.TerrainHeight(x, z)) : 0;
+            if (wallsMiddle > 0) report["walls_middle_kept"] = wallsMiddle;
+            int cs1Tunnels = 0;
+            foreach (var s in job.Segments) if (s.Source.Kind == "tunnel") cs1Tunnels++;
+            report["tunnels"] = new Dictionary<string, object> { { "cs1_tunnel_segments", cs1Tunnels }, { "deepened", job.TunnelsDeepened.Count } };
+            report["tunnels_deepened"] = job.TunnelsDeepened;
+            if (job.WallsShort.Count > 0) { report["walls_short_count"] = job.WallsShort.Count; report["walls_short"] = job.WallsShort.GetRange(0, Math.Min(200, job.WallsShort.Count)); }
             var nodes = new Dictionary<long, NodeState>();
             foreach (var n in job.Nodes.Values)
             {
@@ -420,6 +444,9 @@ namespace Cs2Importer
                 var sw = Stopwatch.StartNew();
                 int created = 0, attached = 0;
                 var touched = new HashSet<long>();
+                // the curve ends at each node this batch creates: CS2 puts a new node at their mean (it ignores
+                // CoursePos.m_Position), which is off the plan centre when an offNode (Node Controller) end is among them
+                var endsAt = new Dictionary<long, List<float3>>();
                 foreach (var s in batch)
                 {
                     var pf = prefabs.ByKey[s.PrefabKey];
@@ -436,9 +463,15 @@ namespace Cs2Importer
                         continue;
                     }
                     var curve = ImportPlanner.BuildCurve(s, V(a0.Pos), V(b0.Pos));
-                    if (s.BuildReversed) w.CreateSegment(pf.Entity, curve, b0.Entity, a0.Entity, (float)s.End.Elevation, (float)s.Start.Elevation, (float)s.MiddleElevation);
-                    else w.CreateSegment(pf.Entity, curve, a0.Entity, b0.Entity, (float)s.Start.Elevation, (float)s.End.Elevation, (float)s.MiddleElevation);
+                    // offNode: the course positions are the nodes, the curve ends stay off them (Node Controller shift)
+                    V3? nodeA = s.OffNode ? V(a0.Pos) : (V3?)null, nodeB = s.OffNode ? V(b0.Pos) : (V3?)null;
+                    if (s.BuildReversed) w.CreateSegment(pf.Entity, curve, b0.Entity, a0.Entity, (float)s.End.Elevation, (float)s.Start.Elevation, (float)s.MiddleElevation, nodeB, nodeA);
+                    else w.CreateSegment(pf.Entity, curve, a0.Entity, b0.Entity, (float)s.Start.Elevation, (float)s.End.Elevation, (float)s.MiddleElevation, nodeA, nodeB);
                     created++;
+                    var ca = s.BuildReversed ? curve[3] : curve[0];
+                    var cb = s.BuildReversed ? curve[0] : curve[3];
+                    if (a0.Entity == Entity.Null) AddEnd(endsAt, s.Start.Id, ca);
+                    if (b0.Entity == Entity.Null) AddEnd(endsAt, s.End.Id, cb);
                     if (a0.Entity != Entity.Null) attached++;
                     if (b0.Entity != Entity.Null) attached++;
                     attempted.Add(s);
@@ -458,7 +491,8 @@ namespace Cs2Importer
                     var ns = nodes[id];
                     if (ns.Entity != Entity.Null && w.IsReal(ns.Entity)) continue;
                     float3 at;
-                    var e = idx.Find(ns.Pos, 1.0f, 3.0f, out at);
+                    bool shifted;
+                    var e = FindBuilt(w, idx, ns, id, endsAt, out at, out shifted);
                     if (e == Entity.Null)
                     {
                         // one more frame before giving up on it
@@ -468,7 +502,9 @@ namespace Cs2Importer
                     }
                     builtAt[PosKey(ns.Pos)] = ns;
                     ns.Entity = e;
-                    ns.Pos = at; // later segments attach at the node's real position
+                    // later segments attach at the node's real position; offNode: at the plan centre (CS2 moves the node
+                    // to the mean of its edges' ends whenever an edge attaches)
+                    ns.Pos = shifted ? new float3(ns.Pos.x, at.y, ns.Pos.z) : at;
                     resolved++;
                 }
                 if (missing > 0)
@@ -481,7 +517,8 @@ namespace Cs2Importer
                         var ns = nodes[id];
                         if (ns.Entity != Entity.Null) continue;
                         float3 at;
-                        var e = idx.Find(ns.Pos, 1.0f, 3.0f, out at);
+                        bool shifted;
+                        var e = FindBuilt(w, idx, ns, id, endsAt, out at, out shifted);
                         if (e == Entity.Null)
                         {
                             ns.Failed = true;
@@ -490,7 +527,7 @@ namespace Cs2Importer
                             continue;
                         }
                         builtAt[PosKey(ns.Pos)] = ns;
-                        ns.Entity = e; ns.Pos = at; resolved++;
+                        ns.Entity = e; ns.Pos = shifted ? new float3(ns.Pos.x, at.y, ns.Pos.z) : at; resolved++;
                     }
                 }
                 var row = new Dictionary<string, object>
@@ -585,6 +622,8 @@ namespace Cs2Importer
             int viaForks = 0;
             var notes = new List<Issue>(); // built, but worth knowing (not failures)
             int built = 0, pieces = 0, wrongPrefab = 0, elevatedEdges = 0, tunnelEdges = 0, wantElevated = 0, wantTunnel = 0, raisedSides = 0, loweredSides = 0;
+            var tunnelByKind = new Dictionary<string, int>(); var elevatedByKind = new Dictionary<string, int>(); int cs1TunnelsBuilt = 0;
+            var builtHalves = new Dictionary<long, int>(); // a split segment (#62) is built when both halves are
             var builtEdges = new HashSet<Entity>();
             foreach (var s in attempted)
             {
@@ -617,6 +656,7 @@ namespace Cs2Importer
                     continue;
                 }
                 built++;
+                { int hb; builtHalves.TryGetValue(s.Id, out hb); builtHalves[s.Id] = hb + 1; }
                 pieces += path.Count;
                 if (viaFork)
                 {
@@ -642,9 +682,24 @@ namespace Cs2Importer
                 if (!prefabOk) { wrongPrefab++; failures.Add(new Issue("warning", "wrong-prefab", "segment " + s.Id + ": the CS2 edge has a different prefab than planned") { Segment = s.Id }); }
                 if (elev) elevatedEdges++;
                 if (tun) tunnelEdges++;
+                // the composition family against CS1's elevation kind, both ways (#61, DECISIONS.md #129)
+                if (tun) { int c; tunnelByKind.TryGetValue(kind, out c); tunnelByKind[kind] = c + 1; }
+                if (elev) { int c; elevatedByKind.TryGetValue(kind, out c); elevatedByKind[kind] = c + 1; }
+                if (kind == "tunnel") cs1TunnelsBuilt++;
+                if (kind == "ground" && tun) failures.Add(new Issue("warning", "unexpected-tunnel", "segment " + s.Id + " is a ground road in CS1 but CS2 built a tunnel") { Segment = s.Id });
+                if (kind == "ground" && elev) failures.Add(new Issue("warning", "unexpected-elevated", "segment " + s.Id + " is a ground road in CS1 but CS2 built it elevated") { Segment = s.Id });
                 if (wantsElev && !elev) failures.Add(new Issue("warning", "not-elevated", "segment " + s.Id + " should be a bridge/elevated road but has no elevated composition") { Segment = s.Id });
                 if (wantsTunnel && !tun) failures.Add(new Issue("warning", "not-tunnel", "segment " + s.Id + " should be a tunnel but has no tunnel composition") { Segment = s.Id });
             }
+            // plan segments (a split one counts once, built when all its halves are)
+            var halvesAttempted = new Dictionary<long, int>();
+            foreach (var s in attempted) { int c; halvesAttempted.TryGetValue(s.Id, out c); halvesAttempted[s.Id] = c + 1; }
+            var planAttempted = halvesAttempted.Keys;
+            int planBuilt = 0;
+            foreach (var kv in halvesAttempted) { int hb; if (builtHalves.TryGetValue(kv.Key, out hb) && hb >= kv.Value) planBuilt++; }
+            var planIds = new HashSet<long>();
+            foreach (var s in job.Segments) planIds.Add(s.Id);
+            int planPlanned = planIds.Count;
             // CS2 edges in the area that do not belong to any plan segment
             int extra = 0;
             if (job.Nodes.Count > 0)
@@ -655,10 +710,13 @@ namespace Cs2Importer
             }
             return new Dictionary<string, object>
             {
-                { "segments_planned", job.Segments.Count }, { "segments_attempted", attempted.Count }, { "segments_built", built },
-                { "segments_failed", attempted.Count - built }, { "segments_via_cs2_fork", viaForks }, { "cs2_edges_for_plan", pieces }, { "nodes_found", nodesOk }, { "nodes_planned", nodes.Count },
+                { "segments_planned", planPlanned }, { "segments_attempted", planAttempted.Count }, { "segments_built", planBuilt },
+                { "segments_failed", planAttempted.Count - planBuilt }, { "segments_split", job.SplitSegments }, { "courses_planned", job.Segments.Count }, { "courses_built", built }, { "segments_via_cs2_fork", viaForks }, { "cs2_edges_for_plan", pieces }, { "nodes_found", nodesOk }, { "nodes_planned", nodes.Count },
                 { "wrong_prefab", wrongPrefab }, { "elevated_planned", wantElevated }, { "elevated_built", elevatedEdges },
                 { "tunnel_planned", wantTunnel }, { "tunnel_built", tunnelEdges }, { "other_cs2_edges_in_area", extra },
+                { "tunnel_by_cs1_kind", System.Linq.Enumerable.ToDictionary(tunnelByKind, kv => kv.Key, kv => (object)kv.Value) },
+                { "elevated_by_cs1_kind", System.Linq.Enumerable.ToDictionary(elevatedByKind, kv => kv.Key, kv => (object)kv.Value) },
+                { "cs1_tunnel_segments_built", cs1TunnelsBuilt },
                 // edges with retaining-wall sides: buildings can't connect to a Raised/Lowered side
                 { "edges_raised_sides", raisedSides }, { "edges_lowered_sides", loweredSides },
                 { "_failures", failures }, { "notes_by_kind", ImportPlanner.CountByKind(notes) }, { "notes", ImportPlanner.Samples(notes, 10) },
@@ -726,6 +784,36 @@ namespace Cs2Importer
         }
 
         static string PosKey(float3 p) { return Math.Round(p.x, 2) + "," + Math.Round(p.y, 1) + "," + Math.Round(p.z, 2); }
+
+        static void AddEnd(Dictionary<long, List<float3>> endsAt, long id, V3 p)
+        {
+            List<float3> l;
+            if (!endsAt.TryGetValue(id, out l)) endsAt[id] = l = new List<float3>();
+            l.Add(GameWorld.F3(p));
+        }
+
+        /// <summary>The node a batch built for a plan node. CS2 creates a new node at the mean of its courses' curve ends,
+        /// so with offNode (Node Controller) ends it is looked up there; `shifted` says so, and the caller then keeps the plan
+        /// centre for later curves (the node itself moves with every edge that attaches).</summary>
+        static Entity FindBuilt(GameWorld w, GameWorld.NodeIndex idx, NodeState ns, long id, Dictionary<long, List<float3>> endsAt, out float3 at, out bool shifted)
+        {
+            shifted = false;
+            float3 p = ns.Pos;
+            List<float3> ends;
+            if (endsAt.TryGetValue(id, out ends) && ends.Count > 0)
+            {
+                float2 m = 0;
+                bool off = false;
+                foreach (var e in ends) { m += e.xz; off |= math.distance(e.xz, ns.Pos.xz) > 0.05f; }
+                if (off) { shifted = true; p = new float3(m.x / ends.Count, ns.Pos.y, m.y / ends.Count); }
+            }
+            var r = idx.Find(p, 1.0f, 3.0f, out at);
+            if (r == Entity.Null && shifted) r = idx.Find(ns.Pos, 1.0f, 3.0f, out at);
+            // CS2 doesn't always put the node at the plain mean (an elevated merge on CacaoCity: 3.3 m off it), but every
+            // edge keeps its curve end exactly: find the node through the edges this batch built
+            if (r == Entity.Null && shifted && w != null) r = w.NodeByEdgeEnds(ends, 0.05f, out at);
+            return r;
+        }
 
         /// <summary>A node not built yet whose position equals an already built node's: take over that node.</summary>
         static NodeState Twin(NodeState ns, Dictionary<string, NodeState> builtAt)

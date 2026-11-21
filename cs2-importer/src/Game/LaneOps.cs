@@ -110,6 +110,19 @@ namespace Cs2Importer
             var problems = new Dictionary<string, int>();
             Action<string> bad = k => { int n; problems.TryGetValue(k, out n); problems[k] = n + 1; };
 
+            // independent checks (#60, DECISIONS.md #126), using geometry instead of our own segment → edge → lane mapping:
+            // (1) arm: the CS2 edge's direction at the node must be the CS1 segment's (bezier tangent) within armTolerance;
+            //     a junction with any arm off gets nothing written (a wrong connection is worse than CS2's default);
+            // (2) lane position: the lane nearest the CS1 lane's position across the road should be the one the ordinal
+            //     picks (diagnostic only; measured with CS1's offset as is and mirrored)
+            double armTol = P.Num(a, "armTolerance", 30);
+            var unsure = new Dictionary<long, string>();
+            var armSeen = new HashSet<string>();
+            var armDiag = new List<object>();
+            int armOk = 0, armOff = 0, armUnknown = 0;
+            int posChecked = 0, posAgree = 0, posAgreeMirrored = 0;
+            var posDiag = new List<object>();
+
             // plan lane → (edge, lane index at that node). First decide, over every reference, whether the plan's lanes
             // match CS2's as they are or mirrored (the CS1 city drove on the other side: LaneMatch.Mirror)
             bool mirrored = false;
@@ -162,12 +175,39 @@ namespace Cs2Importer
                 if (edge == Entity.Null) { bad("segment_or_node_not_found"); return null; }
                 var lanes = EdgeLanes(w, job, edge, isEnd, node, segment);
                 if (lanes == null) { bad("segment_not_in_job"); return null; }
+                if (armSeen.Add(node + ":" + segment))
+                {
+                    double ang = ArmAngle(w, job, node, segment, edge, isEnd);
+                    if (double.IsNaN(ang)) armUnknown++;
+                    else if (ang <= armTol) armOk++;
+                    else
+                    {
+                        armOff++;
+                        if (!unsure.ContainsKey(node)) unsure[node] = "segment " + segment + " " + Math.Round(ang) + "° off";
+                        if (armDiag.Count < maxDiag) armDiag.Add(new Dictionary<string, object> { { "node", node }, { "segment", segment }, { "edge", edge.Index }, { "angle", Math.Round(ang, 1) } });
+                    }
+                }
                 string problem;
                 int ordinal = (int)P.Num(lr, "ordinal", -1), cnt = (int)P.Num(lr, "count", -1);
                 var idx = LaneMatch.Pick(lanes, mirrored ? LaneMatch.Mirror(ordinal, cnt) : ordinal, cnt, inbound, out problem);
                 if (idx == null) { bad(problem); return null; }
                 refsMatched++;
                 var seg = job.Segments.First(x => x.Id == segment);
+                {
+                    double cs1Off = P.Num(lr, "offset", double.NaN), hw1 = seg.Source.HalfWidth, hw2 = HalfWidth(w, edge);
+                    if (!double.IsNaN(cs1Off) && hw1 > 0 && hw2 > 0)
+                    {
+                        posChecked++;
+                        var byPos = LaneMatch.PickByPosition(lanes, cs1Off / hw1, hw2, inbound);
+                        var byPosM = LaneMatch.PickByPosition(lanes, -cs1Off / hw1, hw2, inbound);
+                        if (byPos == idx) posAgree++;
+                        if (byPosM == idx) posAgreeMirrored++;
+                        if (byPos != idx && byPosM != idx && posDiag.Count < maxDiag)
+                            posDiag.Add(new Dictionary<string, object> { { "node", node }, { "ref", segment + "#" + ordinal + "/" + cnt + " " + P.Str(lr, "dir", "") + (seg.Source.Reversed ? " reversed" : "") },
+                                { "cs1_offset", cs1Off }, { "cs1_half_width", hw1 }, { "cs2_half_width", Math.Round(hw2, 2) }, { "picked", idx }, { "by_position", byPos }, { "by_position_mirrored", byPosM },
+                                { "lanes", lanes.OrderBy(x => x.Offset).Select(x => x.Index + (x.Inbound ? "in" : "out") + "@" + Math.Round(x.Offset, 1)).Cast<object>().ToList() } });
+                    }
+                }
                 return new Source
                 {
                     PlanNode = node, Node = res.Node[node], Edge = edge, IsEnd = isEnd, LaneIndex = idx.Value, Segment = segment,
@@ -254,13 +294,14 @@ namespace Cs2Importer
             object boxedComp = sys.GetComponentLookup<Composition>(true), boxedLanes = sys.GetBufferLookup<NetCompositionLane>(true);
             var byNode = sources.Values.GroupBy(s => s.Node).ToList();
             foreach (var g in byNode) lanesAt(g.Key);
-            int nodesDone = 0, nodesSkipped = 0, connections = 0, sourcesDone = 0, sourcesEmpty = 0, nodesPassThrough = 0;
+            int nodesDone = 0, nodesSkipped = 0, connections = 0, sourcesDone = 0, sourcesEmpty = 0, nodesPassThrough = 0, nodesUnsure = 0;
             var passThrough = new HashSet<Entity>(byNode.Where(g => w.IsReal(g.Key) && lanesAt(g.Key).Count == 0).Select(g => g.Key));
             if (!checkOnly)
                 foreach (var g in byNode)
                 {
                     var node = g.Key;
                     if (!w.IsReal(node)) { nodesSkipped++; continue; }
+                    if (g.Any(x => unsure.ContainsKey(x.PlanNode))) { nodesUnsure++; continue; } // arm check failed: leave CS2's lanes
                     if (HasComp(em, node, mod.ModifiedConnections)) { nodesSkipped++; bad("node_already_has_lane_connections"); continue; }
                     // a node where one road just continues into another has no junction lanes: each lane runs on into the
                     // lane that starts where it ends, and there is nothing for the Traffic mod to connect
@@ -335,6 +376,7 @@ namespace Cs2Importer
                 foreach (var s in g)
                 {
                     if (s.Targets.Count == 0) continue;
+                    if (unsure.ContainsKey(s.PlanNode) && !checkOnly) { int u; outcome.TryGetValue("left_to_cs2_arm_check", out u); outcome["left_to_cs2_arm_check"] = u + 1; continue; }
                     var want = s.Targets.Select(t => t.Key.Index + ":" + t.Value).ToList();
                     List<string> got;
                     string kind;
@@ -383,9 +425,10 @@ namespace Cs2Importer
                         { "node_has_data", HasComp(em, s.Node, mod.ModifiedConnections) },
                     });
             }
-            int matching, continuous; outcome.TryGetValue("match", out matching); outcome.TryGetValue("continuous", out continuous);
+            int matching, continuous, leftToCs2; outcome.TryGetValue("match", out matching); outcome.TryGetValue("continuous", out continuous);
+            outcome.TryGetValue("left_to_cs2_arm_check", out leftToCs2);
             matching += continuous; // CS2 already does what CS1's rule says
-            int checkedN = outcome.Values.Sum();
+            int checkedN = outcome.Values.Sum() - leftToCs2;
             yield return new Dictionary<string, object>
             {
                 { "op", "lanes" }, { "traffic_mod", mod.Version }, { "check_only", checkOnly },
@@ -399,7 +442,15 @@ namespace Cs2Importer
                 { "match_rate", checkedN == 0 ? 0 : Math.Round(100.0 * matching / checkedN, 1) }, { "outcomes", outcome.ToDictionary(kv => kv.Key, kv => (object)kv.Value) },
                 { "uturn_rules", uturnEnds.Count }, { "uturn_bans", uturnBans }, { "uturn_added", uturnAdds }, { "uturn_already_in_cs2", uturnAlready },
                 { "uturn_checked", uturnChecks.Count - uturnPassThrough }, { "uturn_holding", uturnOk }, { "uturn_at_nodes_without_junction", uturnPassThrough }, { "uturn_failures", uturnDiag },
-                { "problems", problems.ToDictionary(kv => kv.Key, kv => (object)kv.Value) }, { "mismatches", diag }, { "seconds", Entry.R(sw.Elapsed.TotalSeconds) },
+                { "problems", problems.ToDictionary(kv => kv.Key, kv => (object)kv.Value) }, { "mismatches", diag },
+                { "arm_check", new Dictionary<string, object> {
+                    { "tolerance_deg", armTol }, { "arms_ok", armOk }, { "arms_off", armOff }, { "arms_unknown", armUnknown },
+                    { "junctions_off", unsure.Count }, { "junctions_left_to_cs2", nodesUnsure }, { "source_lanes_left_to_cs2", leftToCs2 },
+                    { "junctions", unsure.Take(maxDiag).ToDictionary(kv => kv.Key.ToString(), kv => (object)kv.Value) }, { "arms", armDiag } } },
+                { "lane_position_check", new Dictionary<string, object> {
+                    { "checked", posChecked }, { "agree", posAgree }, { "agree_mirrored", posAgreeMirrored },
+                    { "agree_rate", posChecked == 0 ? 0 : Math.Round(100.0 * Math.Max(posAgree, posAgreeMirrored) / posChecked, 1) }, { "disagreements", posDiag } } },
+                { "seconds", Entry.R(sw.Elapsed.TotalSeconds) },
             };
         }
 
@@ -445,6 +496,44 @@ namespace Cs2Importer
                 r.Add(new LanePoint { Index = (endsHere ? lane.m_EndNode : lane.m_StartNode).GetLaneIndex() & 0xff, Inbound = endsHere, Point = endsHere ? lc.d : lc.a });
             }
             return r;
+        }
+
+        /// <summary>Angle between the CS2 edge's direction leaving the node and the plan segment's (CS1 bezier) direction
+        /// leaving the same node. NaN when unknown.</summary>
+        static double ArmAngle(GameWorld w, ImportJob job, long node, long segment, Entity edge, bool isEnd)
+        {
+            var seg = job.SegmentAt(segment, node);
+            if (seg == null || !w.Em.HasComponent<Curve>(edge)) return double.NaN;
+            bool atStart = seg.Start.Id == node;
+            double px, pz;
+            var b = seg.Bezier;
+            if (b != null)
+            {
+                var p0 = atStart ? b[0] : b[3];
+                var p1 = atStart ? b[1] : b[2];
+                px = p1.X - p0.X; pz = p1.Z - p0.Z;
+                if (px * px + pz * pz < 0.01) { var q = atStart ? b[3] : b[0]; px = q.X - p0.X; pz = q.Z - p0.Z; }
+            }
+            else
+            {
+                var n0 = atStart ? seg.Start : seg.End;
+                var o = atStart ? seg.End : seg.Start;
+                px = o.X - n0.X; pz = o.Z - n0.Z;
+            }
+            var c = w.Em.GetComponentData<Curve>(edge).m_Bezier;
+            float3 t = isEnd ? (c.c - c.d) : (c.b - c.a);
+            if (math.lengthsq(t.xz) < 0.01f) t = isEnd ? (c.a - c.d) : (c.d - c.a);
+            return LaneMatch.AngleDeg(px, pz, t.x, t.z);
+        }
+
+        /// <summary>Half the edge composition's width (m); NaN when unknown.</summary>
+        static double HalfWidth(GameWorld w, Entity edge)
+        {
+            var em = w.Em;
+            if (!em.HasComponent<Composition>(edge)) return double.NaN;
+            var ce = em.GetComponentData<Composition>(edge).m_Edge;
+            if (ce == Entity.Null || !em.HasComponent<NetCompositionData>(ce)) return double.NaN;
+            return em.GetComponentData<NetCompositionData>(ce).m_Width / 2.0;
         }
 
         static object LeftHandTraffic(GameWorld w)
@@ -497,7 +586,7 @@ namespace Cs2Importer
         static List<EdgeLaneAtNode> EdgeLanes(GameWorld w, ImportJob job, Entity edge, bool isEnd, long planNode, long segment)
         {
             var em = w.Em;
-            var seg = job.Segments.FirstOrDefault(s => s.Id == segment);
+            var seg = job.SegmentAt(segment, planNode);
             if (seg == null || !em.HasBuffer<Game.Net.SubLane>(edge)) return null;
             // plan forward = edge forward when the node is the plan segment's end and the edge's end (or start and start)
             bool sameDir = (planNode == seg.End.Id) == isEnd;

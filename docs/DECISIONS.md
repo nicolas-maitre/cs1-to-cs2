@@ -412,3 +412,12 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 131. **Coordinator review no longer uses `git stash` in the shared checkout** (Claude, after an incident). Stashing to test a clean tree briefly removed other workers' uncommitted changes while they kept editing. Everything was restored by a file-by-file three-way merge, with no loss. From now on, reviews run in a separate temporary checkout of a temporary commit built from the index, in the scratch folder.
 132. **Walls burn** (web 0.9.3; Claude, for #129). For `walls`-mode ground segments, after the conform burn, the ground beside the road is brought to between 7 m below and 11 m above the road, CS2's retaining-wall range. It uses the core half-width + 2 m with a smoothstep blend, never touches conform cores, skips (and reports) differences over 30 m, and never raises wet pixels above the water. Skibidi: 117 segments, its trenches become open cuts with walls (down to −15.8 m). CacaoCity: 103 segments, and the 25 m ramp gets an embankment (+19.3 m), so it keeps its CS1 height with walls instead of pillars. The `terrain/convert.mjs` mirror follows (worker-4).
 133. **The train/metro investigation stops after the current check; utility outside connections take priority** (Claude). After 13 runs, metro lines have paths and an opt-in interior yard spawns trains, but they never leave the yard. One last check (whether the yard link is really built) decides it. If it doesn't unblock them, trains and metros stay a documented known limit for this release, and all rail depot and link features stay opt-in. Worker-4 then builds electricity and water outside connections in map prep: none exist in any converted city today, and that is the biggest lever for power and water (#117).
+134. **Importer 0.3.3 checkpoint: road heights verified in game** (Claude). With conformed terrain, ground roads more than 2 m off their CS1 height dropped from 408 / 44 / 90 to 5 / 6 / 0 (Skibidi / CacaoCity / Westfield), with roads and lanes unchanged. CacaoCity's ramp stays within 1 m.
+     Also in this commit, built and core-tested (70/70) but not yet verified in game:
+     - composition by CS1 kind (#129) and tunnel deepening (#124);
+     - segment splitting where CS2 would miss CS1's height by more than 1.5 m;
+     - in-game height passes only on the package's own terrain;
+     - the Node Controller off-node support, still off by default (#127);
+     - the lane-connection view and arm-check groundwork (#126).
+
+     The remaining in-game runs verify these before RC3.

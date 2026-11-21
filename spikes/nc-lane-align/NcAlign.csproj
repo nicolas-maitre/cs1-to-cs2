@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Node Controller lane-alignment spike (cs2-importer/NOTES-lane-alignment.md) as a hot-loaded exec library for the CS2 bridge (tools/PROTOCOL.md, "exec").
+    Not a mod and not deployed: `dotnet build -c Release`, then run.mjs drives it through gamectl.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>NcAlign</AssemblyName>
+    <RootNamespace>NcAlign</RootNamespace>
+    <Nullable>disable</Nullable>
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- every build gets a new assembly version, so exec never runs a stale copy -->
+    <Deterministic>false</Deterministic>
+    <AssemblyVersion>1.0.*</AssemblyVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(CS2Managed)\mscorlib.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\netstandard.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Game.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Mathematics.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Entities.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Mathematics.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Burst.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+</Project>

@@ -84,7 +84,10 @@ namespace Cs2Importer
         /// a new node at that exact position (definitions in the same frame that share a position share the node);
         /// a real node entity attaches to it.
         /// </summary>
-        public Entity CreateSegment(Entity prefab, V3[] c, Entity startNode, Entity endNode, float elevStart, float elevEnd, float elevMiddle)
+        /// startPos/endPos: the node positions when the curve ends off its nodes (Node Controller shift, offNode): the
+        /// course's CoursePos.m_Position is the node, the curve end stays where it is (roads have no StrictNodes, so
+        /// GenerateEdge keeps the course curve's end points). Default: the curve ends.
+        public Entity CreateSegment(Entity prefab, V3[] c, Entity startNode, Entity endNode, float elevStart, float elevEnd, float elevMiddle, V3? startPos = null, V3? endPos = null)
         {
             var curve = new Bezier4x3(F3(c[0]), F3(c[1]), F3(c[2]), F3(c[3]));
             CreationDefinition def = default;
@@ -93,8 +96,8 @@ namespace Cs2Importer
             def.m_Flags = CreationFlags.Permanent | CreationFlags.SubElevation;
             NetCourse course = default;
             course.m_Curve = curve;
-            course.m_StartPosition = Pos(curve, curve.a, startNode, 0f, elevStart, CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight);
-            course.m_EndPosition = Pos(curve, curve.d, endNode, 1f, elevEnd, CoursePosFlags.IsLast | CoursePosFlags.IsLeft | CoursePosFlags.IsRight);
+            course.m_StartPosition = Pos(curve, startPos.HasValue ? F3(startPos.Value) : curve.a, startNode, 0f, elevStart, CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight);
+            course.m_EndPosition = Pos(curve, endPos.HasValue ? F3(endPos.Value) : curve.d, endNode, 1f, elevEnd, CoursePosFlags.IsLast | CoursePosFlags.IsLeft | CoursePosFlags.IsRight);
             course.m_Elevation = new float2(elevMiddle);
             course.m_Length = MathUtils.Length(curve);
             course.m_FixedIndex = -1;
@@ -187,6 +190,38 @@ namespace Cs2Importer
         public bool IsReal(Entity e)
         {
             return e != Entity.Null && Em.Exists(e) && !Em.HasComponent<Temp>(e) && !Em.HasComponent<Deleted>(e);
+        }
+
+        /// <summary>
+        /// The node whose real edges end at the given curve end points (x/z within `tol`), by votes; Entity.Null when none
+        /// does. For offNode (Node Controller) ends: CS2 keeps every edge's curve end exactly but moves the node itself
+        /// (NOTES-lane-alignment.md §3), so the edges find the node where positions don't. Scans all edges: used only
+        /// when the position lookups fail.
+        /// </summary>
+        public Entity NodeByEdgeEnds(List<float3> ends, float tol, out float3 at)
+        {
+            at = default;
+            var votes = new Dictionary<Entity, int>();
+            using (var q = Em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Curve>() },
+                None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() },
+            }))
+            using (var ed = q.ToComponentDataArray<Edge>(Allocator.Temp))
+            using (var cv = q.ToComponentDataArray<Curve>(Allocator.Temp))
+                for (int i = 0; i < ed.Length; i++)
+                    foreach (var p in ends)
+                    {
+                        Entity n = Entity.Null;
+                        if (math.distance(cv[i].m_Bezier.a.xz, p.xz) <= tol) n = ed[i].m_Start;
+                        else if (math.distance(cv[i].m_Bezier.d.xz, p.xz) <= tol) n = ed[i].m_End;
+                        if (n == Entity.Null || !IsReal(n)) continue;
+                        int v; votes.TryGetValue(n, out v); votes[n] = v + 1;
+                    }
+            Entity best = Entity.Null; int bv = 0;
+            foreach (var kv in votes) if (kv.Value > bv) { bv = kv.Value; best = kv.Key; }
+            if (best != Entity.Null) at = Em.GetComponentData<Node>(best).m_Position;
+            return best;
         }
 
         /// <summary>Real edges connected to a node.</summary>
