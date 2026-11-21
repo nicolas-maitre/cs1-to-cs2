@@ -42,6 +42,8 @@ namespace Cs2ImporterMod
                 { s.GetOptionDescLocaleID(nameof(Setting.ClearArea)), "Rase les routes déjà présentes dans la zone du paquet (plus 50 m) avant de construire. Les routes appartenant à des bâtiments restent. Les routes importées ne peuvent pas croiser des routes existantes." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.KeepMapTerrain)), "Garder le terrain de cette carte" },
                 { s.GetOptionDescLocaleID(nameof(Setting.KeepMapTerrain)), "Importe dans une ville qui n'a pas été préparée avec le terrain du paquet. Les routes suivent alors le sol de cette carte ; seules les tranchées de 4 m ou plus gardent leur profondeur. Désactivé : l'import refuse une ville dont le terrain n'est pas celui du paquet." },
+                { s.GetOptionLabelLocaleID(nameof(Setting.AllowOtherDrivingSide)), "Importer dans une ville qui roule de l'autre côté" },
+                { s.GetOptionDescLocaleID(nameof(Setting.AllowOtherDrivingSide)), "Importe un paquet dans une ville où l'on roule de l'autre côté de la route que dans la ville CS1. Routes, sens uniques et connexions de voies sont alors inversés. Désactivé : l'import refuse une telle ville ; commencez une nouvelle ville et cliquez sur Préparer la carte, qui règle le bon côté." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyZoning)), "Zonage" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyZoning)), "Après les routes, peint les zones de CS1 sur les nouveaux blocs de zonage." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyTrafficSettings)), "Feux, stops, interdictions de tourner, passages piétons" },

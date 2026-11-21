@@ -342,6 +342,11 @@ namespace Cs2ImporterMod
                 if (!InCity()) throw new InvalidOperationException(T.S("err.noCity"));
                 if (ImportSystem.Busy) throw new InvalidOperationException(T.S("err.busy"));
                 var args = Args(s, "import");
+                // #63: a left-hand plan never goes into a right-hand city (or the other way round) unless asked for
+                var planLht = MapSteps.PlanLeftHand((Dictionary<string, object>)MiniJson.Parse(File.ReadAllText((string)args["plan"])));
+                var side = Cs2Importer.Core.DrivingSide.Mismatch(planLht, MapSteps.CityLeftHand());
+                if (side != null && !s.AllowOtherDrivingSide) throw new InvalidOperationException(T.S(planLht == true ? "err.sideLeft" : "err.sideRight"));
+                if (side != null) args["allowDrivingSideMismatch"] = true;
                 if (!s.KeepMapTerrain && (bool)MapContents((string)args["plan"])["terrain"])
                 {
                     var diff = MapSteps.TerrainMismatch((string)args["plan"]);
@@ -504,8 +509,11 @@ namespace Cs2ImporterMod
                     {
                         string unsure = "";
                         object ac;
-                        if (d.TryGetValue("arm_check", out ac) && ac is Dictionary<string, object> acd && Convert.ToInt32(acd["junctions_left_to_cs2"]) > 0)
-                            unsure = T.S("line.lanesArmCheck", acd["junctions_left_to_cs2"]);
+                        int left = 0;
+                        if (d.TryGetValue("arm_check", out ac) && ac is Dictionary<string, object> acd) left += Convert.ToInt32(acd["junctions_left_to_cs2"]);
+                        // junctions whose written lanes failed the turn check were reverted to CS2's lanes (#126)
+                        if (d.TryGetValue("turn_check", out ac) && ac is Dictionary<string, object> tcd && tcd.ContainsKey("junctions_reverted_to_cs2")) left += Convert.ToInt32(tcd["junctions_reverted_to_cs2"]);
+                        if (left > 0) unsure = T.S("line.lanesArmCheck", left);
                         return T.S("line.lanes", d["connections"], d["nodes_done"], d["nodes_planned"], d["lane_refs_matched"], d["lane_refs"], ((string)d["handedness"]).StartsWith("mirrored") ? T.S("line.lanesMirrored") : "") + unsure;
                     }
                 case "connections": return T.S("line.connections", d["placed"], d["items"], d["road"], d["train"], Convert.ToInt32(d["failed"]) > 0 ? T.S("line.connectionsFailed", d["failed"]) : "");

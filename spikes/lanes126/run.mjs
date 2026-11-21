@@ -54,6 +54,13 @@ try {
   for (const p of pkgs) {
     const plan = path.join(p.dir, 'cs1conv-plan.json');
     const planJson = JSON.parse(fs.readFileSync(plan, 'utf8'));
+    // a left-hand CS1 city needs a left-hand CS2 city: a fresh city, its driving side set before any road (op drivingside)
+    if (planJson.source?.leftHandTraffic === true) {
+      log(p.tag, 'new left-hand city');
+      await b.newGame('Corral Riches', { name: 'cs1conv-lanes126-lht' });
+      await b.pause();
+      log(p.tag, JSON.stringify(await b.exec(LIB, { args: { op: 'drivingside', plan }, timeout: 120 })));
+    }
     log(p.tag, 'import');
     const imp = await ex({ op: 'import', plan, clear: true, heights: 'flat', offNode: true, ...OFF }, 3600);
     await b.wait(60, 2);
@@ -65,8 +72,13 @@ try {
     log(p.tag, 'lanes');
     const lanes = await ex({ op: 'lanes', plan, offNode: true, diagnostics: 80, ...OFF });
     fs.writeFileSync(path.join(out, `${p.tag}-lanes.json`), JSON.stringify(lanes, null, 1));
-    row.lanes = { refs: lanes.lane_refs, matched: lanes.lane_refs_matched, nodes_done: lanes.nodes_done, match_rate: lanes.match_rate, outcomes: lanes.outcomes, arm_check: lanes.arm_check && { ok: lanes.arm_check.arms_ok, off: lanes.arm_check.arms_off, junctions_off: lanes.arm_check.junctions_off, junctions: lanes.arm_check.junctions }, turn_check: lanes.turn_check && { checked: lanes.turn_check.checked, ok: lanes.turn_check.ok, wrong: lanes.turn_check.wrong, none: lanes.turn_check.none } };
+    row.lanes = { refs: lanes.lane_refs, matched: lanes.lane_refs_matched, nodes_done: lanes.nodes_done, match_rate: lanes.match_rate, outcomes: lanes.outcomes, arm_check: lanes.arm_check && { ok: lanes.arm_check.arms_ok, off: lanes.arm_check.arms_off, junctions_off: lanes.arm_check.junctions_off, junctions: lanes.arm_check.junctions }, turn_check: lanes.turn_check && { checked: lanes.turn_check.checked, ok: lanes.turn_check.ok, wrong: lanes.turn_check.wrong, none: lanes.turn_check.none, arrows: [lanes.turn_check.arrow_lanes_ok, lanes.turn_check.arrow_lanes_checked, lanes.turn_check.arrow_lanes_wrong], reverted: lanes.turn_check.junctions_reverted_to_cs2, junctions: lanes.turn_check.junctions } };
     log(p.tag, JSON.stringify(row.lanes));
+    // what tools/release/acceptance.mjs's lane-connections step runs on the finished city (check only)
+    const chk = await ex({ op: 'lanes', plan, checkOnly: true, offNode: true, diagnostics: 40, ...OFF });
+    fs.writeFileSync(path.join(out, `${p.tag}-lanecheck.json`), JSON.stringify(chk, null, 1));
+    row.acceptance = { match_rate: chk.match_rate, arms_off: chk.arm_check?.arms_off, turn_check: chk.turn_check && { checked: chk.turn_check.checked, ok: chk.turn_check.ok, wrong: chk.turn_check.wrong, arrows: [chk.turn_check.arrow_lanes_ok, chk.turn_check.arrow_lanes_checked], junctions: chk.turn_check.junctions } };
+    log(p.tag, 'acceptance step', JSON.stringify(row.acceptance));
     for (const id of p.nodes) row['after_' + id] = await view(id, 'imported');
     S.runs.push(row);
     save();

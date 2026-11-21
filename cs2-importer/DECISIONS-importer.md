@@ -339,7 +339,16 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
     - **Absolute heights on reshaped terrain** (`ImportPlanner.KeepHeightsOnConformedTerrain`, in game before the nodes are placed): the burn cuts or raises the ground under elevated, bridge, tunnel and walls nodes too (Skibidi: an elevated highway end 6.6 m low over a road in a cut). On a road-conformed plan every node that isn't conformed and isn't at ground level gets elevation = (CS1 natural terrain + planned elevation) − actual terrain, so it stays at its CS1 height. Report: `nodes_kept_on_conformed_terrain`.
     - **Measured** (op `heights`: each segment's CS2 course sampled at five points against CS1's bezier; `.gamectl/heights2` before = web 0.6.1 natural terrain, `.gamectl/heights3` after = web 0.8.0 conformed terrain, same isolated mod build):
 
-      RESULTS_TABLE
+      | City | Ground roads | Before: median / p90 / over 2 m | After | Roads | CS1 lane references | Lane directions | Buildings |
+      | --- | --- | --- | --- | --- | --- | --- | --- |
+      | Skibidi | 1870 | 0.88 / 3.05 / 408 | 0.08 / 0.55 / 5 | 2035/2035 | 685/685 | all 2035 | 78/108 both (#106) |
+      | CacaoCity | 668 | 0.26 / 0.95 / 44 | 0.03 / 0.42 / 6 | 684/684 | 727/729 | all 684 | 26/43 both |
+      | Westfield | 579 | 0 / 5.02 / 90 | 0 / 0.31 / 0 | 648/648 | 299/301 | all 648 | 7/13 both |
+
+      Before = web 0.6.1 on natural terrain (`.gamectl/heights2`); after = web 0.8.0 on conformed terrain (`.gamectl/heights4`); same isolated mod per series, so the buildings worker's uncommitted code is not in either. Errors in metres, the largest |CS2 road y − CS1 y| of five samples per segment.
+      - CacaoCity's ramp 18231 (the user's screenshot) went from 24.6 m low to within 1.0 m.
+      - Elevated Skibidi segments over 2 m: 5 → 2, with the absolute-height pass (7 without it).
+      - With the walls burn (web 0.9.3, `.gamectl/walls8`, #61): CacaoCity 0.03 / 0.43 / 4, the ramp within 0.9 m as an embankment 7 m above the ground (not elevated), 25425 within 0.6 m (#62); Skibidi 0.08 / 0.54 / 6.
 58. **CS1 tunnels stay tunnels: too-shallow tunnels are deepened to CS2's tunnel rule** (DECISIONS.md #124, user report).
     - **CS2's rule** (`NetCompositionHelpers.GetElevationFlags`, read in the IL in M0, `spikes/m0-cs2-place-road/NOTES-cs2-placement.md` §5): a course gets the tunnel composition only when every elevation (both ends and the middle) is at most −2L and the deepest at most −3L. L = the prefab's `NetGeometryData.m_ElevationLimit`: 4 for every road and track prefab the packages use, 2 for Pavement Path. Between that and ground, CS2 builds a lowered cut with retaining walls, which is what the user saw.
     - **Checked against a real import:** on the whole-Skibidi run (`import-20261121-105532`) the rule predicts 31 of 101 CS1 tunnel segments as cuts; CS2 reported 30 `not-tunnel`, and every sampled id is in the predicted set. They are CS1 tunnels at −8.2…−11.96 m: the twin highway tunnels at CS1 (2110, −540), metro track, a one-way road tunnel and pedestrian tunnels.
@@ -350,12 +359,23 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
     - **Never conformed:** a tunnel node is never conformed, and a conform slope is built as walls (CS1 height in the natural terrain). CS2 needs the ground at the portal to stand 8–12 m above the road; a burned slope cuts it away. The burn must skip slope segments (asked of the web and terrain workers; this reverses "the slope segment burns an open cut down to the portal" in `NOTES-road-heights.md`).
     - **Report:** `tunnels` (`cs1_tunnel_segments`, `deepened`) and `tunnels_deepened` (per segment: CS1 and CS2 end elevations, deepest before and after, delta, plan or terrain pass); warnings `tunnel-deepened`. Status line: "Tunnels: N of M CS1 tunnel segments were too shallow for a CS2 tunnel and were built deeper (listed in the report)."
     - **Tests:** `TunnelDepthTests` (8) and `ClearanceTests.TestDeepenedTunnelsKeepTheirCs1OrderAndSpacing`.
-    - **Measured:** TUNNEL_RESULTS
-59. **Node Controller shifts (`offNode`) are off by default** (found in the #124 tunnel run; the code is worker-5's, DECISIONS-nodecontroller.md).
+    - **Measured:**
+      - Skibidi crop around the tunnels, web 0.9.0 (slopes still burned), `.gamectl/heights4/tunnels-{before,after}`:
+        - before: 21 CS1 tunnel segments with an open-cut composition (`not-tunnel`, of 60 checked);
+        - after: none, 65 checked; 30 segments deepened (highway tunnels −8.8…−9.2 → −12.5 m, metro −8.2…−11.96 → −12.5 m), 5 of them by the terrain pass at burned portals;
+        - roads 1261/1328 in both: the offNode failures of #59, unrelated.
+      - Web 0.9.1 (slopes not burned), `.gamectl/lanes6/lanes-before-091`: roads 1326/1328, all 66 CS1 tunnel segments built as tunnels, 25 deepened, all in the planner (no portal needed the terrain pass).
+      - Screenshots: `view-tunnel-*.png` in both runs. The open dark trenches become tunnels with the street at ground level.
+59. **Node Controller shifts (`offNode`): off until verified, now on by default** (found in the #124 tunnel run; the code is worker-5's, DECISIONS-nodecontroller.md; on per DECISIONS.md #135).
     - **What happened:** on a Skibidi crop built with web 0.9.0 (78 of 1329 segments `offNode`), 33 nodes were not created and 56 segments had no node (1261 of 1328 roads). Every sampled failure sits on a node touched by an offNode segment; the whole-Skibidi import without offNode had none.
     - **Likely cause:** with off-node curve ends, CS2 makes the node at the course's curve end, while the importer looks for it at the node centre (within 1 m) after each batch. It misses it, and every later segment at that node fails.
     - **Decision:** `ImportOptions.ApplyOffNode` (exec arg `offNode`), false by default. Off = the curve ends snap to their nodes, as with plans before web 0.9.0. Worker-5's code is unchanged behind the switch. Turn it on once the post-batch lookup finds nodes at shifted ends and an in-game run on a 0.9.0+ package has no node failures.
-    - **Tests:** `NodeControllerTests.TestOffNodeIsOffByDefault`; the existing offNode tests pass `ApplyOffNode = true`.
+    - **Verified, then on by default:** worker-5's node lookups (the mean of the edge ends, then `NodeByEdgeEnds`) passed:
+      - on the flat-spot crops of all three cities (worker-5, #135);
+      - on the package that failed, with offNode on, `.gamectl/offnode9`: skibidi-tunnels-web-0.9.0 (78 offNode segments) 1326/1328 roads, 0 nodes not created, 0 segments without a node; skibidi-1000-web-0.9.1 the same. The 2 `edge-missing` are the same with offNode off.
+
+      `ApplyOffNode` is now true by default; exec arg `offNode: false` turns it off.
+    - **Tests:** `NodeControllerTests.TestOffNodeIsOnByDefault` (on by default, can be turned off).
 60. **Lane connections: an independent geometric check; junctions that fail it are left to CS2** (DECISIONS.md #126, user report: connections crossing to the wrong arms at a 6-arm junction).
     - **Why:** the "as in CS1" rate compares what was written with what was meant. A systematic error in the mapping (plan segment → CS2 edge → lane) passes it.
     - **Arm check** (`LaneOps`, `LaneMatch.AngleDeg`): for every lane reference, the CS2 edge's direction leaving the node must match the CS1 segment's bezier direction leaving that node within 30° (`armTolerance`). The mapping can't hide a swap: it's geometry against geometry. A junction where any arm fails gets nothing written ("a wrong connection is worse than CS2's default") and is listed (`arm_check.junctions`); its source lanes count as `left_to_cs2_arm_check`, not in the match rate.
@@ -363,7 +383,12 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
     - **Status line:** "… N junctions were left as CS2 builds them: their roads didn't line up with CS1's, so a connection could have gone to the wrong road (listed in the report)."
     - **Candidate junction:** in a Skibidi crop around CS1 (1000, −100), plan node 3163, at CS2 (1220, 213): 6 elevated arms, including HighwayRampElevated, 17 TM:PE connections, rail 19 m away. The three acceptance crops have no junction with more than 4 arms and lane connections.
     - **Tool for screenshots:** op `laneview` (the Traffic mod's LaneConnectorToolSystem on a plan node, by reflection).
-    - **Measured:** LANES_RESULTS
+    - **Measured** (check-only lanes op after the import, `.gamectl/lanes6`, `.gamectl/walls8`):
+      - Skibidi crop with junction 3163, web 0.9.1: 421 arms, 0 off; lane position 1481/1490 agree; explicit sources 419/434.
+      - CacaoCity 0.9.3: 193 arms, 0 off; 719/727 agree; 208/208.
+      - Skibidi 0.9.3: 206 arms, 0 off; 665/685 agree; 165/176.
+
+      No junction anywhere has a swapped arm, so the user's wrong connections at the 6-arm junction aren't an arm mix-up in these packages. #126 continues with worker-5 (the non-matching sources and position disagreements; `laneview` activates the Traffic mod's tool but doesn't select the node yet).
 61. **CS1's elevation kind decides the CS2 composition family; ground roads stay walls** (DECISIONS.md #129, user report; replaces #57's unclamped walls, DECISIONS.md #123).
     - **Report:** a sunken twin-highway corridor under a street in the height after-series city became partly tunnels with portals, with walled cut stubs ending abruptly, where CS1 has an open trench. #123 let walls nodes beyond the wall limits keep their full CS1 height, and CS2 then chose a tunnel (below −12 m) or pillars (above +8 m) for a CS1 ground road. A corridor that crosses the threshold switches composition mid-way, which gives the portals and stubs.
     - **Rule:**
@@ -389,7 +414,18 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
       - `tunnel_by_cs1_kind` and `elevated_by_cs1_kind` (segments whose CS2 edges have the tunnel or elevated composition, by CS1 kind) and `cs1_tunnel_segments_built`;
       - warnings `unexpected-tunnel` and `unexpected-elevated` for CS1 ground segments.
     - **Tests:** `HeightModeTests.TestGroundRoadsStayWallsBeyondTheLimits`, `TestWallsNodesUseTheReshapedTerrain`, and the updated reshaped-terrain and dip tests.
-    - **Measured:** WALLS_RESULTS
+    - **Measured:**
+      - **Before** (walls unclamped, #123; Skibidi web 0.8.0, `.gamectl/heights4/after-skibidi`): 35 segments with a tunnel composition against 10 CS1 tunnels.
+      - **With the walls burn** (web 0.9.3, `.gamectl/walls8`):
+        - CacaoCity: 684/684 roads; no tunnel or elevated composition on a CS1 ground road; nothing short of its CS1 height. The ramp is an embankment 7 m above the raised ground, within 0.9 m of CS1.
+        - Skibidi: 2035/2035; tunnel compositions = CS1's 10 (+7 slopes); 0 on ground roads; nothing short.
+      - **Without the burn** (web 0.9.1, first clamp only, `.gamectl/lanes6/lanes-after-091`): 4 ground ramps still became tunnels (a slope's −14.8 m end won at their node) and 7 ground segments elevated (walls ramps meeting bridge ends at +9…12.5 m, with the middle above 8 m).
+        - Fixed by clamping the walls ground node whatever its segment ends say, and the walls middle after every pass (`ClampWallsMiddles`).
+        - Re-run with that build (`.gamectl/final10/crop-091`, offNode on): the same 4 + 7.
+          - **Tunnels:** CS2 cuts those ramps into 2–4 edges, and in the middle, where the natural ground rises over the CS1 cut, its own pieces sit 12.5–14 m below the terrain and get the tunnel composition. Only the ground beside the road can fix that, and the walls burn does: 0 in the web 0.9.3 runs.
+          - **Elevated:** CS2 gives pillars to a walls segment running into a bridge end at ≥ 8 m even with the course's middle at +7.5 m, so the composition next to an elevated node isn't ours to set. Also 0 with the walls burn.
+          - One more cause fixed: the clearance pass (#43) pushed a walls node to −17.3 m for a crossing. `Clearance.Room` now keeps walls ground nodes within the limits.
+          - **Residual for packages without the walls burn** (before web 0.9.3): a few ground segments in deep cuts or at bridge ends, reported as `unexpected-tunnel` / `unexpected-elevated`.
 62. **Walls segments split where CS1's height leaves the ground line** (coordinator, after #57's middle elevation had no effect on CacaoCity 25425).
     - **Why:** CS2 lays a course with ground-level ends on the terrain whatever its curve's y or its middle elevation. CacaoCity's highway 25425 runs straight across a 9 m dip on a CS1 embankment and came out 8.8 m low in it (`walls_middle_kept` set the middle elevation; the course still followed the ground).
     - **Rule:**
@@ -403,4 +439,23 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
       - verify counts plan segments, built when all their halves are (`segments_planned/built/failed` per plan segment; `courses_planned/built`, `segments_split`, `segments_split_over_terrain`).
     - **Offline count** (plan profile only): 0 segments in the 0.8.0 and 0.9.3 packages of all three cities. The CS1 roads' own profiles are smooth; the in-game count is in the runs.
     - **Tests:** `TestWallsSegmentSplitAtItsProfile`, `TestWallsSegmentSplitOverATerrainDip` (CoreTests 70).
-    - **Measured:** SPLIT_RESULTS
+    - **Measured:**
+      - The in-game split ran on the package's terrain everywhere: CacaoCity 0.9.3 20 segments split, Skibidi 0.9.3 7, the 0.9.1 crop 18. All roads built (684/684, 2035/2035, 1328/1328).
+      - CacaoCity 25425 is within 0.6 m of CS1 (8.8 m low before).
+63. **The import never builds a plan on the other side of the road** (DECISIONS.md #138, user report: a CacaoCity test city built right-hand; CacaoCity drives on the left).
+    - **Cause:** only the mod's Prepare map sets `CityConfigurationSystem.leftHandTraffic` from `plan.source.leftHandTraffic` (#55, DECISIONS.md #90). Scripts that create a city with `game.new` and import through the exec (`tools/e2e/run.mjs`, the flat-spot verifies) left CS2's default, right-hand.
+    - **Refusal:**
+      - `DrivingSide.Mismatch(plan, city)`: null when the plan has no driving side (exports before exporter 1.2.1), the city's is unknown, or they agree;
+      - otherwise "This package is for a left-hand city; this city drives on the right. Start a new city and press Prepare map." (or the mirror);
+      - the exec import returns it as `error` with `refused: "driving-side"` and builds nothing;
+      - the mod's Import refuses before any step, with the same text and the setting to use.
+    - **Override:** exec `allowDrivingSideMismatch: true`; mod setting "Import into a city driving on the other side" (`AllowOtherDrivingSide`, off by default).
+    - **Setting the side in scripts:** exec op `drivingside` {plan} or {leftHand} sets the city's side to the plan's. `tools/e2e/run.mjs` calls it right after `game.new`, before any road. worker-2 was told about `terrain/mapprep.mjs`.
+    - **Acceptance:** `tools/release/acceptance.mjs`'s lane-direction step fails when the city's side differs from the plan's.
+    - **Right-hand CacaoCity saves from 2026-11-21** (not evidence for left-hand behaviour):
+      - `cs1conv-acceptance-20261121-103442`, `cs1conv-qa-cacao`, `cs1conv-qa-cacao-water`: plans without the field (older exports), CS2's default;
+      - `cs1conv-util-cacao`, `-cacao2`, `-cacao3`, `-cacao4`: e2e runs (`.gamectl/e2e/20261121-154648`, `-165929`, `-184045`, `-190400`), left-hand plans in right-hand cities;
+      - `cs1conv-nc-verify`: worker-5's flat-spot verify (its CacaoCity lane directions came back 366 mirrored).
+      
+      Left-hand, as they should be: `cs1conv-lht-cacao`, `cs1conv-conform-cacao`, `cs1conv-heights-before-cacao`, `cs1conv-heights-after-cacao`, `cs1conv-heights4-after-cacao`, `cs1conv-lanes6-lanes-cacao`, `cs1conv-walls8-cacao-093`, and `cs1conv-acceptance-20261121-134438`. All went through Prepare map, so every CacaoCity number in #57–#62 came from a left-hand city.
+    - **Tests:** `DrivingSideTests` (2).

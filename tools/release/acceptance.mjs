@@ -183,7 +183,11 @@ try {
       out = node([path.join(REPO, 'tools', 'release', 'lanedirs-compare.mjs'), cs1x, path.join(S.package, 'cs1conv-plan.json'), dump, '--json', path.join(runDir, 'lanedirs-compare.json')]);
     } catch (e) { out = String(e.stdout ?? ''); }
     const c = JSON.parse(fs.readFileSync(path.join(runDir, 'lanedirs-compare.json'), 'utf8'));
-    return { segments: r.segments, missing: r.missing, cs2LeftHandTraffic: r.cs2_left_hand_traffic, byKind: c.byKind, reversed: c.reversed, mirrored: c.mirrored, other: c.other, examples: c.examples.slice(0, 5), ok: c.ok, out: out ? undefined : 'no output' };
+    // the city drives on the CS1 city's side (DECISIONS.md #138): a left-hand plan in a right-hand city is a failed run
+    const planLht = JSON.parse(fs.readFileSync(path.join(S.package, 'cs1conv-plan.json'), 'utf8')).source?.leftHandTraffic;
+    if (typeof planLht === 'boolean' && r.cs2_left_hand_traffic !== planLht)
+      throw new Error(`the city drives on the ${r.cs2_left_hand_traffic ? 'left' : 'right'}, the CS1 city on the ${planLht ? 'left' : 'right'}`);
+    return { segments: r.segments, missing: r.missing, cs1LeftHandTraffic: planLht ?? null, cs2LeftHandTraffic: r.cs2_left_hand_traffic, byKind: c.byKind, reversed: c.reversed, mirrored: c.mirrored, other: c.other, examples: c.examples.slice(0, 5), ok: c.ok, out: out ? undefined : 'no output' };
   });
   // TM:PE lane connections (docs/DECISIONS.md #126): re-measure what the mod wrote, read-only (op "lanes" checkOnly):
   // the geometric arm check (every connection's arms against CS1's directions), the written-vs-intended match, and the

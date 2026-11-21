@@ -37,13 +37,15 @@ namespace CoreTests
             Assert.Near(1.2, c[1].Z, 1e-9, "inner point keeps its plan z");
         }
 
-        public static void TestOffNodeIsOffByDefault()
+        public static void TestOffNodeIsOnByDefault()
         {
-            // #59: until the in-game node lookup handles shifted ends, a plan's offNode is ignored unless asked for
+            // #59 / DECISIONS.md #135: verified in game, so a plan's offNode is applied unless turned off
             var job = ImportPlanner.Build(PlanParser.Parse(PlanJson(@"{ ""city"": ""C"" }", true)), new ImportOptions());
-            Assert.True(!job.Segments[0].OffNode, "not applied by default");
-            var c = ImportPlanner.Curve(job.Segments[0], new V3(0, 55, 0), new V3(100, 56, 0));
-            Assert.Near(0, c[0].Z, 1e-9, "the start sits on its node");
+            Assert.True(job.Segments[0].OffNode, "applied by default");
+            var off = ImportPlanner.Build(PlanParser.Parse(PlanJson(@"{ ""city"": ""C"" }", true)), new ImportOptions { ApplyOffNode = false });
+            Assert.True(!off.Segments[0].OffNode, "can be turned off");
+            var c = ImportPlanner.Curve(off.Segments[0], new V3(0, 55, 0), new V3(100, 56, 0));
+            Assert.Near(0, c[0].Z, 1e-9, "off: the start sits on its node");
         }
 
         public static void TestWithoutOffNodeTheEndsSnapToTheNodes()
@@ -75,7 +77,7 @@ namespace CoreTests
             Assert.Eq(1, c.Count, "only the shifted node");
             Assert.Near(10, c[1][0], 1e-9, "x (with the test offset)");
             Assert.Near(1.775, c[1][1], 1e-9, "z = the only end");
-            Assert.Eq(0, ImportPlanner.OffNodeCentres(ImportPlanner.Build(PlanParser.Parse(PlanJson(@"{ ""city"": ""C"" }", true)), new ImportOptions())).Count, "offNode off: none");
+            Assert.Eq(0, ImportPlanner.OffNodeCentres(ImportPlanner.Build(PlanParser.Parse(PlanJson(@"{ ""city"": ""C"" }", true)), new ImportOptions { ApplyOffNode = false })).Count, "offNode off: none");
             var ends = ImportPlanner.OffNodeEnds(ImportPlanner.Build(PlanParser.Parse(PlanJson(@"{ ""city"": ""C"" }", true)), opt));
             Assert.Eq(1, ends.Count, "only node 1 has a shifted end");
             Assert.Near(10, ends[1][0][0], 1e-9, "end x (with the test offset)");
@@ -93,5 +95,25 @@ namespace CoreTests
             Assert.Near(0, c[3].X, 1e-9, "and ends at the plan start");
             Assert.Near(1.775, c[3].Z, 1e-9, "keeping the start's shift");
         }
-    }
+    
+        /// <summary>#62 with offNode on: a split segment keeps each Node Controller shift on its own half.</summary>
+        public static void TestSplitKeepsTheShiftOnItsHalf()
+        {
+            var job = ImportPlanner.Build(PlanParser.Parse(PlanJson(@"{ ""city"": ""C"" }", true)), new ImportOptions { ApplyOffNode = true });
+            var s = job.Segments[0];
+            s.HeightMode = "walls";
+            var o = s.Source.Bezier;
+            // a 3 m hump in the bezier so the planner's split applies
+            s.Bezier = new[] { o[0], new V3(o[1].X, o[1].Y + 4, o[1].Z), new V3(o[2].X, o[2].Y + 4, o[2].Z), o[3] };
+            System.Func<double, double, double> flat = (x, z) => 10;   // the plan's ground: the hump is the deviation
+            ImportPlanner.SplitOverTerrain(job, flat);
+            Assert.Eq(2, job.Segments.Count, "split in two");
+            var a = job.Segments[0];
+            var b = job.Segments[1];
+            Assert.True(a.OffNode && b.OffNode, "both halves keep offNode");
+            Assert.Near(1.775, a.OffStartZ, 1e-9, "the start's shift on the first half");
+            Assert.Near(0, a.OffEndZ, 1e-9, "no shift at the split node");
+            Assert.Near(0, b.OffStartZ, 1e-9, "no shift at the split node (second half)");
+        }
+}
 }

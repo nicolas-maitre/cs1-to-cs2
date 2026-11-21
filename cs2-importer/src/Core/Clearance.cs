@@ -27,9 +27,12 @@ namespace Cs2Importer.Core
         const double DeepenedRoom = 12; // how much further a deepened tunnel node may go down for clearance
 
         /// <summary>Restores clearance where it's short, then reports the crossings that are still short.</summary>
+        [ThreadStatic] static double _featureMin, _featureMax;
+
         public static void Keep(ImportJob job)
         {
             var opt = job.Options;
+            _featureMin = opt.FeatureMin; _featureMax = opt.FeatureMax;
             var crossings = Find(job);
             crossings.Sort((p, q) => (Target(q, opt) - q.Cs2Clearance).CompareTo(Target(p, opt) - p.Cs2Clearance));
             foreach (var c in crossings)
@@ -93,8 +96,11 @@ namespace Cs2Importer.Core
             // a tunnel node already deepened to CS2's tunnel depth (#58) may go further down: it stays a tunnel, and two
             // crossing CS1 tunnels deepened to the same depth get their CS1 order and spacing back
             if (dir < 0 && !double.IsNaN(n.DeepenedFrom)) return DeepenedRoom;
-            if (dir < 0) return n.Elevation <= 0 && hat < n.Elevation ? n.Elevation - hat : 0;
-            return n.Elevation > 0 && hat > n.Elevation ? hat - n.Elevation : 0;
+            double room = dir < 0 ? (n.Elevation <= 0 && hat < n.Elevation ? n.Elevation - hat : 0)
+                                  : (n.Elevation > 0 && hat > n.Elevation ? hat - n.Elevation : 0);
+            // #61: a walls ground node stays within the wall limits (a crossing pushed one to -17.3 m: a tunnel in CS2)
+            if (n.WallsGround) room = Math.Min(room, dir < 0 ? Math.Max(0, n.Elevation - _featureMin) : Math.Max(0, _featureMax - n.Elevation));
+            return room;
         }
 
         // ------------------------------------------------------------------ geometry

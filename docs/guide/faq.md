@@ -50,6 +50,10 @@ Press **Prepare map** in a new city before importing: it replaces the map's terr
 
 Press **Remove imported**: it deletes the roads, buildings, trees and props, districts and areas, transit lines and outside connections the imports created in this city, even after saving and loading. Zoning and traffic settings go with the roads. The base map removed by **Prepare map** doesn't come back; start a new city for that.
 
+## The import says "This package is for a left-hand city; this city drives on the right" (or the other way round).
+
+The CS1 city and this CS2 city drive on different sides of the road. Start a new city and press **Prepare map**: it sets the CS1 city's driving side before any road is built. To import anyway, turn on **Import into a city driving on the other side**; roads, one-way streets and lane connections then come out mirrored.
+
 ## The import says this city's terrain isn't the package's.
 
 Start a new city and press **Prepare map** before importing. To build on the map's own ground anyway, turn on **Keep this map's terrain**: roads then follow that ground, and only cuts of 4 m or more keep their CS1 depth.

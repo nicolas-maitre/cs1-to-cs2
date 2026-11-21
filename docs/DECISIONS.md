@@ -454,3 +454,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Wrong-side runs:** the CacaoCity utilities numbers in #139 (`cs1conv-util-cacao*`) and worker-5's CacaoCity Node Controller verify (`cs1conv-nc-verify`) came from cities built right-hand. The e2e path skipped the driving side, although CacaoCity is left-hand, and these are the likely source of the user's screenshot. Both get re-run on correctly-sided cities.
      - **Still valid:** the height, tunnel, walls and lane results in #134–136 came from correctly-sided cities.
      - **The fix (#138), pending a guide update to land:** a `drivingside` op that e2e calls right after `game.new`; Import refuses a mismatch unless overridden; acceptance asserts the side.
+141. **Checkpoint: driving side enforced (#138), utility outside connections (code), lane work in progress** (importer 0.3.4; Claude). Reviewed in a temp checkout: core 77/77, mod, importer and terrain build, web 147/147.
+     - **#138:** a `drivingside` op; e2e and map prep set the side after `game.new`; Import (mod and exec) refuses a mismatch unless "Import into a city driving on the other side" is on (off by default, in EN/FR, in the guide and FAQ); acceptance asserts the side.
+     - **Utility outside connections:** electricity and water-pipe outside-connection markers on imported road nodes (MapPrep `oc.utilities`, run by the mod's Connections step). The buildings worker's test already shows electricity being imported with 0 local production. Worker-2's three-city in-game run is pending.
+     - **Node Controller shifts are on by default** (`ApplyOffNode`, #135).
+     - **Lane turn-check work (#126) is in progress.**

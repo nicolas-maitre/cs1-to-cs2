@@ -57,15 +57,72 @@ namespace Cs2Importer.Core
         /// one of CS1's target arms and every CS1 target arm must be reached, within `tol` degrees. Independent of how plan
         /// segments were mapped to CS2 edges and lanes. `why` names the first failure ("extra_arm", "missing_arm", "none").
         /// </summary>
-        public static bool TurnCheck(IList<double[]> want, IList<double[]> got, double tol, out string why)
+        public static bool TurnCheck(IList<double[]> want, IList<double[]> got, double tol, out string why, bool requireAll = true)
         {
             why = null;
             if (got.Count == 0) { why = "none"; return want.Count == 0; }
             foreach (var g in got)
                 if (!want.Any(x => AngleDeg(x[0], x[1], g[0], g[1]) <= tol)) { why = "extra_arm"; return false; }
-            foreach (var x in want)
-                if (!got.Any(g => AngleDeg(x[0], x[1], g[0], g[1]) <= tol)) { why = "missing_arm"; return false; }
+            if (requireAll)
+                foreach (var x in want)
+                    if (!got.Any(g => AngleDeg(x[0], x[1], g[0], g[1]) <= tol)) { why = "missing_arm"; return false; }
             return true;
+        }
+
+        /// <summary>
+        /// The direction (x/z) of an arm's CS1 curve at its point nearest to p. `b` = 4 control points {x, z}, b[0] at the
+        /// node. CS2 cuts a road back from the junction, so its junction lanes join an arm some metres out: on a curved arm
+        /// the direction there, not at the node, is what a lane's exit must match.
+        /// </summary>
+        public static double[] TangentNear(double[][] b, double px, double pz)
+        {
+            double bestT = 0, bestD = double.MaxValue;
+            for (int i = 0; i <= 64; i++)
+            {
+                double t = i / 64.0, u = 1 - t;
+                double x = u * u * u * b[0][0] + 3 * u * u * t * b[1][0] + 3 * u * t * t * b[2][0] + t * t * t * b[3][0];
+                double z = u * u * u * b[0][1] + 3 * u * u * t * b[1][1] + 3 * u * t * t * b[2][1] + t * t * t * b[3][1];
+                double d = (x - px) * (x - px) + (z - pz) * (z - pz);
+                if (d < bestD) { bestD = d; bestT = t; }
+            }
+            double s = bestT, v = 1 - s;
+            double dx = 3 * v * v * (b[1][0] - b[0][0]) + 6 * v * s * (b[2][0] - b[1][0]) + 3 * s * s * (b[3][0] - b[2][0]);
+            double dz = 3 * v * v * (b[1][1] - b[0][1]) + 6 * v * s * (b[2][1] - b[1][1]) + 3 * s * s * (b[3][1] - b[2][1]);
+            if (dx * dx + dz * dz < 1e-9) { dx = b[3][0] - b[0][0]; dz = b[3][1] - b[0][1]; }
+            return new[] { dx, dz };
+        }
+
+        /// <summary>
+        /// TurnCheck against CS1 arm curves: a CS2 lane (exit direction + end point) leads into a CS1 arm when its exit
+        /// matches the arm's direction at the arm point nearest to the lane's end (TangentNear), within `tol`.
+        /// </summary>
+        public static bool TurnCheckCurves(IList<double[][]> want, IList<double[]> gotExit, IList<double[]> gotEnd, double tol, out string why, bool requireAll = true)
+        {
+            why = null;
+            if (gotExit.Count == 0) { why = "none"; return want.Count == 0; }
+            Func<double[][], int, bool> into = (w, i) => { var d = TangentNear(w, gotEnd[i][0], gotEnd[i][1]); return AngleDeg(d[0], d[1], gotExit[i][0], gotExit[i][1]) <= tol; };
+            for (int i = 0; i < gotExit.Count; i++)
+                if (!want.Any(w => into(w, i))) { why = "extra_arm"; return false; }
+            if (requireAll)
+                foreach (var w in want)
+                    if (!Enumerable.Range(0, gotExit.Count).Any(i => into(w, i))) { why = "missing_arm"; return false; }
+            return true;
+        }
+
+        /// <summary>
+        /// CS1's (TM:PE's) turn from one arm into another, by geometry: the source arm's and the target arm's directions
+        /// leaving the node (x/z). Within 30° of straight on = Straight, 30–150° = Left / Right, beyond = U-turn (TM:PE's
+        /// arrow rule: |cross| ≥ 0.5 is a turn, else the dot product decides). Right = clockwise seen from above (+x east,
+        /// +z north).
+        /// </summary>
+        public static Turn Cs1Turn(double[] srcOut, double[] tgtOut)
+        {
+            double hx = -srcOut[0], hz = -srcOut[1]; // heading into the node
+            double lh = Math.Sqrt(hx * hx + hz * hz), lt = Math.Sqrt(tgtOut[0] * tgtOut[0] + tgtOut[1] * tgtOut[1]);
+            if (lh < 1e-9 || lt < 1e-9) return Turn.Straight;
+            double sin = (hz * tgtOut[0] - hx * tgtOut[1]) / (lh * lt), cos = (hx * tgtOut[0] + hz * tgtOut[1]) / (lh * lt);
+            if (Math.Abs(sin) >= 0.5) return sin > 0 ? Turn.Right : Turn.Left;
+            return cos > 0 ? Turn.Straight : (sin >= 0 ? Turn.UTurnRight : Turn.UTurnLeft);
         }
 
         /// <summary>

@@ -267,6 +267,9 @@ try {
   const dll = buildImporter();
   await step('cs2', startCs2);
   const b = await connect('cs2');
+  // the CS1 city's side of the road before any road is built: only the mod's Prepare map sets it otherwise, and the
+  // importer refuses a plan for the other side (DECISIONS-importer.md #63, DECISIONS.md #138)
+  await step('driving-side', () => b.exec(dll, { args: { op: 'drivingside', plan: path.join(plan.package, 'cs1conv-plan.json') }, timeout: 120 }));
   if (MAPPREP) await softStep('mapprep-build', buildTerrainLib);
   if (!flag('--keep-base-nets')) {
     // the terrain worker's clear also removes owned nets and outside-connection markers; ours is the fallback

@@ -111,11 +111,12 @@ namespace Cs2Importer.Core
         public double MaxGrade = 0.2;
         /// <summary>
         /// Keep Node Controller shifts (segments[].offNode, web 0.9.0+; DECISIONS-nodecontroller.md) as off-node curve
-        /// ends. Off by default (DECISIONS-importer.md #59): on a web 0.9.0 Skibidi crop the importer's node lookup missed
-        /// the nodes CS2 made at shifted ends (33 nodes not created, 56 segments without a node). Off = the ends snap to
-        /// their nodes, as before 0.9.0.
+        /// ends. On by default since worker-5's node lookups (mean of the edge ends, NodeByEdgeEnds) passed in game
+        /// (DECISIONS-importer.md #59, DECISIONS.md #135): the web 0.9.0 Skibidi crop that had 33 nodes not created and 56
+        /// segments without a node now builds 1326 of 1328 with none. Off (exec arg offNode: false) = the ends snap to
+        /// their nodes, as before web 0.9.0.
         /// </summary>
-        public bool ApplyOffNode = false;
+        public bool ApplyOffNode = true;
         /// <summary>
         /// A walls ground segment whose CS1 vertical profile leaves the straight line between its ends by more than this
         /// (m) is split there, with a node at the CS1 height (#62): CS2 lays a course between two ground-level ends on the
@@ -276,7 +277,7 @@ namespace Cs2Importer.Core
             {
                 result.Add(s);
                 var b = s.Bezier;
-                if (b == null || s.HeightMode != "walls" || s.Source.Kind != "ground" || s.OffNode || s.Half >= 0 || job.Nodes.ContainsKey(-s.Id)) continue;
+                if (b == null || s.HeightMode != "walls" || s.Source.Kind != "ground" || s.Half >= 0 || job.Nodes.ContainsKey(-s.Id)) continue;
                 double bestT = 0, bestDev = 0;
                 for (int i = 1; i < 16; i++)
                 {
@@ -312,8 +313,10 @@ namespace Cs2Importer.Core
                 var second = new SegmentJob
                 {
                     Source = s.Source, Start = mid, End = s.End, ChordLength = lb, BuildReversed = s.BuildReversed, HeightMode = s.HeightMode,
-                    OffNode = false, Bezier = right, Half = 1,
+                    // a Node Controller shift stays with its own end: the split node has none (CacaoCity 25425: 5 m shift)
+                    OffNode = s.OffNode, OffEndX = s.OffEndX, OffEndZ = s.OffEndZ, Bezier = right, Half = 1,
                 };
+                s.OffEndX = 0; s.OffEndZ = 0;
                 s.End = mid; s.Bezier = left; s.Half = 0; s.ChordLength = la;
                 s.MiddleElevation = (s.Start.Elevation + mid.Elevation) / 2;
                 second.MiddleElevation = (mid.Elevation + second.End.Elevation) / 2;

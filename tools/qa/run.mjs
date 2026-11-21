@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // QA measurements in converted CS2 cities (tools/qa/README.md).
 //
-//   node tools/qa/run.mjs utilities --save <cs2 save>[,<save>…] [--minutes 3] [--list 60] [--keep]
+//   node tools/qa/run.mjs utilities --save <cs2 save>[,<save>…] [--minutes 3] [--list 60] [--keep] [--oc-utilities [--save-as name]]
 //        For each save: load it, let it simulate --minutes (real time, top speed; 0 = as saved), pause, measure the
 //        electricity / water / sewage supply (docs/DECISIONS.md #109) and write .gamectl/qa/utilities-<save>.json.
 //        Prints a summary per save. Read-only: nothing is saved back.
+//        --oc-utilities: right after loading, add the electricity/water outside connections the importer now creates
+//        (terrain MapPrep oc.utilities, #136) before simulating; the file is utilities-<save>-oc.json. --save-as keeps
+//        the result as a new save (the loaded save is never overwritten).
 //
 // CS2 is shared: takes %LOCALAPPDATA%\cs1-to-cs2\cs2.lock (waits while another owner holds a lock younger than 2 h)
 // and releases it at the end; stops CS2 at the end only when this script started it (unless --keep).
@@ -13,6 +16,7 @@ import path from 'node:path';
 import { connect, start, stop } from '../gamectl/lib/index.js';
 import { waitAndTakeLock, releaseLock, REPO } from '../../cs2-importer/lib/driver.mjs';
 import { buildQa, measureUtilities, summariseUtilities } from './lib/utilities.mjs';
+import { DLL as TERRAIN_DLL } from '../../terrain/apply.mjs';
 
 const OWNER = 'qa';
 const log = (...a) => console.error('[qa]', ...a);
@@ -52,10 +56,19 @@ if (cmd === 'utilities') {
       const t0 = Date.now();
       await b.load(save, { timeout: 900 });
       log(`loaded in ${Math.round((Date.now() - t0) / 1000)} s`);
+      let oc;
+      if (flag('oc-utilities')) {
+        if (!fs.existsSync(TERRAIN_DLL)) throw new Error('terrain exec library not built: dotnet build -c Release terrain/cs2-apply');
+        await b.pause();
+        oc = await b.exec(TERRAIN_DLL, { type: 'Cs1ConvTerrain.MapPrep', args: { op: 'oc.utilities' }, phase: 'tool', timeout: 300 });
+        await b.wait(30);
+        log(`oc.utilities: electricity ${oc.electricity?.created ?? oc.electricity?.error}, water ${oc.water?.created ?? oc.water?.error}`);
+      }
       const r = await measureUtilities(b, { minutes, listLimit, log });
       const s = summariseUtilities(r);
-      const file = path.join(outDir, `utilities-${save}.json`);
-      fs.writeFileSync(file, JSON.stringify({ save, minutes, measuredAt: new Date().toISOString(), summary: s, result: r }, null, 1));
+      if (opt('save-as')) { await b.saveWrite(opt('save-as')); log(`saved as ${opt('save-as')}`); }
+      const file = path.join(outDir, `utilities-${save}${oc ? '-oc' : ''}.json`);
+      fs.writeFileSync(file, JSON.stringify({ save, minutes, measuredAt: new Date().toISOString(), ocUtilities: oc, summary: s, result: r }, null, 1));
       console.log(`== ${save} (${minutes} min simulated) ok=${s.ok} → ${file}`);
       for (const l of s.lines) console.log(`   ${l}`);
       allOk &&= s.ok;

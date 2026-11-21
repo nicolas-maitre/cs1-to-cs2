@@ -187,7 +187,15 @@ namespace CoreTests
             Assert.Eq(0, ImportPlanner.SplitOverTerrain(Job("walls", "walls", 0, conformed: true), (x, z) => 100), "flat ground: nothing to split");
         }
 
-        public static void TestNodeRuleWhereModesMeet()
+        /// <summary>#61: the clearance pass never pushes a walls ground node past the wall limits (Skibidi: -17.3 m, a tunnel).</summary>
+        public static void TestClearanceKeepsWallsNodesWithinTheLimits()
+        {
+            var j = Job("walls", "walls", -18.6);
+            foreach (var n in j.Nodes.Values)
+                if (n.WallsGround) Assert.True(n.Elevation >= -11.5 && n.Elevation <= 7.5, "node " + n.Id + " at " + n.Elevation);
+        }
+
+                public static void TestNodeRuleWhereModesMeet()
         {
             Assert.Eq(0.0, Job("conform", "walls", -6).Nodes[2].Elevation, "conform wins: the terrain is burned at the node");
             Assert.Eq(0.0, Job("follow", "conform", 5).Nodes[2].Elevation, "conform wins over follow");

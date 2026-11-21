@@ -93,6 +93,10 @@ namespace Cs2ImporterMod
         [SettingsUISection(Section, ImportGroup)]
         public bool KeepMapTerrain { get; set; } = false;
 
+        /// <summary>Import a package into a city that drives on the other side of the road (otherwise Import refuses, #63).</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool AllowOtherDrivingSide { get; set; } = false;
+
         /// <summary>After the roads: paint the plan's zone cells on the new zone blocks.</summary>
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyZoning { get; set; } = true;
@@ -188,6 +192,7 @@ namespace Cs2ImporterMod
             ApplyZoning = ApplyTrafficSettings = ApplyTrafficMod = ApplyBuildings = ApplyTransit = ApplyConnections = true;
             ApplyLaneConnections = true;
             KeepMapTerrain = false;
+            AllowOtherDrivingSide = false;
             RecentPackages = "";
             OffsetX = OffsetZ = 0;
             StatusText = "";

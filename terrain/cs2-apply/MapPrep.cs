@@ -12,6 +12,12 @@
 //   oc.list     {}                                outside connections in the city
 //   oc.create   {connections:[{x,z,type:"road"|"train",prefab?}], radius=3}  [phase tool]
 //                                                 one marker per connection, owned by the real node at (x,z)
+//   oc.utilities {kinds=["electricity","water"], perSide=1, minNodes=8, max=8, nodes?:[{x,z}], radius=3, dryRun=false}  [phase tool]
+//                                                 electricity and water-pipe outside connections (docs/DECISIONS.md #136):
+//                                                 a "Powerline" / water-pipe marker owned by an imported road node near
+//                                                 the edge of the road network, one per road island (+ one per side for
+//                                                 the largest); roads carry low voltage and pipes, and the game's graph
+//                                                 systems link the marker's owner node to the trade source/sink
 //   water.reset {mode:"sea"|"empty"="sea"}        WaterSystem.ResetToSealevel() / Reset() (the editor's buttons)
 //   counts      {}                                vehicles (cars, trains, personal, delivery, cargo) and outside-connection
 //                                                 lanes, to see whether through traffic spawns
@@ -46,6 +52,7 @@ namespace Cs1ConvTerrain
                 case "oc.prefabs": return OcPrefabs();
                 case "oc.list": return OcList();
                 case "oc.create": return OcCreate(a);
+                case "oc.utilities": return OcUtilities(a);
                 case "water.reset": return WaterReset(Str(a, "mode", "sea"));
                 case "water.set": return WaterSet(a);
                 case "water.sample": return WaterSample(a);
@@ -257,6 +264,193 @@ namespace Cs1ConvTerrain
             }
             return new Dictionary<string, object> { { "op", "oc.create" }, { "results", res }, { "frame", UnityEngine.Time.frameCount } };
         }
+
+        // ---------------------------------------------------------------- utility outside connections (#136)
+
+        /// <summary>
+        /// Object prefabs whose archetype has Game.Objects.ElectricityOutsideConnection / WaterPipeOutsideConnection
+        /// ("Powerline Outside Connection" and the water-pipe one). They carry no OutsideConnectionData, so oc.prefabs
+        /// doesn't list them. Sorted by name, so the choice is deterministic.
+        /// </summary>
+        static SortedDictionary<string, Entity> UtilityMarkerPrefabs(ComponentType tag)
+        {
+            var r = new SortedDictionary<string, Entity>(StringComparer.Ordinal);
+            var ps = Query(new[] { ComponentType.ReadOnly<ObjectData>(), ComponentType.ReadOnly<PrefabData>() }, new ComponentType[0]);
+            foreach (var p in ps)
+            {
+                var od = Em.GetComponentData<ObjectData>(p);
+                if (!od.m_Archetype.Valid) continue;
+                var types = od.m_Archetype.GetComponentTypes(Allocator.Temp);
+                bool has = false;
+                foreach (var t in types) if (t.TypeIndex == tag.TypeIndex) { has = true; break; }
+                types.Dispose();
+                if (has) r[PrefabName(p)] = p;
+            }
+            ps.Dispose();
+            return r;
+        }
+
+        /// <summary>True when the node already owns a marker object with this tag (makes oc.utilities idempotent).</summary>
+        static bool OwnsMarker(Entity node, ComponentType tag)
+        {
+            if (!Em.HasBuffer<Game.Objects.SubObject>(node)) return false;
+            var buf = Em.GetBuffer<Game.Objects.SubObject>(node, true);
+            for (int i = 0; i < buf.Length; i++)
+            {
+                var s = buf[i].m_SubObject;
+                if (IsReal(s) && Em.HasComponent(s, tag)) return true;
+            }
+            return false;
+        }
+
+        static object OcUtilities(Dictionary<string, object> a)
+        {
+            var kinds = new List<string>();
+            if (a.TryGetValue("kinds", out var ko) && ko is IList<object> kl) foreach (var k in kl) kinds.Add(k.ToString());
+            else { kinds.Add("electricity"); kinds.Add("water"); }
+            int perSide = (int)F(a, "perSide", 1f), minNodes = (int)F(a, "minNodes", 8f), max = (int)F(a, "max", 8f);
+            float radius = F(a, "radius", 3f);
+            bool dry = B(a, "dryRun");
+            var explicitNodes = a.TryGetValue("nodes", out var no) ? no as IList<object> : null;
+
+            // top-level road nodes (the imported network), with their positions
+            var nodes = Query(new[] { ComponentType.ReadOnly<Game.Net.Node>(), ComponentType.ReadOnly<ConnectedEdge>() });
+            var roadNodes = new List<Entity>();
+            foreach (var n in nodes)
+            {
+                if (Em.HasComponent<Owner>(n)) continue;
+                var buf = Em.GetBuffer<ConnectedEdge>(n, true);
+                bool road = false;
+                for (int i = 0; i < buf.Length && !road; i++)
+                {
+                    var e = buf[i].m_Edge;
+                    if (IsReal(e) && !Em.HasComponent<Owner>(e) && Em.HasComponent<RoadData>(Em.GetComponentData<PrefabRef>(e).m_Prefab)) road = true;
+                }
+                if (road) roadNodes.Add(n);
+            }
+            nodes.Dispose();
+
+            var result = new Dictionary<string, object> { { "op", "oc.utilities" }, { "roadNodes", roadNodes.Count }, { "dryRun", dry } };
+            foreach (var kind in kinds)
+            {
+                bool elec = kind == "electricity";
+                if (!elec && kind != "water") { result[kind] = new Dictionary<string, object> { { "error", "unknown kind (electricity, water)" } }; continue; }
+                var tag = elec ? ComponentType.ReadOnly<Game.Objects.ElectricityOutsideConnection>() : ComponentType.ReadOnly<Game.Objects.WaterPipeOutsideConnection>();
+                var conn = elec ? ComponentType.ReadOnly<Game.Simulation.ElectricityNodeConnection>() : ComponentType.ReadOnly<Game.Simulation.WaterPipeNodeConnection>();
+                var info = new Dictionary<string, object>();
+                result[kind] = info;
+                var prefabs = UtilityMarkerPrefabs(tag);
+                info["prefabs"] = new List<object>(prefabs.Keys);
+                Entity prefab = Entity.Null;
+                foreach (var kv in prefabs) { prefab = kv.Value; info["prefab"] = kv.Key; break; }
+                if (prefab == Entity.Null) { info["error"] = "no marker prefab"; continue; }
+
+                // candidates: road nodes linked into this utility's flow graph
+                var cand = new List<Entity>();
+                var index = new Dictionary<Entity, int>();
+                foreach (var n in roadNodes) if (Em.HasComponent(n, conn)) { index[n] = cand.Count; cand.Add(n); }
+                info["candidates"] = cand.Count;
+                if (cand.Count == 0) { info["error"] = "no road node has a " + (elec ? "electricity" : "water pipe") + " connection"; continue; }
+                var pos = new float3[cand.Count];
+                for (int i = 0; i < cand.Count; i++) pos[i] = Em.GetComponentData<Game.Net.Node>(cand[i]).m_Position;
+
+                var picks = new List<KeyValuePair<int, string>>(); // candidate index, why
+                if (explicitNodes != null)
+                {
+                    foreach (var o in explicitNodes)
+                    {
+                        var c = o as Dictionary<string, object>;
+                        float2 p = new float2(F(c, "x"), F(c, "z"));
+                        int best = -1; float bd = radius;
+                        for (int i = 0; i < cand.Count; i++) { float d = math.distance(pos[i].xz, p); if (d < bd) { bd = d; best = i; } }
+                        if (best >= 0) picks.Add(new KeyValuePair<int, string>(best, "requested"));
+                    }
+                }
+                else
+                {
+                    // road islands: union-find over road edges between candidates
+                    var parent = new int[cand.Count];
+                    for (int i = 0; i < parent.Length; i++) parent[i] = i;
+                    int Find(int x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+                    for (int i = 0; i < cand.Count; i++)
+                    {
+                        var buf = Em.GetBuffer<ConnectedEdge>(cand[i], true);
+                        for (int j = 0; j < buf.Length; j++)
+                        {
+                            var e = buf[j].m_Edge;
+                            if (!IsReal(e) || !Em.HasComponent<Edge>(e)) continue;
+                            var ed = Em.GetComponentData<Edge>(e);
+                            var other = ed.m_Start == cand[i] ? ed.m_End : ed.m_Start;
+                            if (index.TryGetValue(other, out int k)) { int ra = Find(i), rb = Find(k); if (ra != rb) parent[math.max(ra, rb)] = math.min(ra, rb); }
+                        }
+                    }
+                    var comps = new Dictionary<int, List<int>>();
+                    for (int i = 0; i < cand.Count; i++) { int r = Find(i); if (!comps.TryGetValue(r, out var l)) comps[r] = l = new List<int>(); l.Add(i); }
+                    var order = new List<List<int>>(comps.Values);
+                    // largest island first; ties by the lowest x, then z, of the first node (stable across runs)
+                    order.Sort((p, q) => p.Count != q.Count ? q.Count.CompareTo(p.Count) : Key(pos, p).CompareTo(Key(pos, q)));
+                    // the network's bounding box stands in for the crop edge
+                    float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
+                    foreach (var p in pos) { minX = math.min(minX, p.x); maxX = math.max(maxX, p.x); minZ = math.min(minZ, p.z); maxZ = math.max(maxZ, p.z); }
+                    info["bounds"] = new List<object> { minX, minZ, maxX, maxZ };
+                    info["islands"] = order.Count;
+                    int big = 0;
+                    for (int ci = 0; ci < order.Count; ci++)
+                    {
+                        var comp = order[ci];
+                        if (comp.Count < minNodes) continue;
+                        big++;
+                        // the island's node nearest the network edge
+                        int best = comp[0]; float bd = float.MaxValue;
+                        foreach (int i in comp) { float d = EdgeDistance(pos[i], minX, maxX, minZ, maxZ); if (d < bd - 1e-3f) { bd = d; best = i; } }
+                        picks.Add(new KeyValuePair<int, string>(best, "island " + ci + " (" + comp.Count + " nodes)"));
+                        if (ci == 0 && perSide > 0)
+                        {
+                            // the main grid also gets its westmost, eastmost, southmost and northmost node
+                            string[] sides = { "west", "east", "south", "north" };
+                            for (int s = 0; s < 4; s++)
+                            {
+                                var sorted = new List<int>(comp);
+                                sorted.Sort((p, q) => SideKey(pos[p], s).CompareTo(SideKey(pos[q], s)));
+                                for (int t = 0; t < perSide && t < sorted.Count; t++) picks.Add(new KeyValuePair<int, string>(sorted[t], "main grid, " + sides[s]));
+                            }
+                        }
+                    }
+                    info["islandsUsed"] = big;
+                }
+
+                var made = new List<object>();
+                var used = new HashSet<int>();
+                int skippedOwned = 0;
+                foreach (var pk in picks)
+                {
+                    if (made.Count >= max) break;
+                    if (!used.Add(pk.Key)) continue;
+                    var node = cand[pk.Key];
+                    if (OwnsMarker(node, tag)) { skippedOwned++; continue; }
+                    made.Add(new Dictionary<string, object> { { "node", Id(node) }, { "pos", V(pos[pk.Key]) }, { "why", pk.Value } });
+                    if (dry) continue;
+                    var def = Em.CreateEntity();
+                    Em.AddComponentData(def, new CreationDefinition { m_Prefab = prefab, m_Owner = node, m_Flags = CreationFlags.Permanent });
+                    Em.AddComponentData(def, new ObjectDefinition
+                    {
+                        m_Position = pos[pk.Key], m_LocalPosition = float3.zero, m_Scale = new float3(1f), m_Rotation = quaternion.identity, m_LocalRotation = quaternion.identity,
+                        m_Intensity = 1f, m_ParentMesh = -1, m_GroupIndex = -1, m_Probability = 100, m_PrefabSubIndex = -1,
+                    });
+                    Em.AddComponent<Updated>(def);
+                    Em.AddComponent<Deleted>(def);
+                }
+                info["created"] = dry ? 0 : made.Count;
+                info["alreadyThere"] = skippedOwned;
+                info["markers"] = made;
+            }
+            result["frame"] = UnityEngine.Time.frameCount;
+            return result;
+        }
+
+        static float Key(float3[] pos, List<int> comp) { float k = float.MaxValue; foreach (int i in comp) k = math.min(k, pos[i].x * 100000f + pos[i].z); return k; }
+        static float EdgeDistance(float3 p, float minX, float maxX, float minZ, float maxZ) => math.min(math.min(p.x - minX, maxX - p.x), math.min(p.z - minZ, maxZ - p.z));
+        static float SideKey(float3 p, int side) => side == 0 ? p.x : side == 1 ? -p.x : side == 2 ? p.z : -p.z;
 
         struct Marker { public Entity Entity; public OutsideConnectionTransferType Type; }
 

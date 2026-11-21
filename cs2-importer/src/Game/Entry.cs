@@ -45,6 +45,7 @@ namespace Cs2Importer
                 case "zoning": return M2Ops.Zoning(args);
                 case "view": return View(args);
                 case "laneview": return LaneView.Show(args);
+                case "drivingside": return SetDrivingSide(args);
                 case "traffic": return M2Ops.Traffic(args);
                 case "trafficmod": return M2Ops.TrafficMod(args);
                 case "lanes": return LaneOps.Apply(args);
@@ -209,7 +210,24 @@ namespace Cs2Importer
             return new Dictionary<string, object> { { "op", "view" }, { "tool", tools.activeTool?.GetType().Name } };
         }
 
-        // ---------------------------------------------------------------- inspect
+        /// <summary>
+        /// op drivingside {plan} or {leftHand}: sets the city's driving side (CityConfigurationSystem.leftHandTraffic) to the
+        /// plan's (plan.source.leftHandTraffic), for scripts that create a city without the mod's Prepare map (#63,
+        /// DECISIONS.md #138). Call it right after game.new, before any road is built. A plan without the field leaves the
+        /// city as it is.
+        /// </summary>
+        static object SetDrivingSide(Dictionary<string, object> a)
+        {
+            var w = new GameWorld();
+            var cfg = w.World.GetOrCreateSystemManaged<Game.City.CityConfigurationSystem>();
+            bool was = cfg.leftHandTraffic;
+            bool? want = a.ContainsKey("leftHand") && a["leftHand"] is bool ? (bool?)(bool)a["leftHand"] : null;
+            if (!want.HasValue && a.ContainsKey("plan")) want = LoadJob(a).Plan.LeftHandTraffic;
+            if (want.HasValue) cfg.leftHandTraffic = want.Value;
+            return new Dictionary<string, object> { { "op", "drivingside" }, { "was_left_hand", was }, { "left_hand", cfg.leftHandTraffic }, { "from_plan", want.HasValue } };
+        }
+
+                // ---------------------------------------------------------------- inspect
 
         /// <summary>Real nodes within r of (x, z) with their edges (prefab, other end, length): for debugging a failure.</summary>
         static object Inspect(Dictionary<string, object> a)
@@ -360,6 +378,17 @@ namespace Cs2Importer
             var cancel = a != null && a.TryGetValue("_cancel", out object ccb) ? ccb as Func<bool> : null;
             var job = LoadJob(a);
             var w = new GameWorld();
+            // #63: never build a plan on the other side of the road (allowDrivingSideMismatch: true overrides)
+            {
+                bool? cityLht = null;
+                try { cityLht = w.World.GetOrCreateSystemManaged<Game.City.CityConfigurationSystem>().leftHandTraffic; } catch { }
+                var side = DrivingSide.Mismatch(job.Plan.LeftHandTraffic, cityLht);
+                if (side != null && !P.Bool(a, "allowDrivingSideMismatch", false))
+                {
+                    yield return new Dictionary<string, object> { { "op", "import" }, { "error", side }, { "refused", "driving-side" }, { "plan_left_hand", job.Plan.LeftHandTraffic }, { "city_left_hand", cityLht } };
+                    yield break;
+                }
+            }
             int settle = Math.Max(1, (int)P.Num(a, "settleFrames", 2));
             int verifyFrames = Math.Max(1, (int)P.Num(a, "verifyFrames", 30));
             // trace: segment ids of each batch, appended (and flushed) before the batch is created, to find the batch

@@ -76,7 +76,7 @@ namespace Cs2Importer
             public long Segment;
             public readonly List<KeyValuePair<Entity, int>> Targets = new List<KeyValuePair<Entity, int>>();      // explicit connections
             public readonly List<string> TargetRefs = new List<string>();
-            public readonly List<double[]> WantDirs = new List<double[]>();                                     // CS1 target arms leaving the node (turn check)
+            public readonly List<double[][]> WantCurves = new List<double[][]>();                               // CS1 target arm curves from the node (turn check)
             public HashSet<string> Arrows;                                                                         // or arrows (all three for U-turn-only)
             public Entity NoUTurnTo = Entity.Null;                                                                 // U-turn ban: no lane back into this edge
             public readonly List<KeyValuePair<Entity, int>> Extra = new List<KeyValuePair<Entity, int>>();        // U-turn allowed: added to the arrows' lanes
@@ -226,8 +226,8 @@ namespace Cs2Importer
                 var s = get(src);
                 s.Targets.Add(new KeyValuePair<Entity, int>(tgt.Edge, tgt.LaneIndex));
                 s.TargetRefs.Add(tgt.Ref);
-                var wd = PlanArmDir(job, node, tgt.Segment);
-                if (wd != null) s.WantDirs.Add(wd);
+                var wd = PlanArmCurve(job, node, tgt.Segment);
+                if (wd != null) s.WantCurves.Add(wd);
             }
             int arrowsOverridden = 0;
             foreach (var o in arrows)
@@ -371,8 +371,9 @@ namespace Cs2Importer
             var diag = new List<object>();
             // turn check (#126): the CS2 junction lanes leaving each explicit source lane, by their own geometry, against
             // CS1's target arms; independent of the plan → edge → lane mapping
-            int turnChecked = 0, turnOk = 0, turnWrong = 0, turnNone = 0;
+            int turnChecked = 0, turnOk = 0, turnWrong = 0, turnNone = 0, arrowChecked = 0, arrowOk = 0, arrowWrong = 0, arrowNone = 0;
             var turnDiag = new List<object>();
+            var turnBad = new Dictionary<Entity, long>(); // CS2 node → plan node, junctions whose written lanes failed the turn check
             int nodesWithData = 0;
             var after = new Dictionary<Entity, List<NodeLane>>();
             foreach (var g in byNode)
@@ -382,7 +383,29 @@ namespace Cs2Importer
                 after[g.Key] = NodeCarLanes(w, g.Key);
                 foreach (var s in g)
                 {
-                    if (s.Targets.Count == 0) continue;
+                    if (s.Targets.Count == 0)
+                    {
+                        // a TM:PE arrow lane: the CS2 lanes written from it must leave towards an arm CS1 allows (TM:PE's
+                        // turn rule by geometry); reaching only some of them is fine
+                        if (s.Arrows != null && s.Arrows.Count < 3 && s.Ref.IndexOf("u-turn", StringComparison.Ordinal) < 0 && !unsure.ContainsKey(s.PlanNode) && !passThrough.Contains(g.Key))
+                        {
+                            var allowed = ArrowArms(w, job, res, s);
+                            var gotA = after[g.Key].Where(l => l.SrcEdge == s.Edge && l.SrcIndex == s.LaneIndex && l.TgtEdge != s.Edge).ToList();
+                            string whyA;
+                            arrowChecked++;
+                            if (LaneMatch.TurnCheckCurves(allowed, gotA.Select(l => l.Exit).ToList(), gotA.Select(l => l.End).ToList(), armTol, out whyA, false)) arrowOk++;
+                            else
+                            {
+                                if (whyA == "none") arrowNone++; else { arrowWrong++; turnBad[g.Key] = s.PlanNode; }
+                                if (turnDiag.Count < maxDiag)
+                                    turnDiag.Add(new Dictionary<string, object> {
+                                        { "node", s.PlanNode }, { "why", whyA }, { "from", s.Ref }, { "arrows", s.Arrows.Cast<object>().ToList() },
+                                        { "allowed_deg", allowed.Select(c => { var d = LaneMatch.TangentNear(c, c[0][0], c[0][1]); return (object)Math.Round(Math.Atan2(d[0], d[1]) * 180 / Math.PI); }).ToList() },
+                                        { "got_deg", gotA.Select(l => (object)Math.Round(Math.Atan2(l.Exit[0], l.Exit[1]) * 180 / Math.PI)).ToList() } });
+                            }
+                        }
+                        continue;
+                    }
                     if (unsure.ContainsKey(s.PlanNode) && !checkOnly) { int u; outcome.TryGetValue("left_to_cs2_arm_check", out u); outcome["left_to_cs2_arm_check"] = u + 1; continue; }
                     var want = s.Targets.Select(t => t.Key.Index + ":" + t.Value).ToList();
                     List<string> got;
@@ -397,18 +420,18 @@ namespace Cs2Importer
                         var gotLanes = after[g.Key].Where(l => l.SrcEdge == s.Edge && l.SrcIndex == s.LaneIndex).ToList();
                         got = gotLanes.Select(l => l.TgtEdge.Index + ":" + l.TgtIndex).ToList();
                         kind = LaneMatch.Compare(want, got);
-                        if (s.WantDirs.Count == s.Targets.Count && !unsure.ContainsKey(s.PlanNode)) // unsure junctions keep CS2's own lanes
+                        if (s.WantCurves.Count == s.Targets.Count && !unsure.ContainsKey(s.PlanNode)) // unsure junctions keep CS2's own lanes
                         {
                             string why;
                             turnChecked++;
-                            if (LaneMatch.TurnCheck(s.WantDirs, gotLanes.Select(l => l.Exit).ToList(), armTol, out why)) turnOk++;
+                            if (LaneMatch.TurnCheckCurves(s.WantCurves, gotLanes.Select(l => l.Exit).ToList(), gotLanes.Select(l => l.End).ToList(), armTol, out why)) turnOk++;
                             else
                             {
-                                if (why == "none") turnNone++; else turnWrong++;
+                                if (why == "none") turnNone++; else { turnWrong++; turnBad[g.Key] = s.PlanNode; }
                                 if (turnDiag.Count < maxDiag)
                                     turnDiag.Add(new Dictionary<string, object> {
                                         { "node", s.PlanNode }, { "why", why }, { "from", s.Ref }, { "want", s.TargetRefs.Cast<object>().ToList() },
-                                        { "want_deg", s.WantDirs.Select(d => (object)Math.Round(Math.Atan2(d[0], d[1]) * 180 / Math.PI)).ToList() },
+                                        { "want_deg", s.WantCurves.Select(c => { var d = LaneMatch.TangentNear(c, c[0][0], c[0][1]); return (object)Math.Round(Math.Atan2(d[0], d[1]) * 180 / Math.PI); }).ToList() },
                                         { "got_deg", gotLanes.Select(l => (object)Math.Round(Math.Atan2(l.Exit[0], l.Exit[1]) * 180 / Math.PI)).ToList() } });
                             }
                         }
@@ -427,6 +450,14 @@ namespace Cs2Importer
                         });
                     }
                 }
+            }
+            // a junction whose written connections lead to another arm than CS1's is not mapped confidently: take back what
+            // was written there (as the mod's "Reset to vanilla" does) and leave CS2's own lanes, reported (DECISIONS.md #126)
+            int turnReverted = 0;
+            if (!checkOnly)
+            {
+                foreach (var kv in turnBad) if (RevertNode(w, mod, kv.Key)) turnReverted++;
+                if (turnReverted > 0) for (int f = 0; f < 30; f++) yield return null;
             }
             int uturnOk = 0, uturnPassThrough = 0;
             var uturnDiag = new List<object>();
@@ -471,7 +502,9 @@ namespace Cs2Importer
                     { "junctions_off", unsure.Count }, { "junctions_left_to_cs2", nodesUnsure }, { "source_lanes_left_to_cs2", leftToCs2 },
                     { "junctions", unsure.Take(maxDiag).ToDictionary(kv => kv.Key.ToString(), kv => (object)kv.Value) }, { "arms", armDiag } } },
                 { "turn_check", new Dictionary<string, object> {
-                    { "tolerance_deg", armTol }, { "checked", turnChecked }, { "ok", turnOk }, { "wrong", turnWrong }, { "none", turnNone }, { "wrong_examples", turnDiag } } },
+                    { "tolerance_deg", armTol }, { "checked", turnChecked }, { "ok", turnOk }, { "wrong", turnWrong }, { "none", turnNone },
+                    { "junctions_wrong", turnBad.Count }, { "junctions_reverted_to_cs2", turnReverted }, { "junctions", turnBad.Values.Distinct().Cast<object>().ToList() },
+                    { "arrow_lanes_checked", arrowChecked }, { "arrow_lanes_ok", arrowOk }, { "arrow_lanes_wrong", arrowWrong }, { "arrow_lanes_none", arrowNone }, { "wrong_examples", turnDiag } } },
                 { "lane_position_check", new Dictionary<string, object> {
                     { "checked", posChecked }, { "agree", posAgree }, { "agree_mirrored", posAgreeMirrored },
                     { "agree_rate", posChecked == 0 ? 0 : Math.Round(100.0 * Math.Max(posAgree, posAgreeMirrored) / posChecked, 1) }, { "disagreements", posDiag } } },
@@ -535,6 +568,45 @@ namespace Cs2Importer
             return LaneMatch.AngleDeg(d[0], d[1], t.x, t.z);
         }
 
+        /// <summary>The CS1 arms an arrow lane may lead into: the node's other plan segments with lanes leaving the node,
+        /// whose CS1 turn (LaneMatch.Cs1Turn, from the CS1 beziers) the arrows allow; their directions leaving the node.</summary>
+        static List<double[][]> ArrowArms(GameWorld w, ImportJob job, M2Ops.Resolved res, Source s)
+        {
+            var r = new List<double[][]>();
+            var src = PlanArmDir(job, s.PlanNode, s.Segment);
+            if (src == null) return r;
+            foreach (var id in job.Segments.Where(x => x.Start.Id == s.PlanNode || x.End.Id == s.PlanNode).Select(x => x.Id).Distinct())
+            {
+                if (id == s.Segment) continue;
+                bool isEnd;
+                var edge = res.EdgeAt(w, id, s.PlanNode, out isEnd);
+                if (edge == Entity.Null) continue;
+                var lanes = EdgeLanes(w, job, edge, isEnd, s.PlanNode, id);
+                if (lanes == null || !lanes.Any(l => !l.Inbound)) continue;
+                var d = PlanArmDir(job, s.PlanNode, id);
+                if (d != null && LaneMatch.Allows(s.Arrows, LaneMatch.Cs1Turn(src, d))) r.Add(PlanArmCurve(job, s.PlanNode, id));
+            }
+            return r;
+        }
+
+        /// <summary>The CS1 segment's curve from the plan node outwards, 4 points {x, z} in CS2 world coordinates (the
+        /// test offset added); straight to the other node without a bezier. Null when unknown.</summary>
+        static double[][] PlanArmCurve(ImportJob job, long node, long segment)
+        {
+            var seg = job.SegmentAt(segment, node);
+            if (seg == null) return null;
+            bool atStart = seg.Start.Id == node;
+            double ox = job.Options.OffsetX, oz = job.Options.OffsetZ;
+            var b = seg.Bezier;
+            if (b == null)
+            {
+                var n0 = atStart ? seg.Start : seg.End; var n1 = atStart ? seg.End : seg.Start;
+                return new[] { new[] { n0.X, n0.Z }, new[] { n0.X + (n1.X - n0.X) / 3, n0.Z + (n1.Z - n0.Z) / 3 }, new[] { n0.X + 2 * (n1.X - n0.X) / 3, n0.Z + 2 * (n1.Z - n0.Z) / 3 }, new[] { n1.X, n1.Z } };
+            }
+            var pts = atStart ? new[] { b[0], b[1], b[2], b[3] } : new[] { b[3], b[2], b[1], b[0] };
+            return pts.Select(p => new[] { p.X + ox, p.Z + oz }).ToArray();
+        }
+
         /// <summary>The CS1 segment's direction leaving the plan node (its bezier tangent there), x/z; null when unknown.</summary>
         static double[] PlanArmDir(ImportJob job, long node, long segment)
         {
@@ -583,7 +655,7 @@ namespace Cs2Importer
             return Turn.Straight;
         }
 
-        sealed class NodeLane { public Entity SrcEdge, TgtEdge; public int SrcIndex, TgtIndex; public CarLaneFlags Flags; public Game.Pathfind.PathMethod Methods; public double[] Exit; }
+        sealed class NodeLane { public Entity SrcEdge, TgtEdge; public int SrcIndex, TgtIndex; public CarLaneFlags Flags; public Game.Pathfind.PathMethod Methods; public double[] Exit, End; }
 
         /// <summary>The junction's car lanes (no master lanes): source/target edge and lane index, turn flags.</summary>
         static List<NodeLane> NodeCarLanes(GameWorld w, Entity node, bool forbiddenOnly = false)
@@ -609,7 +681,7 @@ namespace Cs2Importer
                 if (((cl.m_Flags & CarLaneFlags.Forbidden) != 0) != forbiddenOnly) continue;
                 var lc = em.HasComponent<Curve>(l) ? em.GetComponentData<Curve>(l).m_Bezier : default(Bezier4x3);
                 var ex = MathUtils.EndTangent(lc);
-                r.Add(new NodeLane { SrcEdge = src, TgtEdge = tgt, SrcIndex = lane.m_StartNode.GetLaneIndex() & 0xff, TgtIndex = lane.m_EndNode.GetLaneIndex() & 0xff, Flags = cl.m_Flags, Methods = subs[i].m_PathMethods, Exit = new double[] { ex.x, ex.z } });
+                r.Add(new NodeLane { SrcEdge = src, TgtEdge = tgt, SrcIndex = lane.m_StartNode.GetLaneIndex() & 0xff, TgtIndex = lane.m_EndNode.GetLaneIndex() & 0xff, Flags = cl.m_Flags, Methods = subs[i].m_PathMethods, Exit = new double[] { ex.x, ex.z }, End = new double[] { lc.d.x, lc.d.z } });
             }
             return r;
         }
@@ -673,6 +745,34 @@ namespace Cs2Importer
         {
             var m = typeof(EntityManager).GetMethods().First(x => x.Name == "HasComponent" && x.IsGenericMethodDefinition && x.GetParameters().Length == 1 && x.GetParameters()[0].ParameterType == typeof(Entity)).MakeGenericMethod(t);
             return (bool)m.Invoke(em, new object[] { e });
+        }
+
+        /// <summary>Removes the lane connections written at a node, like the mod's RemoveLaneConnectionsJob: Deleted on each
+        /// connections entity, ModifiedLaneConnections and ModifiedConnections off the node, Updated on it and its edges.</summary>
+        static bool RevertNode(GameWorld w, ModTypes mod, Entity node)
+        {
+            var em = w.Em;
+            if (!w.IsReal(node) || !HasComp(em, node, mod.ModifiedConnections)) return false;
+            var getBuf = typeof(EntityManager).GetMethods().First(x => x.Name == "GetBuffer" && x.IsGenericMethodDefinition && x.GetParameters().Length == 2).MakeGenericMethod(mod.ModifiedLaneConnections);
+            var buf = getBuf.Invoke(em, new object[] { node, false });
+            int n = (int)buf.GetType().GetProperty("Length").GetValue(buf);
+            var item = buf.GetType().GetMethod("get_Item");
+            for (int i = 0; i < n; i++)
+            {
+                var ce = (Entity)Get(item.Invoke(buf, new object[] { i }), "modifiedConnections");
+                if (ce != Entity.Null && em.Exists(ce) && !em.HasComponent<Deleted>(ce)) em.AddComponent<Deleted>(ce);
+            }
+            RemoveComponent(em, node, mod.ModifiedLaneConnections);
+            RemoveComponent(em, node, mod.ModifiedConnections);
+            if (!em.HasComponent<Updated>(node)) em.AddComponent<Updated>(node);
+            foreach (var e in w.EdgesOf(node)) if (!em.HasComponent<Updated>(e)) em.AddComponent<Updated>(e);
+            return true;
+        }
+
+        static void RemoveComponent(EntityManager em, Entity e, Type t)
+        {
+            var m = typeof(EntityManager).GetMethods().First(x => x.Name == "RemoveComponent" && x.IsGenericMethodDefinition && x.GetParameters().Length == 1 && x.GetParameters()[0].ParameterType == typeof(Entity)).MakeGenericMethod(t);
+            m.Invoke(em, new object[] { e });
         }
 
         static void AddComponent(EntityManager em, Entity e, Type t)

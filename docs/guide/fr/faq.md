@@ -50,6 +50,10 @@ Cliquez sur **Préparer la carte** dans une nouvelle ville avant d'importer : il
 
 Cliquez sur **Retirer l'import** : il supprime les routes, bâtiments, arbres et objets, quartiers et zones, lignes de transport et connexions extérieures créés par les imports dans cette ville, même après enregistrement et rechargement. Le zonage et les règles de circulation partent avec les routes. La carte de base retirée par **Préparer la carte** ne revient pas ; commencez une nouvelle ville pour cela.
 
+## L'import dit « Ce paquet est pour une ville où l'on roule à gauche ; cette ville roule à droite » (ou l'inverse).
+
+La ville CS1 et cette ville CS2 ne roulent pas du même côté de la route. Commencez une nouvelle ville et cliquez sur **Préparer la carte** : elle règle le côté de circulation de la ville CS1 avant de construire la moindre route. Pour importer quand même, activez **Importer dans une ville qui roule de l'autre côté** ; routes, sens uniques et connexions de voies sont alors inversés.
+
 ## L'import dit que le terrain de cette ville n'est pas celui du paquet.
 
 Commencez une nouvelle ville et cliquez sur **Préparer la carte** avant d'importer. Pour construire quand même sur le sol de la carte, activez **Garder le terrain de cette carte** : les routes suivent alors ce sol, et seules les tranchées de 4 m ou plus gardent leur profondeur CS1.

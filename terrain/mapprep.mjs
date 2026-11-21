@@ -8,9 +8,13 @@
 //                                                                      the road/rail end nodes their outside connections)
 //                                                                      before terrain/apply.mjs; --keep-utilities keeps
 //                                                                      powerlines, seaways and pipes
-//   node terrain/mapprep.mjs connections --cs1x f --plan f [--all-roads] [--dry-run]
+//   node terrain/mapprep.mjs connections --cs1x f --plan f [--all-roads] [--dry-run] [--no-utilities]
 //                                                                      after the road import: CS1 highways/tracks cut
-//                                                                      at the crop edge → CS2 outside connections
+//                                                                      at the crop edge → CS2 outside connections, then
+//                                                                      the electricity/water ones (utilities, below)
+//   node terrain/mapprep.mjs utilities [--dry-run] [--max 8]           electricity + water-pipe outside connections on
+//                                                                      imported road nodes at the edge of the network
+//                                                                      (docs/DECISIONS.md #136; MapPrep oc.utilities)
 //   node terrain/mapprep.mjs oc-prefabs | oc-list                      marker prefabs / connections in the city
 //   node terrain/mapprep.mjs water --cs1x f --plan f [--terrain dir] [--no-regions]
 //                                                                      CS1 water.json → sea level + water sources
@@ -83,8 +87,10 @@ export async function mapprep(argv) {
       out.errors = created.results.filter(r => r.error);
       out.withLanes = after.filter(c => (c.subLanes ?? 0) > 0).length;
       out.connections = after;
+      if (!a.noUtilities) out.utilities = await utilities(bridge, a);
       break;
     }
+    case 'utilities': out = await utilities(bridge, a); break;
     case 'water': {
       if (!a.cs1x || !a.plan) throw new Error('water needs --cs1x and --plan');
       const zip = readZip(readFileSync(a.cs1x));
@@ -133,10 +139,21 @@ export async function mapprep(argv) {
       };
       break;
     }
-    default: throw new Error('unknown command ' + cmd + ' (survey, survey-maps, clear, connections, oc-prefabs, oc-list, water, water-reset)');
+    default: throw new Error('unknown command ' + cmd + ' (survey, survey-maps, clear, connections, utilities, oc-prefabs, oc-list, water, water-reset)');
   }
   if (a.out) writeFileSync(resolve(a.out), JSON.stringify(out, null, 2) + '\n');
   return out;
+}
+
+/** Electricity + water-pipe outside connections on the imported roads (#136): MapPrep oc.utilities, then oc.list. */
+export async function utilities(bridge, a = {}) {
+  const r = await op(bridge, { op: 'oc.utilities', dryRun: !!a.dryRun, max: Number(a.max ?? 8) }, { phase: 'tool' });
+  if (a.dryRun) return r;
+  await bridge.wait(30);
+  const after = await op(bridge, { op: 'oc.list' });
+  r.electricityConnections = after.filter(c => c.electricity).length;
+  r.waterPipeConnections = after.filter(c => c.waterPipe).length;
+  return r;
 }
 
 async function surveyMaps(bridge, a) {

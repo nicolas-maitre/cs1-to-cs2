@@ -2,6 +2,16 @@
 
 The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The version is `Mod.Version` in `mod/Mod.cs` (the `<Version>` in `mod/Cs2ImporterMod.csproj` must match; `node tools/release/build.mjs --check` verifies both).
 
+## 0.3.4 (2026-11-21)
+
+- **Driving side** (DECISIONS-importer.md #63, DECISIONS.md #138): Import refuses a package for the other side of the road: "This package is for a left-hand city; this city drives on the right. Start a new city and press Prepare map." To import anyway, turn on the new option "Import into a city driving on the other side". For scripts, the new exec op `drivingside` sets a new city's side from the plan.
+- **Node Controller shifts on by default** (#59, DECISIONS.md #135): road ends keep CS1's Node Controller shifts, verified in game with no missing nodes (the package that lost 56 roads in 0.3.3 builds 1326 of 1328, as without shifts).
+- **Walls roads stay within CS2's wall limits** even where a crossing needs clearance (#61); a few ground roads in deep cuts or at bridge ends can still come out as tunnels or elevated in packages made before web tool 0.9.3, and the report lists them.
+- Verified in game since 0.3.3:
+  - **Walls burn** (web 0.9.3): every road built in CacaoCity and Skibidi; no ground road became a tunnel or elevated; CacaoCity's ramp is an embankment within 0.9 m of its CS1 height.
+  - **Split:** the highway crossing a 9 m dip (#62) is within 0.6 m of its CS1 height (8.8 m low before).
+  - **Lane connections:** no misaligned junction arms in any of the three cities.
+
 ## 0.3.3 (2026-11-21)
 
 - **Road heights follow CS1** (DECISIONS.md #110–113; DECISIONS-importer.md #57). Packages from web tool 0.7.0 and later shape the ground to the roads and give each road type a height mode:
@@ -20,10 +30,10 @@ The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The vers
   | Westfield | 90 of 579 | 0 |
 
   Roads built, lane connections, lane directions and buildings are unchanged.
-- **CS1's road kind decides what CS2 builds** (#61, #129): a CS1 ground road is never turned into a tunnel or put on pillars. Beyond CS2's wall limits it gets its height from the package's ground (web 0.9.3 walls burn), else it stays at the limit and is listed in the report. Verify counts tunnels and elevated roads by CS1 kind. *In-game check pending.*
+- **CS1's road kind decides what CS2 builds** (#61, #129): a CS1 ground road is never turned into a tunnel or put on pillars. Beyond CS2's wall limits it gets its height from the package's ground (web 0.9.3 walls burn), else it stays at the limit and is listed in the report. Verify counts tunnels and elevated roads by CS1 kind. *(verified in 0.3.4)*
 - **CS1 tunnels stay tunnels** (#58, #124): CS1 tunnels shallower than CS2's minimum tunnel depth are built deeper (the deep end to 12.5 m, the portal to 8.5 m at most), and each one is listed in the report. On a Skibidi crop, 21 tunnel segments that came out as open cuts are now all tunnels.
-- **Walls roads over a dip** (#62): a walls road whose CS1 height leaves the ground line by more than 1.5 m is split there, with a node at its CS1 height. *In-game check pending.*
-- **Lane connections:** an independent check (#60, #126). Each junction arm's direction in CS2 must match CS1's. A junction where an arm doesn't match gets no connections written and is listed in the report. *In-game numbers pending.*
+- **Walls roads over a dip** (#62): a walls road whose CS1 height leaves the ground line by more than 1.5 m is split there, with a node at its CS1 height. *(verified in 0.3.4)*
+- **Lane connections:** an independent check (#60, #126). Each junction arm's direction in CS2 must match CS1's. A junction where an arm doesn't match gets no connections written and is listed in the report. *(verified in 0.3.4)*
 - **Node Controller shifts** (web 0.9.0+, `offNode`): off by default until verified in game (#59); road ends snap to their nodes, as before.
 - **For tests:**
   - op `heights`: the height error per segment;

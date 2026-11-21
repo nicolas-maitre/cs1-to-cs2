@@ -235,13 +235,22 @@ namespace Cs2ImporterMod
 
         // ---------------------------------------------------------------- outside connections
 
-        /// <summary>Import step "connections" (last): plan.outsideConnections → MapPrep oc.create on the imported end nodes.</summary>
+        /// <summary>
+        /// Import step "connections" (last): plan.outsideConnections → MapPrep oc.create on the imported end nodes, then
+        /// the electricity and water-pipe outside connections on imported road nodes (MapPrep oc.utilities, #136).
+        /// </summary>
         public static IEnumerator Connections(Dictionary<string, object> args)
         {
             var plan = (Dictionary<string, object>)MiniJson.Parse(File.ReadAllText((string)args["plan"]));
             var oc = P.Obj(plan, "outsideConnections");
             var list = oc != null && oc.TryGetValue("connections", out var co) ? co as List<object> : null;
-            if (list == null || list.Count == 0) { yield return new Dictionary<string, object> { { "skipped", "no outside connections in the package" } }; yield break; }
+            if (list == null || list.Count == 0)
+            {
+                var u = UtilityConnections();
+                for (int i = 0; i < 30; i++) yield return null;
+                yield return new Dictionary<string, object> { { "skipped", "no outside connections in the package" }, { "utilities", u } };
+                yield break;
+            }
             double ox = P.Num(args, "offsetX", 0), oz = P.Num(args, "offsetZ", 0);
             var conns = new List<object>();
             foreach (var o in list)
@@ -251,6 +260,7 @@ namespace Cs2ImporterMod
             }
             int before = ((List<object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.list" } })).Count;
             var created = (Dictionary<string, object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.create" }, { "connections", conns } });
+            var utilities = UtilityConnections();
             for (int i = 0; i < 30; i++) yield return null;
             var after = (List<object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.list" } });
             int ok = 0, withLanes = 0;
@@ -266,8 +276,29 @@ namespace Cs2ImporterMod
             yield return new Dictionary<string, object>
             {
                 { "items", conns.Count }, { "placed", ok }, { "road", road }, { "train", train }, { "failed", errors.Count }, { "errors", errors },
-                { "before", before }, { "after", after.Count }, { "withLanes", withLanes },
+                { "before", before }, { "after", after.Count }, { "withLanes", withLanes }, { "utilities", utilities },
             };
+        }
+
+        /// <summary>
+        /// Electricity + water-pipe outside connections (#136): Prepare map's clear removes the base map's power line and
+        /// its marker, and base maps have no water-pipe connection, so the city could import neither. Returns
+        /// {electricity, water} = markers created (or the error).
+        /// </summary>
+        static Dictionary<string, object> UtilityConnections()
+        {
+            var r = new Dictionary<string, object>();
+            try
+            {
+                var u = (Dictionary<string, object>)MapPrep.Run(new Dictionary<string, object> { { "op", "oc.utilities" } });
+                foreach (var k in new[] { "electricity", "water" })
+                {
+                    var d = u.TryGetValue(k, out var v) ? v as Dictionary<string, object> : null;
+                    r[k] = d == null ? null : d.TryGetValue("error", out var e) ? e : d.TryGetValue("created", out var c) ? c : null;
+                }
+            }
+            catch (Exception e) { r["error"] = e.Message; }
+            return r;
         }
 
         // ---------------------------------------------------------------- helpers

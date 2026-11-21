@@ -94,6 +94,11 @@ try {
   }
   S.map = map;
   await step('newGame', async () => { const r = await b.call('game.new', { map, name, options: { unlockAll: true, unlimitedMoney: true, unlockMapTiles: true } }, { timeout: 900 }); await b.pause(); return r; });
+  // #138: the plan's driving side, before any road is built (the importer refuses a mismatch)
+  await step('drivingSide', async () => {
+    if (!existsSync(IMPORTER_DLL)) execFileSync('dotnet', ['build', '-c', 'Release', '--nologo', '-v', 'q'], { cwd: join(REPO, 'cs2-importer'), stdio: ['ignore', 'ignore', 'inherit'] });
+    return b.exec(IMPORTER_DLL, { args: { op: 'drivingside', plan: planFile } });
+  });
   await step('surveyBefore', () => mapprep(['survey']));
   await step('clear', () => mapprep(['clear']));
 

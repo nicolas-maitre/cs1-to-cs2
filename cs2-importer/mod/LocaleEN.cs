@@ -70,6 +70,8 @@ namespace Cs2ImporterMod
                 { s.GetOptionDescLocaleID(nameof(Setting.ClearArea)), "Bulldozes the roads already in the package's area (plus 50 m) before building. Roads owned by buildings are kept. Imported roads can't cross existing ones." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.KeepMapTerrain)), "Keep this map's terrain" },
                 { s.GetOptionDescLocaleID(nameof(Setting.KeepMapTerrain)), "Import into a city that wasn't prepared with the package's terrain. Roads then follow this map's ground; only cuts of 4 m or more keep their depth. Off: Import refuses a city whose terrain isn't the package's." },
+                { s.GetOptionLabelLocaleID(nameof(Setting.AllowOtherDrivingSide)), "Import into a city driving on the other side" },
+                { s.GetOptionDescLocaleID(nameof(Setting.AllowOtherDrivingSide)), "Import a package into a city whose traffic drives on the other side of the road than the CS1 city. Roads, one-way streets and lane connections then come out mirrored. Off: Import refuses such a city; start a new city and press Prepare map, which sets the right side." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyZoning)), "Zoning" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyZoning)), "After the roads, paints the CS1 zones onto the new zone blocks." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyTrafficSettings)), "Traffic lights, stops, turn bans, crosswalks" },

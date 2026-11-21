@@ -102,6 +102,36 @@ namespace CoreTests
             Assert.True(!LaneMatch.TurnCheck(new[] { east, southEast }, new[] { east, northEast }, 30, out why) && why == "extra_arm", "the neighbouring arm on the other side: wrong");
             Assert.True(!LaneMatch.TurnCheck(new[] { east, southEast }, new[] { east }, 30, out why) && why == "missing_arm", "one target arm not reached");
             Assert.True(!LaneMatch.TurnCheck(new[] { east }, new double[0][], 30, out why) && why == "none", "nothing written");
+            Assert.True(LaneMatch.TurnCheck(new[] { east, southEast }, new[] { east }, 30, out why, false), "arrows: reaching only some allowed arms is fine");
+        }
+
+        /// <summary>#126, CacaoCity node 17774: an arm that leaves the node at −66° and bends north; CS2's lanes join it a
+        /// few metres out, at −34°. Compared at the node it looks like another arm; compared where the lane ends it matches.</summary>
+        public static void TestTurnCheckCurvedArm()
+        {
+            // arm 28183 relative to the node: (0,0) → (−16.15, 7.04) → (−20.47, 40.35) → (−14.42, 40.35)
+            var arm = new[] { new[] { 0.0, 0.0 }, new[] { -16.15, 7.04 }, new[] { -20.47, 40.35 }, new[] { -14.42, 40.35 } };
+            var p = LaneMatch.TangentNear(arm, arm[0][0], arm[0][1]);
+            Assert.Near(-66, System.Math.Atan2(p[0], p[1]) * 180 / System.Math.PI, 1, "at the node: −66°");
+            // a CS2 lane ending on the arm ~10 m out, leaving along it
+            var q = LaneMatch.TangentNear(arm, -9.5, 7.5);
+            var exit = new[] { q[0], q[1] };
+            string why;
+            Assert.True(LaneMatch.TurnCheckCurves(new[] { arm }, new[] { exit }, new[] { new[] { -9.5, 7.5 } }, 30, out why), "matches the arm where the lane ends");
+            var east = new[] { new[] { 0.0, 0.0 }, new[] { 10.0, 0.0 }, new[] { 20.0, 0.0 }, new[] { 30.0, 0.0 } };
+            Assert.True(!LaneMatch.TurnCheckCurves(new[] { east }, new[] { exit }, new[] { new[] { -9.5, 7.5 } }, 30, out why) && why == "extra_arm", "but not another arm");
+        }
+
+        /// <summary>#126: TM:PE's turn by geometry (node 3163: arms S, SW, W, NW, N, E).</summary>
+        public static void TestCs1Turn()
+        {
+            double[] dir(double compassDeg) { double r = compassDeg * System.Math.PI / 180; return new[] { System.Math.Sin(r), System.Math.Cos(r) }; }
+            var east = dir(91); // a westbound lane comes in from the east arm
+            Assert.Eq(Turn.Left, LaneMatch.Cs1Turn(east, dir(-179)), "westbound into south = left");
+            Assert.Eq(Turn.Straight, LaneMatch.Cs1Turn(east, dir(-85)), "into the west arm = straight");
+            Assert.Eq(Turn.Right, LaneMatch.Cs1Turn(east, dir(-45)), "into the north-west ramp = right (45°)");
+            Assert.Eq(Turn.Right, LaneMatch.Cs1Turn(east, dir(1)), "into the north arm = right");
+            Assert.True(LaneMatch.Cs1Turn(east, dir(95)) == Turn.UTurnLeft || LaneMatch.Cs1Turn(east, dir(95)) == Turn.UTurnRight, "back into its own arm = U-turn");
         }
 }
 }

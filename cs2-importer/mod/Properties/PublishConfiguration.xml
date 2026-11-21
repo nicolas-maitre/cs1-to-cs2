@@ -45,15 +45,15 @@ Known limits:
   <Thumbnail Value="Properties/Thumbnail.png" />
   <Tag Value="Code Mod" />
   <Tag Value="Tools" />
-  <ModVersion Value="0.3.3" />
+  <ModVersion Value="0.3.4" />
   <GameVersion Value="1.*" />
   <!-- Road Builder [BETA] (Paradox Mods 87190) is required. Traffic (80095) is optional: the publish format has no
        optional dependencies, so it is only named in the description. -->
   <Dependency Id="87190" />
   <ChangeLog>
-* Road heights follow CS1: with packages from web tool 0.7.0 and later, the ground is shaped to the roads, and highways and ramps keep their CS1 height with walls or embankments.
-* CS1 ground roads are never turned into tunnels or put on pillars; CS1 tunnels too shallow for CS2 are built deeper so they stay tunnels.
-* Lane connections are only written at junctions whose roads line up with CS1's; the others are left as CS2 builds them and listed in the report.
-* The import report lists tunnels deepened, roads short of their CS1 height, and buildings to place yourself.
+* Import refuses a package meant for the other side of the road; start a new city and press Prepare map (or turn on "Import into a city driving on the other side").
+* Road ends keep the CS1 city's Node Controller shifts.
+* Road heights follow CS1: highways and ramps keep their CS1 height with walls or embankments, and CS1 tunnels stay tunnels.
+* Lane connections are only written at junctions whose roads line up with CS1's.
   </ChangeLog>
 </Publish>
