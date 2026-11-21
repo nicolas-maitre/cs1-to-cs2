@@ -421,3 +421,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - the lane-connection view and arm-check groundwork (#126).
 
      The remaining in-game runs verify these before RC3.
+135. **Node Controller shifts verified in game with off-node ends ON** (Claude; implements #107, ends the hold in #127).
+     - **Results:** 100% of roads built and 0 node failures in Skibidi / CacaoCity / Westfield; identical lane directions; TM:PE lane references matched 541→553 / 670→670 / 217→224; no arm mismatches.
+     - **The user's cases:** the ramp no longer jogs; the highway split's through lanes go from −2.0 m to within +0.6 m.
+     - **Why it works:** CS2 moves a node to roughly the mean of its edges' ends, so the importer finds nodes there, or else through the edges ending at the shifted points. Off-node ends survive save/load.
+     - **Default:** flips to on once worker-3's real-terrain tunnel package run passes with it on.
+     - Node Controller offset, slope and twist stay report-only.
