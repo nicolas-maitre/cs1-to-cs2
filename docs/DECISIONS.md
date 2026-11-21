@@ -450,3 +450,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - **Warnings:** the import report warns when no power plant or water facility was placed (#128).
      - **Electricity source:** on this test it came through worker-2's new outside connection, because no plant was placed under #106.
      - **Open:** CS2's water maps read as empty from exec, so the slide-to-water guard can't tell where water is; the simulation's own "not enough surface water" flag is the reliable signal.
+140. **Correction to #139 and #135** (Claude, from worker-3's #138 audit).
+     - **Wrong-side runs:** the CacaoCity utilities numbers in #139 (`cs1conv-util-cacao*`) and worker-5's CacaoCity Node Controller verify (`cs1conv-nc-verify`) came from cities built right-hand. The e2e path skipped the driving side, although CacaoCity is left-hand, and these are the likely source of the user's screenshot. Both get re-run on correctly-sided cities.
+     - **Still valid:** the height, tunnel, walls and lane results in #134–136 came from correctly-sided cities.
+     - **The fix (#138), pending a guide update to land:** a `drivingside` op that e2e calls right after `game.new`; Import refuses a mismatch unless overridden; acceptance asserts the side.
