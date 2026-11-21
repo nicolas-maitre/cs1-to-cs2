@@ -2,6 +2,29 @@
 
 The CS1 → CS2 converter as a whole. The version is in [`VERSION`](VERSION); the scheme is in [docs/RELEASE.md](docs/RELEASE.md). Each component also keeps its own changelog (for example [cs1-exporter/CHANGELOG.md](cs1-exporter/CHANGELOG.md)), and the release notes combine them.
 
+## Unreleased (release candidate 3 passed, 2026-11-22; proposed 0.3.1)
+
+RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), importer 0.3.4 → proposed 0.4.0, web tool 0.9.3, buildings 0.3.3 → proposed 0.4.0.
+
+**What works now**
+- **Roads at their CS1 heights:** the ground follows zoneable roads; highways and ramps keep their CS1 height with retaining walls or embankments; paths lie on the ground. Each road type's mode can be changed in the web tool. CS1 tunnels stay tunnels.
+- **Roads as in CS1:** vanilla CS2 roads when they match, Road Builder roads otherwise, no invented medians, Node Controller shifts kept, the driving side enforced.
+- **Lane connections and arrows** as in CS1, and they survive a save and reload, like the roads themselves.
+- **Power and water:** electricity and water outside connections at the edge of the imported area, CS1's own power lines and pipes rebuilt, low-voltage power plants linked to the roads. About 99–100 % of homes were supplied in RC3.
+- **Buildings, trees, districts, zoning, bus and tram lines** as in 0.3.0, with a report that names everything left to do by hand.
+
+**Opt-in**
+- Transformer stations next to high-voltage power plants (importer setting).
+- Utility facilities that don't fit may move up to 400 m (web tool notice).
+- Importing into a city that drives on the other side (importer setting).
+- Rail and subway yards inside the converted area (command line only).
+
+**Known limits**
+- **Trains and metros don't run yet** (#99, #133): lines and stations are created, but no train leaves its yard.
+- **Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed** (#106); the report lists each one as "place it yourself".
+- **Power producers away from any road produce nothing** in CS2 (#150); high-voltage plants need a transformer (opt-in).
+- IMT junction fills aren't converted; a few roads lose their traffic upgrade flags on reload (#149).
+
 ## 0.3.0 (2026-11-21, M3: buildings and objects)
 
 - **Exporter 1.2.0:**

@@ -56,6 +56,33 @@ Output goes to `release/<product version>/` (git-ignored):
 
 The buttons are pressed through the Cs2Importer exec library's `op mod`, which calls the same `Actions` methods; there is no other way into the Options page from a script. Results go in [QA.md](QA.md) under "Release acceptance".
 
+## Release candidate 3 (passed, 2026-11-21)
+
+Built from a `git archive` of b71a160 and run through the real mod flow on Corral Riches with 5 minutes of simulation. Details are in [QA.md](QA.md) §11; decisions #151–152.
+
+| | Skibidi 3 km | CacaoCity (left-hand) | Westfield |
+| --- | --- | --- | --- |
+| Roads built | 2035 / 2035 | 684 / 684 | 648 / 648 |
+| Lane directions as in CS1 | 1949 / 1949 | 554 / 554 | 647 / 647 |
+| Turn check (lane connections) | 117 / 117 | 167 / 167 | 81 / 81 |
+| Roads and lane connections changed after save + reload | 0 | 0 | 0 |
+| Homes supplied (electricity / water / sewage) | 99.4 / 99.2 / 99.2 % | 100 / 100 / 100 % | 100 / 100 / 100 % |
+| Buildings placed | 78 / 108 | 26 / 43 | 7 / 13 |
+
+- **Artefacts tested:** product 0.3.0; exporter 1.2.2, importer 0.3.4, web tool 0.9.3, buildings 0.3.3.
+- **Fixed after RC3** (not in the tested build): matcher 1.2.1 (CS1's Water Tower → groundwater pump), the transit library built in acceptance, and the depot fallback of #152.
+- **Known limits:** trains and metros (#99), buildings that overlap a road at their CS1 spot (#106), power producers away from any road (#150). They're in each changelog.
+
+## Before you publish
+
+1. **Versions:** bump each changed component (proposed: importer 0.4.0, buildings 0.4.0, product 0.3.1; exporter 1.2.2 and web tool 0.9.3 unchanged). Replace each changelog's "Unreleased" heading with the version and date. Importer: `Mod.Version`, the csproj `<Version>` and `ModVersion` in `PublishConfiguration.xml`.
+2. **Checks:** `node tools/release/build.mjs --check` passes, and CI is green on the release commit.
+3. **Build:** `node tools/release/build.mjs --npm-ci` from a clean checkout (or a `git archive`), with `local.props`.
+4. **Acceptance:** `node tools/release/acceptance.mjs --skip-build --simulate 300` on Skibidi (the default) and on CacaoCity (`--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/cacao-v2.cs1x`). Every step must report ok, including roads after reload, utility stubs and report completeness. Add the results to [QA.md](QA.md).
+5. **Store texts:** check the Steam Workshop description (`workshop-description.txt`) and the Paradox Mods page (`PublishConfiguration.xml`: description, changelog, version) against `RELEASE-NOTES.md`, including the known limits.
+6. **Web tool:** the GitHub Pages build of `main` shows the same web version as the release.
+7. **Publish** (below), then tag the release commit `v<product version>`.
+
 ## Publishing (by the owner)
 
 **Nothing is uploaded automatically.**

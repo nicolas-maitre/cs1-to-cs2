@@ -2,6 +2,33 @@
 
 The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The version is `Mod.Version` in `mod/Mod.cs` (the `<Version>` in `mod/Cs2ImporterMod.csproj` must match; `node tools/release/build.mjs --check` verifies both).
 
+## Unreleased (release candidate 3, proposed 0.4.0)
+
+Passed RC3 on Skibidi, CacaoCity (left-hand) and Westfield through the real mod flow (docs/QA.md §11).
+
+**New**
+- **Power and water from outside the map.** Prepare map's clearing removed the base map's only power connection, and the maps have no water connection. Import now adds electricity and water outside connections at the edge of the imported roads, each on a short stub of its own (DECISIONS.md #144, #146, #148). A city with no power plant or pump of its own still gets power and water: in RC3, 99.4 % of homes on Skibidi and 100 % on CacaoCity and Westfield were supplied after 5 minutes.
+- **CS1's own power lines and pipes are rebuilt** (#115, #139): off-road power lines as low-voltage lines and pipes as combined small pipes, joined to buildings, roads and each other where CS1 joined them.
+- **Power plants join the grid** (#150): wind turbines and other low-voltage producers get a short line to the nearest road.
+- **Your city is the same after a save and reload** (#147–149):
+  - roads keep their lanes (bus-stop roads get their bus bay at once, not on the next load);
+  - lane connections and arrows survive the reload, with no Traffic mod load failures;
+  - lane arrows follow CS1's geometry.
+- **The import report lists every step**, and names each building it couldn't place, each power plant that needs a transformer, and each depot type left with none (#121, #150, #152).
+
+**Opt-in**
+- **"Add a transformer station next to each imported power plant"** (off by default, #150). CS2 coal, gas and incineration plants only feed the high-voltage grid. CS1 didn't need a transformer, so the importer doesn't invent one unless you turn this on; the report names the plants that need one.
+- **Utility facilities that don't fit can move up to 400 m** (web tool 0.9.2 notice, #128, #130). By default they stay at their CS1 spot.
+- **Rail and subway yards inside the area** (transit decision #14; command-line runs only). By default a yard is placed only where the line's track leaves the converted area (#83).
+
+**Known limits**
+- **Trains and metros don't run yet** (#99, #133). Lines, stations and paths are created, and a yard spawns trains, but they don't leave the yard. Buses and trams run.
+- **Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed** (#106); they're listed as "place it yourself" with both positions. On a 3 km Skibidi crop that's 30 of 108.
+- **Power producers away from any road produce nothing** (#150): CS2 needs the building's own road connection, and no road is invented. They're named in the report.
+- **A pump on dry CS2 land** becomes a groundwater pump where possible, otherwise it's flagged (#139).
+- **IMT junction fills** have no CS2 equivalent.
+- **5 roads lose their traffic upgrade flags on reload** (crosswalk removed, turn forbidden; #149, open).
+
 ## 0.3.4 (2026-11-21)
 
 - **Driving side** (DECISIONS-importer.md #63, DECISIONS.md #138): Import refuses a package for the other side of the road: "This package is for a left-hand city; this city drives on the right. Start a new city and press Prepare map." To import anyway, turn on the new option "Import into a city driving on the other side". For scripts, the new exec op `drivingside` sets a new city's side from the plan.
