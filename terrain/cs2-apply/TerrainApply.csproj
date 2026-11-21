@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Hot-loaded exec library for the CS2 bridge (tools/PROTOCOL.md, "exec"): loads a converted heightmap into the
+    running city and samples terrain heights. Not a mod and not deployed: `dotnet build -c Release`, then
+    terrain/apply.mjs drives it through gamectl.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>Cs1ConvTerrain</AssemblyName>
+    <RootNamespace>Cs1ConvTerrain</RootNamespace>
+    <Nullable>disable</Nullable>
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- every build gets a new assembly version, so exec never runs a stale copy -->
+    <Deterministic>false</Deterministic>
+    <AssemblyVersion>1.0.*</AssemblyVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(CS2Managed)\mscorlib.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\netstandard.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\System.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Game.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Core.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Mathematics.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Entities.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Mathematics.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Unity.Burst.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+</Project>

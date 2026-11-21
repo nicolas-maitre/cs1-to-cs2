@@ -58,3 +58,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 26. **Bridge: `game.new` writes city options only to the in-memory city overrides, never to user settings** (Claude). `save.write` accepts only `cs1conv-*` names.
 27. **M1 test map: Corral Riches, with the plan shifted by (+2000, −4000)** (Claude). No built-in map is flat at its centre.
 28. **CS1 autosave** (Claude, noted): CS1 rewrote its own `AutoSave.crp` while a script had Skibidi.02 loaded. Nothing unique was lost, and the user doesn't mind autosaves being overwritten. Skibidi.02 itself is never saved.
+29. **Terrain: CS2 height = CS1 height** (`SetTerrainProperties(1024, 0)` + `ReplaceHeightmap`, which also works in a running city; Claude).
+    - The 4096² heightmap covers the whole 14 336 m playable area from CS1 data, repeating the edge values outside CS1's map.
+    - The 57 km world map backdrop is also built from CS1 data, so there is no void past the edge.
+    - Verified in game: median 0.013 m against CS1 node heights, and it survives save/reload.
+30. **Terrain: sea level is set just below the lowest point** (a dry map until CS1 water conversion lands in M2), and the whole area is re-snapped so trees follow the new ground (Claude).
+31. **Order: new city → clear the base map's own roads and rails → terrain → road import** (Claude). CS2 doesn't move existing nets when the terrain changes; it builds walls up to them, as with the test map's pre-built highway and rail. So the base map's nets must go first, and outside connections must be rebuilt afterwards.
