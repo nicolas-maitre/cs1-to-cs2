@@ -14,7 +14,7 @@
 //                                        lane-changing and parking rules → report only
 
 import type { Cs1City, Cs1Segment, NetInfo, PackageReportItem, PlanTraffic } from '../types.ts';
-import { driveLanes, inboundLanes, planLaneRef, plural, tally } from './context.ts';
+import { driveLanes, inboundLanes, laneRemovedByMedian, planLaneRef, plural, tally } from './context.ts';
 import type { PlanContext, SectionResult } from './context.ts';
 
 const CAR_TYPES = ['PassengerCar', 'CargoTruck', 'CargoVehicle', 'RoadVehicle'];
@@ -133,10 +133,11 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
   // lane arrows → turn bans when every inbound lane of the segment end is customised
   const arrowsByEnd = new Map<string, { segment: number; node: number; lanes: Set<number>; union: Set<string> }>();
   const laneArrows: PlanTraffic['laneArrows'] = [];
+  let medianArrows = 0;
   for (const a of tm.laneArrows ?? []) {
     if (a.node == null || !inPlanEnd(a.segment, a.node)) continue;
     const ref = planLaneRef(ctx, a.segment, a.laneIndex);
-    if (!ref) continue;
+    if (!ref) { if (laneRemovedByMedian(ctx, a.segment, a.laneIndex)) medianArrows++; continue; }
     laneArrows.push({ node: a.node, lane: ref, arrows: a.arrows.map(x => ARROW[x]).filter(Boolean) });
     const k = `${a.segment}:${a.node}`;
     let e = arrowsByEnd.get(k);
@@ -164,12 +165,17 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
 
   // lane connections
   const laneConnections: PlanTraffic['laneConnections'] = [];
-  let trackConn = 0, unresolved = 0;
+  let trackConn = 0, unresolved = 0, medianConn = 0;
   for (const c of tm.laneConnections ?? []) {
     if (!ctx.planNodes.has(c.node) || !ctx.planSegments.has(c.sourceSegment) || !ctx.planSegments.has(c.targetSegment)) continue;
     if (c.group && c.group !== 'Road') { trackConn++; continue; }
     const from = planLaneRef(ctx, c.sourceSegment, c.sourceLaneIndex), to = planLaneRef(ctx, c.targetSegment, c.targetLaneIndex);
-    if (!from || !to) { unresolved++; continue; }
+    if (!from || !to) {
+      // a lane the Road Builder variant turned into a median (IMT island, user rule #3) is gone in CS2: intended, not an error
+      if (laneRemovedByMedian(ctx, c.sourceSegment, c.sourceLaneIndex) || laneRemovedByMedian(ctx, c.targetSegment, c.targetLaneIndex)) medianConn++;
+      else unresolved++;
+      continue;
+    }
     laneConnections.push({ node: c.node, from, to });
   }
 
@@ -186,6 +192,7 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
   if (laneConnections.length) items.push({ level: 'info', kind: 'traffic', message: `${plural(laneConnections.length, 'lane connection')} → Traffic mod lane connector`, count: laneConnections.length });
   if (crosswalks) items.push({ level: 'info', kind: 'traffic', message: `${plural(crosswalks, 'crosswalk setting')} → CS2 add/remove crosswalk`, count: crosswalks });
   if (trackConn) items.push({ level: 'warning', kind: 'traffic', message: `${plural(trackConn, 'track lane connection')}: not converted`, count: trackConn });
+  if (medianConn || medianArrows) items.push({ level: 'info', kind: 'traffic', message: `${[medianConn && plural(medianConn, 'lane connection'), medianArrows && plural(medianArrows, 'lane arrow')].filter(Boolean).join(' and ')}: lane removed by IMT median (an IMT island covers it, so the Road Builder road has a median there); dropped`, count: medianConn + medianArrows });
   if (unresolved) items.push({ level: 'warning', kind: 'traffic', message: `${plural(unresolved, 'lane connection')} reference lanes that are not driving lanes; skipped`, count: unresolved });
   if (timed) items.push({ level: 'warning', kind: 'traffic', message: `${plural(timed, 'timed traffic light')}: CS2 runs its own light phases; the junctions keep plain traffic lights`, count: timed });
   for (const [k, n] of jr) items.push({ level: 'info', kind: 'traffic', message: `${plural(n, 'segment end')} with TM:PE "${k.replace('Allowed', '')}": no CS2 setting, not converted`, count: n });

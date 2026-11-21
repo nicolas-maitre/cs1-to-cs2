@@ -186,6 +186,8 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const roadSegs = inside.filter(s => targetOf.get(baseName(s.info))?.mode === 'rb' && !isBuildingNet(s));
   const coverage = laneCoverage({ segments: roadSegs, netInfos: infos, imtFillers: city.imtFillers }, info => analyse(info).slots);
   const segOverrides = wholeLaneOverrides(coverage);
+  /** Per plan segment, the CS1 lane positions its Road Builder variant turns into a median (IMT islands): not driving lanes. */
+  const medianLanes = new Map<number, number[]>();
   // TM:PE speed limits and bus-only lanes become RB variants too.
   const lv = trafficLaneVariants(city, infos, roadSegs, opts.traffic !== false);
   items.push(...lv.items);
@@ -248,6 +250,8 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
       }
       const tmSpeed = lv.speed.get(s.id);
       const speed = tmSpeed != null && row.rb && Math.abs(tmSpeed - row.rb.speedKmh) >= 5 ? Math.round(tmSpeed / 5) * 5 : null;
+      const medians = ov ? [...ov].filter(([, k]) => k !== 'bus').map(([p]) => p) : [];
+      if (medians.length) medianLanes.set(s.id, medians);
       const laneSig = overrideSignature(ov);
       const sig = speed != null ? `${laneSig ? laneSig + ',' : ''}speed=${speed}` : laneSig;
       const ck = `${base}|${sig}`;
@@ -302,6 +306,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     city, crop, dx, dz, infos, nodes, segments: new Map(city.segments.map(s => [s.id, s])),
     planSegments: new Set(planSegments.map(s => s.id)), planNodes: usedNodes, reversed: new Set(planSegments.filter(s => s.reversed).map(s => s.id)),
     inCrop: (x, z) => inCrop(crop, x, z),
+    medianLanes,
     t: translator(opts.lang ?? 'en'), lang: opts.lang ?? 'en',
   };
   const zoning = buildZoning(ctx, opts.zoning ?? DEFAULT_ZONING);

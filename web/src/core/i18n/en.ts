@@ -179,7 +179,7 @@ export const EN = {
   'sec.props': 'Props',
   'install.close': 'Close Cities: Skylines II. Road Builder reads its road types only when the game starts.',
   'install.folder': 'Open this folder (paste it into the Explorer address bar, or press Win+R):',
-  'install.copy': 'Copy the files from the package\'s `roadbuilder` folder into it. Existing `*-cs1conv.json` files are replaced; your own roads are not touched.',
+  'install.copy': 'Copy the files from the package\'s `roadbuilder` folder into it. Files with the same name are replaced; the configs of other converted cities can stay, and your own roads are not touched.',
   'install.ps': 'Or download **Road Builder configs only** and run this in PowerShell:',
   'install.unzip': 'No need to unzip: in CS2, Options → **CS1 → CS2 importer** → **Browse…**, choose the downloaded zip; the importer unpacks it under `%LOCALAPPDATA%\\cs1-to-cs2\\packages\\` and checks it.',
   'install.start': 'Start CS2 with Road Builder and the CS1 → CS2 Importer enabled and start a new city. In Options → **CS1 → CS2 importer**, pick the package, then press **Prepare map** and **Import into this city**.',

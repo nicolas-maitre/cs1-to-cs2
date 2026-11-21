@@ -50,7 +50,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | Speed limits, bus-only lanes | Road Builder variants with that speed / bus lane | converts | CS2 has one speed per road. |
 | Traffic lights, all-stop junctions, turn restrictions from lane arrows, crosswalks | Vanilla CS2 junction settings | converts |   |
 | Priority signs | Traffic mod | converts | Needs the Traffic mod in CS2. |
-| Lane arrows, lane connections, U-turn rules | Traffic mod lane connections and U-turn settings | converts, approximated | Applied in right-hand cities, exactly at junctions (Lane connections (Traffic mod), on by default); lane splits where a road continues without a junction stay as CS2 builds them. Not yet in cities that drive on the left. |
+| Lane arrows, lane connections, U-turn rules | Traffic mod lane connections and U-turn settings | converts, approximated | Applied exactly at junctions (Lane connections (Traffic mod), on by default), in right- and left-hand cities; lane splits where a road continues without a junction stay as CS2 builds them. |
 | Timed traffic lights, turn on red, blocked junctions, parking rules | – | listed in the report only | Timed lights become plain traffic lights. |
 
 ## Node Controller

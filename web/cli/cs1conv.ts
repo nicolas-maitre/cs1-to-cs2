@@ -2,13 +2,14 @@
 // cs1conv CLI: the web tool's core for scripts. Node ≥ 24 runs this file directly (type stripping).
 //
 //   node web/cli/cs1conv.ts inspect <file.cs1x|dump.json> [--json]
-//   node web/cli/cs1conv.ts plan <file> --crop <cx>,<cz>,<size> --out <dir> [--overrides <map.json>] [--install-rb] [--keep-other-rb]
+//   node web/cli/cs1conv.ts plan <file> --crop <cx>,<cz>,<size> --out <dir> [--overrides <map.json>] [--install-rb] [--prune]
 //   node web/cli/cs1conv.ts plan <file> --auto-crop <size> --out <dir> ...      (square holding the most road segments)
-//   node web/cli/cs1conv.ts install-rb <package dir> [--keep-other-rb]
+//   node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 //
 // --install-rb copies the package's roadbuilder/*-cs1conv.json into CS2's ModsData\RoadBuilder
-// folder. Only files ending in -cs1conv.json are ever written or removed there; other cs1conv
-// configs not in this package are removed unless --keep-other-rb is given.
+// folder. Only files ending in -cs1conv.json are ever written or removed there. Other cities' cs1conv
+// configs are kept (several converted cities can share the folder); --prune removes the cs1conv configs
+// that are not in this package. --keep-other-rb, the old opt-out, is accepted and does nothing.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -29,11 +30,13 @@ function usage(msg?: string): never {
   if (msg) console.error(`error: ${msg}\n`);
   console.error(`usage:
   node web/cli/cs1conv.ts inspect <file.cs1x|dump.json> [--json]
-  node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb] [--keep-other-rb]
+  node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb [--prune]]
        [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
        [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--lang en|fr] [--metro-depot edge|manual] [--train-depot edge|manual]
        [--no-buildings] [--no-districts] [--no-objects] [--no-surfaces] [--no-terrain] [--no-world]
-  node web/cli/cs1conv.ts install-rb <package dir> [--keep-other-rb]`);
+  node web/cli/cs1conv.ts install-rb <package dir> [--prune]
+
+  install-rb / --install-rb keeps other cities' *-cs1conv.json configs; --prune removes the ones not in this package.`);
   process.exit(2);
 }
 
@@ -44,7 +47,7 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts', 'no-objects', 'no-surfaces', 'no-terrain', 'no-world'];
+      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'prune', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts', 'no-objects', 'no-surfaces', 'no-terrain', 'no-world'];
       if (boolFlags.includes(name)) flags[name] = true;
       else { const v = argv[++i]; if (v == null) usage(`--${name} needs a value`); flags[name] = v; }
     } else pos.push(a);
@@ -71,7 +74,9 @@ function loadCatalogue(flags: Record<string, string | true>): Cs2Catalogue | nul
   return c;
 }
 
+/** CS2's Road Builder configs folder; CS1CONV_RB_FOLDER overrides it (tests, other setups). */
 export function rbFolder(): string {
+  if (process.env.CS1CONV_RB_FOLDER) return process.env.CS1CONV_RB_FOLDER;
   return path.join(os.homedir(), 'AppData', 'LocalLow', 'Colossal Order', 'Cities Skylines II', 'ModsData', 'RoadBuilder');
 }
 
@@ -81,8 +86,11 @@ function cs2Running(): boolean {
   catch { return false; }
 }
 
-/** Copy <pkg>/roadbuilder/*-cs1conv.json into the RB folder. Touches only *-cs1conv.json files. */
-export function installRb(pkgDir: string, opts: { keepOther?: boolean; target?: string } = {}) {
+/**
+ * Copy <pkg>/roadbuilder/*-cs1conv.json into the RB folder. Touches only *-cs1conv.json files. Other cities' cs1conv
+ * configs stay unless `prune` (the old remove-by-default twice broke other packages' runs: docs/DECISIONS.md #95).
+ */
+export function installRb(pkgDir: string, opts: { prune?: boolean; target?: string } = {}) {
   const src = path.join(pkgDir, 'roadbuilder');
   const dst = opts.target ?? rbFolder();
   if (!fs.existsSync(src)) throw new Error(`no roadbuilder folder in ${pkgDir}`);
@@ -96,17 +104,19 @@ export function installRb(pkgDir: string, opts: { keepOther?: boolean; target?: 
     fs.writeFileSync(path.join(dst, f), text);
     written.push(f);
   }
-  if (!opts.keepOther) {
+  if (opts.prune) {
     for (const f of fs.readdirSync(dst)) {
       if (f.endsWith(RB_SUFFIX) && !files.includes(f)) { fs.rmSync(path.join(dst, f)); removed.push(f); }
     }
   }
-  return { target: dst, written, removed };
+  const kept = fs.readdirSync(dst).filter(f => f.endsWith(RB_SUFFIX) && !files.includes(f));
+  return { target: dst, written, removed, kept };
 }
 
 function printInstall(r: ReturnType<typeof installRb>) {
   console.log(`Road Builder folder: ${r.target}`);
-  console.log(`  installed ${r.written.length} cs1conv config(s)${r.removed.length ? `, removed ${r.removed.length} stale cs1conv config(s): ${r.removed.join(', ')}` : ''}`);
+  console.log(`  installed ${r.written.length} cs1conv config(s)${r.removed.length ? `, removed ${r.removed.length} other cs1conv config(s) (--prune): ${r.removed.join(', ')}` : ''}`);
+  if (r.kept.length) console.log(`  kept ${r.kept.length} cs1conv config(s) of other packages (--prune removes them)`);
   if (cs2Running()) console.log('  note: CS2 is running; Road Builder only reads configs at game start, restart CS2 to load them');
 }
 
@@ -205,7 +215,7 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
   if (pkg.plan.requires?.length) console.log(`  CS2 mods needed: ${pkg.plan.requires.join(', ')}`);
   const warn = pkg.report.items.filter(i => i.level === 'warning').length;
   console.log(`  report: ${pkg.report.items.length} items (${warn} warnings)`);
-  if (flags['install-rb']) printInstall(installRb(out, { keepOther: !!flags['keep-other-rb'] }));
+  if (flags['install-rb']) printInstall(installRb(out, { prune: !!flags.prune }));
 }
 
 async function main() {
@@ -214,7 +224,7 @@ async function main() {
   if (!cmd || flags.help) usage();
   if (cmd === 'inspect') { if (!arg) usage('inspect needs a file'); await cmdInspect(arg, !!flags.json); }
   else if (cmd === 'plan') { if (!arg) usage('plan needs a file'); await cmdPlan(arg, flags); }
-  else if (cmd === 'install-rb') { if (!arg) usage('install-rb needs a package dir'); printInstall(installRb(arg, { keepOther: !!flags['keep-other-rb'] })); }
+  else if (cmd === 'install-rb') { if (!arg) usage('install-rb needs a package dir'); printInstall(installRb(arg, { prune: !!flags.prune })); }
   else usage(`unknown command ${cmd}`);
 }
 

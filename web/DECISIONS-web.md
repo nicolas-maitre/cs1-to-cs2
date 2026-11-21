@@ -436,3 +436,21 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - **Limits** use worker-3's wording: exact at junctions; lane splits where a road continues without a junction stay as CS2 builds them, about 8 % of connections. In left-hand cities the step is skipped, and the guide quotes the status text in EN and FR.
     - **Matrix:** "approximated", noted as applied in right-hand cities. Our status set has no separate "applied (right-hand cities)", so the restriction is in the notes.
     - **FAQ and README:** follow the same wording. "Experimental" is gone everywhere.
+
+82. **Bicycle-only lanes are no longer driving lanes in the plan's lane references** (docs/DECISIONS.md #96, worker-3's finding). `driveLanes()` skips lanes whose only vehicle type is Bicycle, so `ordinal` and `count` match the CS2 Road Builder roads, which have no car lane for bikes. A TM:PE reference to a bike lane resolves to nothing. On CacaoCity: Medium Road Bicycle 6 → 4 driving lanes, Large Road Bicycle 8 → 6. Covered by a unit test.
+83. **The guide drops the left-hand limit:** lane connections now apply in left-hand cities too (importer 0.3.1, #94). It says that Prepare map sets the driving side from the CS1 city, and that roads, one-ways and lane connections follow it.
+
+84. **Lane references count the lanes the CS2 road really has** (extends 82). Besides bicycle-only lanes, the lanes a segment's Road Builder variant turns into a median (an IMT island over the whole lane) are no longer driving lanes in that segment's `ordinal` / `count`. `buildPackage` passes `medianLanes` per segment to the traffic builder.
+    - **Measured:** each reference's `count` against the car / bus / tram lanes of its Road Builder road. CacaoCity went from 212 mismatches of 764 (the same 212 worker-3 found in game) to 22 fixed by the bike rule and 190 by the median rule, leaving 0. Skibidi and Westfield also have 0.
+    - **Dropped rules:** the 13 lane connections and 9 lane arrows that pointed at lanes now medians have no CS2 lane; they are left out and reported.
+    - **Package for worker-3:** `%LOCALAPPDATA%\cs1-to-cs2\packages\cacao-v2-web-0.5.2`.
+85. **`install-rb` keeps other cities' configs by default** (docs/DECISIONS.md #95).
+    - `--prune` removes the `*-cs1conv.json` configs not in this package; `--keep-other-rb` is accepted as a no-op.
+    - The output lists what was kept. `CS1CONV_RB_FOLDER` overrides the target, so the CLI test never touches the real folder.
+    - The UI install text and the guide say other cities' configs can stay. Version 0.5.2.
+
+86. **IMT-median variants stay as they are; lane references follow them** (coordinator decision on worker-3's question; user rule #3).
+    - **References:** a lane covered by an IMT island is a median in the Road Builder road, so the plan's references number the variant's car lanes. The covered lane is out and the ordinals shift; this works the same on reversed segments.
+    - **Dropped references:** those starting or ending on a removed lane are dropped, and the report says so in its own info line ("lane removed by IMT median"). They are not counted with the warning "reference lanes that are not driving lanes".
+    - **Tests:** a 3 + 3 road with a covered lane on a normal segment and on a reversed one, through `buildPackage` with real IMT fills.
+    - **CacaoCity:** 0 count mismatches; 13 connections and 9 arrows dropped and reported. Package at `%LOCALAPPDATA%\cs1-to-cs2\packages\cacao-v2-web-0.5.2`.

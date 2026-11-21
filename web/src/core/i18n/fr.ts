@@ -181,7 +181,7 @@ export const FR: Record<MessageKey, string> = {
   'sec.props': 'Décorations',
   'install.close': 'Fermez Cities: Skylines II. Road Builder ne lit ses types de route qu\'au lancement du jeu.',
   'install.folder': 'Ouvrez ce dossier (collez-le dans la barre d\'adresse de l\'Explorateur, ou appuyez sur Win+R) :',
-  'install.copy': 'Copiez-y les fichiers du dossier `roadbuilder` du paquet. Les fichiers `*-cs1conv.json` existants sont remplacés ; vos propres routes ne sont pas touchées.',
+  'install.copy': 'Copiez-y les fichiers du dossier `roadbuilder` du paquet. Les fichiers de même nom sont remplacés ; les configurations d\'autres villes converties peuvent rester, et vos propres routes ne sont pas touchées.',
   'install.ps': 'Ou téléchargez **Configurations Road Builder seules** et lancez ceci dans PowerShell :',
   'install.unzip': 'Inutile de décompresser : dans CS2, Options → **CS1 → CS2 importer** → **Parcourir…**, choisissez le zip téléchargé ; l\'importeur le décompresse sous `%LOCALAPPDATA%\\cs1-to-cs2\\packages\\` et le vérifie.',
   'install.start': 'Lancez CS2 avec Road Builder et le CS1 → CS2 Importer activés et commencez une nouvelle ville. Dans Options → **CS1 → CS2 importer**, choisissez le paquet, puis cliquez sur **Préparer la carte** et **Importer dans cette ville**.',

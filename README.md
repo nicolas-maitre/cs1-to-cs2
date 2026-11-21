@@ -28,8 +28,7 @@ The plan columns say whether the web tool writes a feature into the import packa
 | Zoning (NA or EU theme) | yes | yes: Importer mod (**Zoning**) |
 | TM:PE traffic lights, all-way stops, turn bans, crosswalks | yes | yes: Importer mod (**Traffic lights, stops, turn bans, crosswalks**) |
 | TM:PE priority signs | yes | yes: Importer mod with the Traffic mod (**Priority signs**) |
-| TM:PE lane arrows and lane connections | yes | experimental: Importer mod with the Traffic mod (**Lane connections (Traffic mod)**, off by default) |
-| TM:PE U-turn rules | yes | not applied yet (listed in the import report) |
+| TM:PE lane arrows, lane connections and U-turn rules | yes | yes: Importer mod with the Traffic mod (**Lane connections (Traffic mod)**, on by default), exact at junctions, in right- and left-hand cities |
 | Transit lines with stops and colours, default depots | yes | yes: Importer mod (**Transit lines**); metro and train lines need their stations |
 | Service buildings, stations, parks, landmarks | yes (matched to CS2 buildings, with a fallback per type) | yes: Importer mod (**Buildings, trees, districts**) and the `buildings/` script |
 | Districts and policies | yes | yes: Importer mod (**Buildings, trees, districts**) |

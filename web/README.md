@@ -59,15 +59,15 @@ CLI (from the repo root):
 
 ```powershell
 node web/cli/cs1conv.ts inspect <file.cs1x> [--json]
-node web/cli/cs1conv.ts plan <file.cs1x> --crop <cx>,<cz>,<size> --out <dir> [--overrides map.json] [--install-rb] [--keep-other-rb]
+node web/cli/cs1conv.ts plan <file.cs1x> --crop <cx>,<cz>,<size> --out <dir> [--overrides map.json] [--install-rb [--prune]]
 node web/cli/cs1conv.ts plan <file.cs1x> --auto-crop 3000 --out <dir> [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low]
      [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--no-zoning] [--no-traffic] [--no-transit] [--no-water] [--no-buildings] [--no-districts]
      [--no-objects] [--no-surfaces] [--no-terrain] [--no-world] [--lang en|fr]
-node web/cli/cs1conv.ts install-rb <package dir>
+node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 ```
 
 - **`--auto-crop <size>`** centres the square on the 250 m grid position that fully contains the most road segments.
-- **`--install-rb`** copies the package's `roadbuilder/*-cs1conv.json` into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`. It removes other `*-cs1conv.json` files there unless `--keep-other-rb` is given, and never touches any other file.
+- **`--install-rb`** copies the package's `roadbuilder/*-cs1conv.json` into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`. It keeps the `*-cs1conv.json` configs of other converted cities, so several packages can share the folder; `--prune` removes the `*-cs1conv.json` files that aren't in this package (`--keep-other-rb`, the old opt-out, is accepted and does nothing). `CS1CONV_RB_FOLDER` points it at another folder. It never touches any other file.
 - **`--overrides`** (road types) is a JSON object keyed by ground NetInfo name. Values are `{"mode":"vanilla","type":"RoadPrefab","name":"Large Road"}`, `{"mode":"rb"}`, `{"mode":"skip"}` or `{"mode":"auto"}`.
 - **`--asset-overrides`** (buildings) is a JSON object keyed by CS1 building type name, with a CS2 building prefab name or `"skip"` as value.
 - **`--fallback`** sets what the importer does for every building type that doesn't fit at its CS1 spot: `nearby` (free land within 400 m), `anywhere` (anywhere along the imported roads in the crop) or `skip`. Without it, lots over 400 CS2 cells get `anywhere` and the rest `nearby`. **`--fallback-by-type`** is a JSON object keyed by CS1 building type name with one of those values.

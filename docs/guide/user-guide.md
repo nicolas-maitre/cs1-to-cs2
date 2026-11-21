@@ -65,7 +65,7 @@ Enable **Road Builder** and the **CS1 → CS2 Importer**. **Traffic** is optiona
 
 Start CS2 and open Options → **CS1 → CS2 importer** (tab **Import**). Press **Browse…** and choose the downloaded zip: the importer unpacks it under `%LOCALAPPDATA%\cs1-to-cs2\packages\`, shows "Unpacked <zip> to <folder>." and checks it. **Open packages folder** shows that folder in Explorer.
 
-Road Builder reads its road types only when the game starts, so install them now: press **Install Road Builder configs**, confirm, wait for "Copied N Road Builder configs", then **restart the game**. (Or, with CS2 closed, copy the files from the package's `roadbuilder` folder into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`.)
+Road Builder reads its road types only when the game starts, so install them now: press **Install Road Builder configs**, confirm, wait for "Copied N Road Builder configs", then **restart the game**. (Or, with CS2 closed, copy the files from the package's `roadbuilder` folder into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`; the configs of other converted cities can stay there.)
 
 ## 8. Start a new city
 
@@ -99,7 +99,7 @@ To undo, press **Remove imported** and confirm: it deletes the roads, buildings,
 
 Read the web tool's **Report** tab (or `report.json`) and the import summary for what needs a hand:
 
-Lane connections, lane arrows and U-turn rules apply at junctions; lane splits where a road continues into another without a junction stay as CS2 builds them (about 8 % of connections in our tests). In a city that drives on the left they aren't applied yet: the status says "Lane connections skipped: not applied yet in cities that drive on the left". About 7 % of the zone cells find no CS2 zone block, because CS2 blocks are shallower. Metro and train lines need their stations from the buildings step; a metro or train line whose track stays inside the square gets no yard: place one yourself (the import report names the line). Where two CS1 roads leave a junction at a very shallow angle, CS2 merges their first metres into one road and splits them a little further on, connected as in CS1. A few overlapping CS1 bits that CS2 can't fit (for example a road a few metres from a parallel road) are left out and listed in the report.
+Lane connections, lane arrows and U-turn rules apply at junctions; lane splits where a road continues into another without a junction stay as CS2 builds them (about 8 % of connections in our tests). In a city that drives on the left, **Prepare map** sets the driving side from the CS1 city; roads, one-ways and lane connections follow it. About 7 % of the zone cells find no CS2 zone block, because CS2 blocks are shallower. Metro and train lines need their stations from the buildings step; a metro or train line whose track stays inside the square gets no yard: place one yourself (the import report names the line). Where two CS1 roads leave a junction at a very shallow angle, CS2 merges their first metres into one road and splits them a little further on, connected as in CS1. A few overlapping CS1 bits that CS2 can't fit (for example a road a few metres from a parallel road) are left out and listed in the report.
 
 ## Privacy
 

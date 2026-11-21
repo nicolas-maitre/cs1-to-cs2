@@ -13,7 +13,7 @@ import { buildPackage, packageFiles } from '../src/core/plan.ts';
 import { conversionSummary, sectionCheck } from '../src/core/summary.ts';
 import { syntheticCity } from '../src/core/synthetic.ts';
 import type { Cs1City, NetInfo } from '../src/core/types.ts';
-import { city, lane, node, straight } from './fixtures.ts';
+import { city, fill, lane, laneZ, node, rect, straight } from './fixtures.ts';
 
 // A four-lane two-way road: car lanes −4.5, −1.5 (backward) and 1.5, 4.5 (forward), sidewalks ±7.
 const ROAD: NetInfo = {
@@ -348,6 +348,82 @@ describe('empty sections', () => {
     const ctx = ctxOf(c);
     expect(buildTransit(ctx).summary).toMatchObject({ status: 'none', summary: 'the city has no transport lines' });
     expect(buildZoning(ctx, DEFAULT_ZONING).summary).toMatchObject({ status: 'none', summary: 'the city has no zoned areas' });
+  });
+});
+
+describe('lane references', () => {
+  it('leave bicycle-only lanes out of ordinal and count (Road Builder roads have no car lane for them)', () => {
+    const BIKE_ROAD: NetInfo = {
+      name: 'Bike Road', ai: 'RoadAI', service: 'Road', parent: null, fields: { m_halfWidth: 10, m_pavementWidth: 3 },
+      lanes: [lane(-5, 2, 'Vehicle', 'Bicycle', 'Backward'), lane(-1.5, 3, 'Vehicle', 'Car', 'Backward'), lane(1.5, 3, 'Vehicle', 'Car', 'Forward'), lane(5, 2, 'Vehicle', 'Bicycle', 'Forward')],
+    };
+    const c = city({ netInfos: [BIKE_ROAD], nodes: [node(1, -100, 0), node(2, 100, 0)], segments: [straight(1, 'Bike Road', -100, 100, 0, false, 1, 2)] });
+    const ctx = ctxOf(c);
+    expect(planLaneRef(ctx, 1, 2)).toMatchObject({ ordinal: 1, count: 2, offset: 1.5, dir: 'forward' });
+    expect(planLaneRef(ctx, 1, 3)).toBeNull(); // a bike lane has no CS2 counterpart
+  });
+
+  it('leave lanes that the Road Builder variant turned into a median (IMT island) out of ordinal and count', () => {
+    const c = cross();
+    const ctx = { ...ctxOf(c), medianLanes: new Map([[1, [-1.5]]]) };
+    const lanes = c.netInfos[0].lanes.map((l, i) => ({ i, pos: Number(l.fields.m_position), drive: /Vehicle/.test(String(l.fields.m_laneType)) })).filter(l => l.drive);
+    const right = lanes.find(l => l.pos === 1.5)!, left = lanes.find(l => l.pos === -1.5)!;
+    const base = planLaneRef(ctxOf(c), 1, right.i)!;
+    expect(planLaneRef(ctx, 1, right.i)).toMatchObject({ ordinal: base.ordinal - 1, count: base.count - 1 }); // the median sat left of it
+    expect(planLaneRef(ctx, 1, left.i)).toBeNull(); // the median has no CS2 lane
+  });
+});
+
+describe('lane references on IMT-median variants (user rule #3: the covered lane becomes a median)', () => {
+  // 3 + 3 car lanes at ±1.5 / ±4.5 / ±7.5 (lane indices 0–5), like CS1's Large Road
+  const SIX: NetInfo = {
+    name: 'Six Lane', ai: 'RoadAI', service: 'Road', parent: null, fields: { m_halfWidth: 12, m_pavementWidth: 3 },
+    lanes: [lane(-7.5, 3, 'Vehicle', 'Car', 'Backward'), lane(-4.5, 3, 'Vehicle', 'Car', 'Backward'), lane(-1.5, 3, 'Vehicle', 'Car', 'Backward'),
+      lane(1.5, 3, 'Vehicle', 'Car', 'Forward'), lane(4.5, 3, 'Vehicle', 'Car', 'Forward'), lane(7.5, 3, 'Vehicle', 'Car', 'Forward'),
+      lane(-10.5, 3, 'Pedestrian', 'None', 'Both'), lane(10.5, 3, 'Pedestrian', 'None', 'Both')],
+  };
+  // segment 1 runs node 1 → 2 along +X; segment 2 is drawn node 3 → 2 with Invert set (reversed in the plan).
+  // An IMT pavement island covers lane +4.5 of segment 1, a grass one lane −1.5 of segment 2 (world z = −p).
+  const c = city({
+    netInfos: [SIX],
+    nodes: [node(1, 0, 0), node(2, 60, 0, { flags: 'Created, Junction', segments: [1, 2] }), node(3, 120, 0)],
+    segments: [straight(1, 'Six Lane', 0, 60, 0, false, 1, 2), straight(2, 'Six Lane', 120, 60, 0, true, 3, 2)],
+    imtFillers: [
+      fill('Segment', 1, 'FillerPavement', [136, 136, 136, 224], rect(6, 54, ...laneZ(0, 4.5, 3))),
+      fill('Segment', 2, 'FillerGrass', [80, 120, 60, 255], rect(66, 114, ...laneZ(0, -1.5, 3))),
+    ],
+    tmpe: {
+      laneConnections: [
+        { sourceSegment: 1, sourceLaneIndex: 5, targetSegment: 2, targetLaneIndex: 3, node: 2, group: 'Road' }, // both lanes kept
+        { sourceSegment: 1, sourceLaneIndex: 4, targetSegment: 2, targetLaneIndex: 4, node: 2, group: 'Road' }, // from the covered lane
+        { sourceSegment: 1, sourceLaneIndex: 3, targetSegment: 2, targetLaneIndex: 2, node: 2, group: 'Road' }, // to the covered lane
+      ],
+      laneArrows: [{ segment: 1, laneIndex: 4, node: 2, arrows: ['Forward'] }, { segment: 1, laneIndex: 5, node: 2, arrows: ['Forward'] }],
+    },
+  });
+  const pkg = buildPackage(c, { crop: CROP });
+  const t = pkg.plan.traffic!;
+
+  it('generates the median variants', () => {
+    const imtOf = (id: number) => pkg.plan.prefabs[pkg.plan.segments.find(s => s.id === id)!.prefab].imt;
+    expect(imtOf(1)).toMatch(/4\.5=median/);
+    expect(imtOf(2)).toMatch(/-1\.5=median/);
+    expect(pkg.plan.segments.find(s => s.id === 2)!.reversed).toBe(true);
+  });
+
+  it('numbers the lanes as the variant has them: covered lane out, ordinals shifted', () => {
+    expect(t.laneConnections).toHaveLength(1);
+    const { from, to } = t.laneConnections[0];
+    expect(from).toMatchObject({ segment: 1, ordinal: 4, count: 5, offset: 7.5, cs1LaneIndex: 5 }); // was 5 of 6
+    expect(to).toMatchObject({ segment: 2, ordinal: 2, count: 5, offset: 1.5, cs1LaneIndex: 3 }); // reversed segment: −1.5 gone, +1.5 shifts down
+    expect(t.laneArrows.map(a => a.lane.cs1LaneIndex)).toEqual([5]);
+  });
+
+  it('drops references to the removed lanes and reports them as such', () => {
+    const item = pkg.report.items.find(i => /lane removed by IMT median/.test(i.message))!;
+    expect(item).toMatchObject({ kind: 'traffic', level: 'info', count: 3 }); // 2 connections + 1 arrow
+    expect(item.message).toMatch(/^2 lane connections and 1 lane arrow: lane removed by IMT median/);
+    expect(pkg.report.items.some(i => /reference lanes that are not driving lanes/.test(i.message))).toBe(false);
   });
 });
 
