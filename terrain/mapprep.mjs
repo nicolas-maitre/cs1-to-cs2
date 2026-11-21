@@ -28,7 +28,9 @@ import { DLL } from './apply.mjs';
 import { deriveConnections } from './lib/connections.mjs';
 import { readZip } from './lib/zip.mjs';
 import { convertWater, depthCheckpoints, regionSources } from './lib/water.mjs';
-import { loadCs1xTerrain } from './lib/heightmap.mjs';
+import { loadCs1xTerrain, convert, CS2 } from './lib/heightmap.mjs';
+import { adjustWaterSources } from './lib/conform.mjs';
+import { loadCs1xWater } from './convert.mjs';
 
 const TYPE = 'Cs1ConvTerrain.MapPrep';
 
@@ -99,6 +101,12 @@ export async function mapprep(argv) {
         const rs = regionSources(wj.depth, zip.get(wj.depth.file).read(), loadCs1xTerrain(readFileSync(a.cs1x)), plan, wj.seaLevel, w.sources);
         w.sources.push(...rs.sources);
         out.regions = { added: rs.sources.length, byKind: rs.regions.reduce((t, r) => (t[r.kind] = (t[r.kind] || 0) + 1, t), {}), sources: rs.sources };
+      }
+      // road-conformed / walls-burned terrain (schema §2): sources whose pixel a burn changed keep their absolute level
+      if ((plan.terrain?.roadConformed || plan.terrain?.wallsBurned) && !a.noConform) {
+        const cs1 = loadCs1xTerrain(readFileSync(a.cs1x));
+        const c = convert(cs1.meta, cs1.heights, plan.crop, { transform: plan.transform, plan, water: loadCs1xWater(readFileSync(a.cs1x)) });
+        if (c.natural) out.conformAdjusted = adjustWaterSources(w.sources, c.natural, c.burned, CS2.resolution, CS2.size);
       }
       out.set = await op(bridge, { op: 'water.set', seaLevel: w.seaLevel, clear: true, sources: w.sources }, { phase: 'tool' });
       out.reset = await op(bridge, { op: 'water.reset', mode: 'sea' });

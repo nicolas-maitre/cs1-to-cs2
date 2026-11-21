@@ -101,6 +101,6 @@ export function main(argv) {
   return 0;
 }
 
-if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` || process.argv[1]?.endsWith('convert.mjs')) {
+if (process.argv[1] && (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` || process.argv[1].endsWith('convert.mjs'))) {
   try { process.exitCode = main(process.argv.slice(2)); } catch (e) { console.error('error: ' + e.message); process.exitCode = 1; }
 }
