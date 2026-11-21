@@ -545,3 +545,9 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
       - Cacao: 39 ends on 33, up to 10 m;
       - Westfield: 18 ends on 17, up to 6 m.
     - **Still to check:** worker-5 is confirming the in-game behaviour, and the importer side of `offNode` is theirs.
+97. **Slopes and portals are not burned** (docs/DECISIONS.md #124, worker-3; web 0.9.1).
+    - **The rule now:** the conform burn takes `ground` segments only, and puts no junction disc at nodes that a `tunnel` or `slope` segment touches.
+    - **Why:** CS2 builds a tunnel composition only when the course is at least 2 × `m_ElevationLimit` (8 m) below the terrain. Burning the open-cut approach lowered the ground at the portal to the road, so the first tunnel segment came out as an open cut.
+    - **Importer side (worker-3):** it builds `conform` slopes as `walls` and deepens CS1 tunnels too shallow for CS2.
+    - **Height modes:** they stay per type. There's no per-kind default in the plan: a slope of a `conform` type simply isn't burned, and the importer treats it as walls, which is what was asked.
+    - **Mirroring:** worker-4 mirrors it in `terrain/lib`. Schema §2 has the updated rule.

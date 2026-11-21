@@ -503,10 +503,10 @@ The ground follows the road instead of the road following the ground. Agreed by 
 - The world map is not burned.
 
 **What burns:**
-- Segments with `kind` `ground` or `slope` whose prefab's `heightMode` is `conform`, in plan order (ascending `id`).
+- Segments with `kind` `ground` whose prefab's `heightMode` is `conform`, in plan order (ascending `id`). Since web 0.9.1 (docs/DECISIONS.md #124) `slope` segments don't burn: a burned tunnel approach cuts the ground at the portal down to the road, and CS2 builds a tunnel only with at least 2 × `m_ElevationLimit` (8 m for roads and tracks) of ground above it, so the first tunnel segment came out as an open cut. CS2's lowered composition clips the terrain along the descent itself.
 - **Safety:** a segment is skipped and counted (`conform.skipped`) when any of its sample points `P_k` is more than 30 m above or below `H0` at the pixel containing it, i.e. `col = clamp(floor((x + size/2) / cell), 0, N − 1)` and the same for `row`.
-- After the segments, one junction disc per node used by at least one burned segment, in ascending node `id`.
-- Elevated, bridge and tunnel segments don't burn, and nor do `follow` and `walls` segments.
+- After the segments, one junction disc per node used by at least one burned segment, in ascending node `id`, except nodes that any `tunnel` or `slope` segment of the plan touches (#124: the ground around portals stays natural).
+- Elevated, bridge, tunnel and slope segments don't burn, and nor do `follow` and `walls` segments. The importer builds a `conform` slope like `walls` (CS1 height in the natural terrain).
 
 **Per segment:**
 1. **Bezier.** The plan bezier `a, b, c, d` (`x, y, z`; `y` is the absolute CS1 height).

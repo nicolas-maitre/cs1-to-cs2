@@ -77,13 +77,17 @@ const SAMPLE = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'Ap
 describe.skipIf(!fs.existsSync(SAMPLE))('Skibidi: same terrain, water and connections as the terrain scripts', () => {
   it('road-conformed heightmap identical to terrain/convert.mjs --plan', async () => {
     const city = await readCityFile(new Uint8Array(fs.readFileSync(SAMPLE)), { hash: false });
-    const pkg = buildPackage(city, { crop: { centerX: 3750, centerZ: -1250, size: 3000 } });
+    // worker-3's tunnel crop: 7 conform slopes and tunnel portals, so the #124 rules (no slope burn, no disc at
+    // tunnel/slope nodes) are exercised too
+    const pkg = buildPackage(city, { crop: { centerX: 1000, centerZ: -100, size: 3200 } });
+    expect(pkg.plan.segments.filter(s => s.kind === 'slope' && pkg.plan.prefabs[s.prefab].heightMode === 'conform').length).toBeGreaterThan(0);
     const planFile = path.join(tmp, 'skibidi-plan.json');
     fs.writeFileSync(planFile, JSON.stringify(pkg.plan));
     const files = completePackage(city, pkg, { world: false });
     const t = theirsWithPlan(SAMPLE, planFile, 'skibidi-conform');
     const ours = JSON.parse(new TextDecoder().decode(files.find(f => f.path === 'terrain/terrain.json')!.data));
     expect(ours.roadConformed).toBe(true);
+    expect(ours.conform).toMatchObject({ segments: 786, nodes: 659, pixelsChanged: 108500 });
     expect(t.meta.conform).toEqual(ours.conform);
     expect(Buffer.from(files.find(f => f.path === 'terrain/heightmap.r16')!.data).equals(t.heightmap)).toBe(true);
   }, 120_000);

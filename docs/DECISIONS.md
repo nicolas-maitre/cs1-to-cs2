@@ -390,3 +390,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      | p90 | 3.05 m | 0.95 m | 5.0 m |
      | Segments over 2 m | 408 | 44 | 90 |
 124. **CS1 tunnels must come out as CS2 tunnels** (user report, 2026-11-21). CS1 tunnels can be shallower than CS2's minimum tunnel depth, so CS2 built open cuttings with walls instead. Tunnel segments are placed at least at CS2's minimum tunnel depth, with the portals kept at their CS1 positions and the slopes adjusted. Every deepened tunnel is reported with its CS1 depth, the CS2 depth used and the difference, and the street above stays at ground level.
+125. **Conformed terrain no longer cuts the ground above tunnel approaches** (web 0.9.1 + `terrain/lib`, byte-identical; Claude, for #124). CS2 needs at least 8 m of ground above a road tunnel. Burning the approach had removed it, so the first tunnel segment became an open cut. Now:
+     - only `ground` segments burn; slope segments don't;
+     - nodes touched by a tunnel or slope segment get no junction disc;
+     - the importer builds conform-mode slopes as walls and deepens CS1 tunnels that are too shallow for CS2 (importer side, with worker-3).

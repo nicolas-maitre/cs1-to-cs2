@@ -70,7 +70,8 @@ export function conformTerrain(grid, N, size, { segments = [], nodes = [], prefa
   });
 
   // contributions in processing order: burned segments by id, then discs by node id
-  const segs = segments.filter(s => (s.kind === 'ground' || s.kind === 'slope') && prefabs[s.prefab]?.heightMode === 'conform').sort((a, b) => a.id - b.id);
+  // ground segments only: slopes (tunnel approaches) keep the natural terrain so the portal stays a tunnel (#124)
+  const segs = segments.filter(s => s.kind === 'ground' && prefabs[s.prefab]?.heightMode === 'conform').sort((a, b) => a.id - b.id);
   const items = [], burnedAtNode = new Map(), skippedIds = [];
   let burned = 0, skipped = 0;
   for (const s of segs) {
@@ -85,6 +86,8 @@ export function conformTerrain(grid, N, size, { segments = [], nodes = [], prefa
   }
   if (!burned) return null;
   const nodeById = new Map(nodes.map(n => [n.id, n]));
+  // no junction disc where a tunnel or slope segment meets the node (#124): keep the ground around portals natural
+  for (const s of segments) if (s.kind === 'tunnel' || s.kind === 'slope') { burnedAtNode.delete(s.start); burnedAtNode.delete(s.end); }
   let discs = 0;
   for (const nid of [...burnedAtNode.keys()].sort((a, b) => a - b)) {
     const n = nodeById.get(nid);

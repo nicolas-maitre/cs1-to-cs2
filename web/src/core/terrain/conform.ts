@@ -118,7 +118,9 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
   });
 
   const segs = input.segments
-    .filter(s => (s.kind === 'ground' || s.kind === 'slope') && input.prefabs[s.prefab]?.heightMode === 'conform')
+    // only ground segments (#124): a burned slope (tunnel approach) would cut the ground at the portal down to the
+    // road, and CS2 then builds the first tunnel segment as an open cut (it needs ≥ 8 m of ground above a road tunnel)
+    .filter(s => s.kind === 'ground' && input.prefabs[s.prefab]?.heightMode === 'conform')
     .sort((a, b) => a.id - b.id);
   const burnedAtNode = new Map<number, number>(); // node → largest halfWidth of burned segments there
   let burned = 0, skipped = 0;
@@ -154,6 +156,9 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
     }
   }
   const nodeById = new Map(input.nodes.map(n => [n.id, n]));
+  // no junction disc where a tunnel or slope segment meets the node (#124): keep the ground around portals natural
+  const tunnelNodes = new Set(input.segments.filter(s => s.kind === 'tunnel' || s.kind === 'slope').flatMap(s => [s.start, s.end]));
+  for (const nid of tunnelNodes) burnedAtNode.delete(nid);
   let discs = 0;
   for (const nid of [...burnedAtNode.keys()].sort((a, b) => a - b)) {
     const n = nodeById.get(nid);

@@ -39,14 +39,14 @@ test('the road profile follows the CS1 bezier height', () => {
   assert.ok(near(g[at(50.75, 1.75)], 95 + 150.75 / 200 * 10));
 });
 
-test('only conform ground/slope segments burn; nothing burnt → null, grid untouched', () => {
+test('only conform ground segments burn (not slopes, #124); nothing burnt → null, grid untouched', () => {
   const b = line(-100, 105, 0, 100, 105, 0);
-  for (const extra of [{ prefab: 'wall' }, { prefab: 'path' }, { kind: 'elevated' }, { kind: 'tunnel' }, { kind: 'bridge' }]) {
+  for (const extra of [{ prefab: 'wall' }, { prefab: 'path' }, { kind: 'elevated' }, { kind: 'tunnel' }, { kind: 'bridge' }, { kind: 'slope' }]) {
     const g = flat(100);
     assert.equal(burn(g, [seg(1, b, extra)]), null);
     assert.equal(g[at(0, 1.75)], 100);
   }
-  assert.ok(burn(flat(100), [seg(1, b, { kind: 'slope' })]));
+  assert.ok(burn(flat(100), [seg(1, b)]));
 });
 
 test('a core beats any blend; blends of two roads at different heights meet without a step', () => {
@@ -99,4 +99,12 @@ test('adjustWaterSources: a source on a changed pixel keeps its absolute level (
   const src = [{ x: 10.25, z: 20.25, height: 10 }, { x: -10.25, z: 20.25, height: 10 }, { x: 50.75, z: 50.75, height: 5 }];
   assert.equal(adjustWaterSources(src, natural, burned, N, SIZE), 2);
   assert.deepEqual(src.map(s => s.height), [6, 10, 1]);
+});
+
+test('no junction disc on a node shared with a tunnel or slope segment (#124)', () => {
+  const nodes = [{ id: 10, x: 0, z: 0, y: 103 }, { id: 11, x: 100, z: 0, y: 103 }];
+  const g = flat(100);
+  const st = burn(g, [seg(1, line(0, 103, 0, 100, 103, 0)), seg(2, line(-100, 90, 0, 0, 103, 0), { kind: 'slope', start: 99, end: 10 })], nodes);
+  assert.equal(st.nodes, 1);                 // only node 11
+  // node 10's disc would coincide with segment 1's own rounded end, so the disc count is the check
 });

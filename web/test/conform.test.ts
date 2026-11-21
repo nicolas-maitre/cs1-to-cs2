@@ -44,15 +44,23 @@ describe('road-conformed terrain (schema §2, #110–113)', () => {
     expect(at(g, 50, 0)).toBeGreaterThan(106); expect(at(g, 50, 0)).toBeLessThan(109);
   });
 
-  it('leaves follow / walls prefabs and elevated, bridge and tunnel segments alone', () => {
+  it('leaves follow / walls prefabs and elevated, bridge, slope and tunnel segments alone (#124)', () => {
     for (const inp of [input([seg(1, 105, 105, 0)], { prefabs: prefabs('follow') }), input([seg(1, 105, 105, 0)], { prefabs: prefabs('walls') }),
-      input([seg(1, 105, 105, 0, { kind: 'elevated' })]), input([seg(1, 105, 105, 0, { kind: 'bridge' })]), input([seg(1, 95, 95, 0, { kind: 'tunnel' })])]) {
+      input([seg(1, 105, 105, 0, { kind: 'elevated' })]), input([seg(1, 105, 105, 0, { kind: 'bridge' })]), input([seg(1, 95, 95, 0, { kind: 'tunnel' })]),
+      input([seg(1, 97, 97, 0, { kind: 'slope' })])]) { // a burned tunnel approach would leave no ground above the portal
       const g = flat();
       expect(conformTerrain(g, N, SIZE, inp)).toBeNull();
       expect(g.every(h => h === 100)).toBe(true);
     }
-    const g = flat();
-    expect(conformTerrain(g, N, SIZE, input([seg(1, 97, 97, 0, { kind: 'slope' })]))!.segments).toBe(1); // tunnel approach burns
+  });
+
+  it('puts no junction disc where a slope or tunnel meets the node (#124)', () => {
+    const ground = seg(1, 100, 100, 0, { end: 5 });
+    const slope: PlanSegment = { ...seg(2, 100, 92, 0, { kind: 'slope' }), start: 5, end: 6, bezier: [[100, 100, 0], [100, 97, 33], [100, 95, 67], [100, 92, 100]] };
+    const nodes = [{ id: 5, x: 100, z: 0, y: 100, heightAboveTerrain: 0, elevation: 0 }];
+    const s = conformTerrain(flat(), N, SIZE, input([ground, slope], { nodes }))!;
+    expect(s).toMatchObject({ segments: 1, nodes: 0 });
+    expect(conformTerrain(flat(), N, SIZE, input([ground], { nodes }))!.nodes).toBe(1);
   });
 
   it('skips and counts a segment more than 30 m from the natural terrain', () => {
