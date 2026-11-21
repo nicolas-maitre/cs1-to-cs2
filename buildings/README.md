@@ -209,3 +209,26 @@ That save is worker-3's re-import with embanked roads snapped to the terrain.
 | IMT junction fills | Not converted (see decisions 20–21). |
 
 Screenshots are in `.gamectl/buildings/objects-20261121-053717/`.
+
+## 7. Using the steps from a mod: `src/Steps.cs`
+
+The same C# runs inside the CS2 importer mod (Cs2ImporterMod) as import steps, after the roads. It isn't a separate DLL; the mod compiles it:
+
+```xml
+<!-- cs2-importer/mod/Cs2ImporterMod.csproj -->
+<Compile Include="..\..\buildings\src\**\*.cs" Link="buildings\%(RecursiveDir)%(Filename)%(Extension)" />
+```
+
+```csharp
+// Mod.OnLoad
+Cs2Buildings.Steps.RegisterAll(ImportSteps.Register);   // registers buildings, objects, districts, surfaces (in that order)
+```
+
+| Arg | Meaning |
+| --- | --- |
+| `plan` | `cs1conv-plan.json` or its folder; `buildings` comes from the plan, `objects` / `districts` / `surfaces` from the plan or from `cs1conv-objects.json` next to it |
+| `offsetX`, `offsetZ` | the importer's offset |
+| `buildingsPlan`, `objectsPlan` | explicit files instead of the plan's sections |
+| `buildings.<option>`, `objects.<option>`, … | passed to that step without the prefix, e.g. `buildings.fallback`, `buildings.nearbyRadius`, `objects.batchSize` |
+
+Each step yields once per frame batch and ends with a result dictionary (the same as the exec op's JSON); a missing section gives `{ "skipped": "…" }`. No extra references are needed beyond what the mod already has. Versions: `Steps.Version` (see [docs/RELEASE.md](../docs/RELEASE.md)).

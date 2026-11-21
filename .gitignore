@@ -30,3 +30,6 @@ screenshots/
 !tools/gamectl/bin/
 # Claude Code runtime state
 .claude/scheduled_tasks.lock
+
+# release builds (tools/release/build.mjs)
+/release/

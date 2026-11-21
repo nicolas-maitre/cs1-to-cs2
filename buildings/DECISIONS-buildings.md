@@ -123,3 +123,26 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
 
 22. **Embankments:** fixed by worker-3 in the importer (embankments now snap to the terrain). In its re-imported save, 94 of 96 placed buildings connect, against 71 of 77 before.
     - **The 2 left:** one faces a trench wall (`Lowered`). One was moved onto a road side with no flags, probably a ramp; the fallback can't tell such sides apart yet.
+
+## Release engineering
+
+23. **The buildings C# is compiled into the importer mod, not shipped as a second DLL.** `src/Steps.cs` is the facade: `Steps.RegisterAll(Cs2ImporterMod.ImportSteps.Register)` registers four steps (`buildings`, `objects`, `districts`, `surfaces`), each an `IEnumerator` over the import's args.
+    - **Why:** one mod to install, and the existing routines already yield per frame and have no exec-only dependencies (MiniJson is compiled by the mod too). The mod csproj already references every assembly they use.
+    - **Recipe (sent to worker-3, who owns `cs2-importer/`):** one `<Compile Include="..\..\buildings\src\**\*.cs" Link="buildings\…" />` line and one `RegisterAll` call in `Mod.OnLoad`. Checked with a scratch project that compiles `buildings/src` plus a stub `ImportSteps` with the same signature.
+    - **Args:** `plan`, `offsetX/Z`, `buildingsPlan` / `objectsPlan` overrides, and step-prefixed options (`buildings.fallback` → `fallback` for that step). A missing section returns `{skipped: …}` instead of failing the import.
+    - **Names and policies** keep the EntityManager versions (#21): they work both from exec and inside a system.
+
+24. **Versioning: a product version plus a SemVer per component.** `VERSION` = `0.<milestone>.<patch>` (0.3.0 = M3). Components: cs1-exporter 1.2.0, cs2-importer 0.2.0, web 0.4.0, buildings 0.3.0.
+    - **Why:** users install the components separately (CS1 Workshop, CS2 mod, a website), so each needs a version that moves only when it changes; the product version names the release and the combined notes.
+    - **One source of truth per component;** any duplicate declaration (exporter changelog heading, importer csproj `<Version>`) must match. `build.mjs --check` enforces it, in CI and before every release build.
+
+25. **Release build: `node tools/release/build.mjs` → `release/<product version>/` (git-ignored).** Mod folders, one zip per component named `<id>-<componentVersion>.zip`, `versions.json`, `SHA256SUMS.txt`, `RELEASE-NOTES.md` built from the root and component changelogs.
+    - **Mods are deployed into `release/`** through the projects' own deploy properties (`CS1ModsDir`, `CS2LocalMods`), so a release build never touches the installed games.
+    - **Zips are written by a small built-in writer** (deflate, UTF-8 names) to avoid a dependency and a PowerShell call; tested by round-trip and by `Expand-Archive`.
+    - **The web zip** is `web/dist` as built, which includes worker-2's `cs2-catalogue.json`.
+    - **npm on Windows** runs through `cmd.exe /d /s /c` (Node's DEP0190 warns about `shell: true` with an argument list).
+
+26. **CI: one Windows job** (Node 22, .NET 8, npm cache) that runs the version check, the web tool (test, typecheck, build), gamectl, terrain, buildings and release tests, and the CS2 importer core tests.
+    - **Why Windows:** gamectl's tests and helpers resolve Windows paths; a Linux runner would test something else.
+    - **Not built in CI:** anything compiled against the games' DLLs (both mods, both bridges, `buildings/src`, terrain's CS2 apply). The DLLs aren't on runners and can't be redistributed. The workflow says so in its header.
+    - **Checked locally** with the same commands and an empty `LOCALAPPDATA`: all green (web 67 + 2 skipped, gamectl 46, terrain 13, buildings 23, release 3, CoreTests 20).

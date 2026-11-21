@@ -1,0 +1,72 @@
+# Game-free checks on every push and pull request. One job, Windows: the project and its tools are Windows-only
+# (game paths, gamectl's process helpers, tests that resolve Windows paths), so a Linux runner would test something else.
+#
+# Not run here, on purpose: anything that compiles against the games' own DLLs (cs1-exporter, cs2-importer and its mod,
+# tools/cs1-bridge, tools/cs2-bridge, buildings, terrain/cs2-apply). The games aren't installed on CI runners and their
+# DLLs can't be redistributed; build those locally with `node tools/release/build.mjs` (needs local.props).
+# Tests that use local sample files (%LOCALAPPDATA%\cs1-to-cs2\samples) skip themselves when the files are absent.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Versions agree (VERSION + every component)
+        run: node tools/release/build.mjs --check
+
+      - name: Web tool – install
+        working-directory: web
+        run: npm ci
+
+      - name: Web tool – tests
+        working-directory: web
+        run: npm test
+
+      - name: Web tool – typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Web tool – build
+        working-directory: web
+        run: npm run build
+
+      - name: gamectl – tests (fake bridge, no game)
+        working-directory: tools/gamectl
+        run: npm test
+
+      - name: Terrain – tests
+        working-directory: terrain
+        run: npm test
+
+      - name: Buildings – matcher, plan and objects tests
+        run: node --test buildings/match/*.test.mjs buildings/lib/*.test.mjs
+
+      - name: Release script – tests
+        run: node --test tools/release/build.test.mjs
+
+      - name: CS2 importer core – tests (no game DLLs)
+        run: dotnet run --project cs2-importer/tests/CoreTests
