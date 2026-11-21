@@ -12,17 +12,22 @@
 //   oc.list     {}                                outside connections in the city
 //   oc.create   {connections:[{x,z,type:"road"|"train",prefab?}], radius=3}  [phase tool]
 //                                                 one marker per connection, owned by the real node at (x,z)
-//   oc.utilities {kinds=["electricity","water"], mode="stub"|"node", stubLength=24 (pipes +8), perSide=1, minNodes=8, max=8,
+//   oc.utilities {kinds=["electricity","water"], mode="stub"|"node", stubLength=24 (pipes +8),
+//                 start="setback"|"nomerge"|"attach"|"free", setback=3, perSide=1, minNodes=8, max=8,
 //                 nodes?:[{x,z}], radius=3, dryRun=false}                       [phase + pump tool; a coroutine]
 //                                                 electricity and water-pipe outside connections (docs/DECISIONS.md #136)
 //                                                 at imported road nodes near the edge of the road network, one per road
 //                                                 island (+ one per side for the largest). Roads carry low voltage and
 //                                                 pipes, and the game's graph systems link a marker's owner node to the
 //                                                 trade source/sink. mode "stub": a short "Low-voltage Line" / "Combined
-//                                                 Small Pipe" from the road node outward, the marker on its far end node
-//                                                 (a node nothing else touches). mode "node": the marker on the road node
+//                                                 Small Pipe" outward, starting 3 m from the road node on the road surface
+//                                                 along one of its road edges (DisableMerge; CS2 local-connects it, no node at the
+//                                                 junction), the marker on its far end node (a node nothing else touches). mode "node": the marker on the road node
 //                                                 itself, which SubObjectSystem deletes as soon as the node is updated
 //                                                 (a building growing beside it): kept for diagnostics only.
+//   oc.stubcheck {}                               each utility marker's stub: does its road end split a junction (a real
+//                                                 endpoint of a road edge next to another one) and does it touch a road
+//   nodes.near  {points:[[x,z]], radius=3}        diagnostics: nodes near each point with their edges
 //   node.info   {ids:["index:version",…]}         diagnostics: does each entity still exist, its edges and sub-objects
 //   water.reset {mode:"sea"|"empty"="sea"}        WaterSystem.ResetToSealevel() / Reset() (the editor's buttons)
 //   counts      {}                                vehicles (cars, trains, personal, delivery, cargo) and outside-connection
@@ -61,6 +66,8 @@ namespace Cs1ConvTerrain
                 case "oc.create": return OcCreate(a);
                 case "oc.utilities": return OcUtilities(a);
                 case "node.info": return NodeInfo(a);
+                case "oc.stubcheck": return StubCheck();
+                case "nodes.near": return NodesNear(a);
                 case "water.reset": return WaterReset(Str(a, "mode", "sea"));
                 case "water.set": return WaterSet(a);
                 case "water.sample": return WaterSample(a);
@@ -317,6 +324,12 @@ namespace Cs1ConvTerrain
         {
             string mode = Str(a, "mode", "stub");
             float stubLength = F(a, "stubLength", 24f);
+            // how a stub starts at its road node (#144 follow-up: a free end at the node's spot split junctions)
+            // default "setback": 3 m out from the road node toward the stub (still on the road surface, so CS2 local-connects
+            // it to the road edge) with DisableMerge, so no second node sits at the junction's spot. The other modes are
+            // for diagnostics; by real endpoints none of them splits a junction, but they leave a node at the spot.
+            string startMode = Str(a, "start", "setback");
+            float setback = F(a, "setback", 3f);
             var pending = new List<UtilityPick>();
             var kinds = new List<string>();
             if (a.TryGetValue("kinds", out var ko) && ko is IList<object> kl) foreach (var k in kl) kinds.Add(k.ToString());
@@ -499,21 +512,49 @@ namespace Cs1ConvTerrain
                     var p = pending[i];
                     if (!stubPrefabs.TryGetValue(p.Kind, out var sp)) { p.Item["error"] = "no stub net prefab"; continue; }
                     float el = stubElevation[p.Kind];
-                    var a0 = new float3(p.Pos.x, TerrainUtils.SampleHeight(ref heights, p.Pos) + el, p.Pos.z);
+                    var startXZ = p.Pos;
+                    if (startMode == "setback")
+                    {
+                        // 3 m along one of the node's own road edges (the one heading most toward the stub): always on the
+                        // road surface, so CS2 local-connects the stub to that edge's low-voltage line / pipes
+                        var want = math.normalizesafe(p.End.xz - p.Pos.xz);
+                        float bestDot = -2f; float3 bestPt = p.Pos;
+                        var cb = Em.GetBuffer<ConnectedEdge>(p.Node, true);
+                        for (int j = 0; j < cb.Length; j++)
+                        {
+                            var e = cb[j].m_Edge;
+                            if (!IsReal(e) || !Em.HasComponent<Curve>(e) || !Em.HasComponent<RoadData>(Em.GetComponentData<PrefabRef>(e).m_Prefab)) continue;
+                            var eg = Em.GetComponentData<Edge>(e);
+                            if (eg.m_Start != p.Node && eg.m_End != p.Node) continue;
+                            var cv = Em.GetComponentData<Curve>(e);
+                            float tt = math.clamp(setback / math.max(cv.m_Length, 0.01f), 0f, 0.5f);
+                            var pt = MathUtils.Position(cv.m_Bezier, eg.m_Start == p.Node ? tt : 1f - tt);
+                            float dot = math.dot(math.normalizesafe(pt.xz - p.Pos.xz), want);
+                            if (dot > bestDot) { bestDot = dot; bestPt = pt; }
+                        }
+                        startXZ = bestPt;
+                    }
+                    var a0 = new float3(startXZ.x, TerrainUtils.SampleHeight(ref heights, startXZ) + el, startXZ.z);
                     var d0 = new float3(p.End.x, TerrainUtils.SampleHeight(ref heights, p.End) + el, p.End.z);
                     var curve = NetUtils.StraightCurve(a0, d0);
+                    var startFlags = CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight;
+                    if (startMode == "nomerge" || startMode == "setback") startFlags |= CoursePosFlags.DisableMerge;
+                    var startPos = CoursePoint(curve, a0, 0f, el, startFlags);
+                    // attach: the course starts on the road node itself (its real position), so no second node is made there
+                    if (startMode == "attach") { startPos.m_Entity = p.Node; startPos.m_Position = p.Pos; }
                     var def = Em.CreateEntity();
                     Em.AddComponentData(def, new CreationDefinition { m_Prefab = sp, m_RandomSeed = rnd.NextInt(), m_Flags = CreationFlags.Permanent | CreationFlags.SubElevation });
                     Em.AddComponentData(def, new NetCourse
                     {
                         m_Curve = curve,
-                        m_StartPosition = CoursePoint(curve, a0, 0f, el, CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight),
+                        m_StartPosition = startPos,
                         m_EndPosition = CoursePoint(curve, d0, 1f, el, CoursePosFlags.IsLast | CoursePosFlags.IsLeft | CoursePosFlags.IsRight),
                         m_Elevation = new float2(el), m_Length = MathUtils.Length(curve), m_FixedIndex = -1,
                     });
                     Em.AddComponent<Updated>(def);
                     Em.AddComponent<Deleted>(def);
                     p.Item["stub"] = PrefabName(sp);
+                    p.Item["start"] = startMode;
                     p.Item["stubEnd"] = V(d0);
                     p.End = d0;
                     pending[i] = p;
@@ -599,6 +640,131 @@ namespace Cs1ConvTerrain
             });
             Em.AddComponent<Updated>(def);
             Em.AddComponent<Deleted>(def);
+        }
+
+        /// <summary>
+        /// Diagnostics for the oc.utilities stubs: for each utility marker, its stub edge and the stub's road end. Lists every
+        /// node within 3 m of that end with its edges, endpoint or middle; a split junction is the stub end being a real
+        /// endpoint of a road edge while another node there is one too.
+        /// </summary>
+        static object StubCheck()
+        {
+            var res = new List<object>();
+            var nodes = Query(new[] { ComponentType.ReadOnly<Game.Net.Node>(), ComponentType.ReadOnly<ConnectedEdge>() });
+            var markers = new List<Entity>();
+            foreach (var ct in new[] { ComponentType.ReadOnly<Game.Objects.ElectricityOutsideConnection>(), ComponentType.ReadOnly<Game.Objects.WaterPipeOutsideConnection>() })
+            { var q = Query(new[] { ct, ComponentType.ReadOnly<Owner>() }); foreach (var m in q) markers.Add(m); q.Dispose(); }
+            int split = 0, ok = 0, unlinked = 0;
+            foreach (var m in markers)
+            {
+                var item = new Dictionary<string, object> { { "marker", PrefabName(Em.GetComponentData<PrefabRef>(m).m_Prefab) } };
+                res.Add(item);
+                var owner = Em.GetComponentData<Owner>(m).m_Owner;
+                if (!IsReal(owner) || !Em.HasBuffer<ConnectedEdge>(owner)) { item["error"] = "owner is not a net node"; continue; }
+                var ce = Em.GetBuffer<ConnectedEdge>(owner, true);
+                item["ownerEdges"] = ce.Length;
+                if (ce.Length != 1) { item["note"] = "owner node has " + ce.Length + " edges (not a stub end)"; continue; }
+                var stub = ce[0].m_Edge;
+                var stubPrefab = Em.GetComponentData<PrefabRef>(stub).m_Prefab;
+                // follow the stub's chain (CS2 may cut a stub into several edges where it crosses something) to the first
+                // node that touches a road edge; at most 8 hops
+                Entity roadEnd = Entity.Null, cur = owner, via = Entity.Null;
+                int hops = 0;
+                for (; hops < 8; hops++)
+                {
+                    Entity next = Entity.Null, nextEdge = Entity.Null;
+                    var cb = Em.GetBuffer<ConnectedEdge>(cur, true);
+                    for (int i = 0; i < cb.Length; i++)
+                    {
+                        var e = cb[i].m_Edge;
+                        if (e == via || Em.GetComponentData<PrefabRef>(e).m_Prefab != stubPrefab) continue;
+                        var eg = Em.GetComponentData<Edge>(e);
+                        if (eg.m_Start != cur && eg.m_End != cur) continue;
+                        nextEdge = e; next = eg.m_Start == cur ? eg.m_End : eg.m_Start; break;
+                    }
+                    if (next == Entity.Null) break;
+                    via = nextEdge; cur = next;
+                    bool touches = false;
+                    var nb = Em.GetBuffer<ConnectedEdge>(cur, true);
+                    for (int i = 0; i < nb.Length; i++) if (Em.HasComponent<RoadData>(Em.GetComponentData<PrefabRef>(nb[i].m_Edge).m_Prefab)) touches = true;
+                    if (touches) { roadEnd = cur; break; }
+                }
+                if (roadEnd == Entity.Null) roadEnd = cur; // the chain's last node: reported as not touching a road
+                item["stubEdges"] = hops + 1;
+                var p = Em.GetComponentData<Game.Net.Node>(roadEnd).m_Position;
+                item["stub"] = PrefabName(Em.GetComponentData<PrefabRef>(stub).m_Prefab);
+                item["roadEnd"] = V(p);
+                var near = new List<object>();
+                // A road edge's real endpoints are Edge.m_Start / m_End. A node merely lists a road edge in ConnectedEdge when it
+                // is connected to the edge's middle (how CS2 local-connects a line or pipe to a road): that's no split.
+                // Split = the stub's road end is a real endpoint of a road edge AND another node within 3 m is too (one
+                // junction cut into two nodes).
+                int endpointNodes = 0;
+                bool stubEndIsRoadEndpoint = false;
+                foreach (var n in nodes)
+                {
+                    if (Em.HasComponent<Owner>(n)) continue;
+                    var np = Em.GetComponentData<Game.Net.Node>(n).m_Position;
+                    if (math.distance(np.xz, p.xz) > 3f) continue;
+                    var edges = new List<object>();
+                    int roadEndpoint = 0, roadMiddle = 0;
+                    var buf = Em.GetBuffer<ConnectedEdge>(n, true);
+                    for (int i = 0; i < buf.Length; i++)
+                    {
+                        var e = buf[i].m_Edge;
+                        var pr = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                        bool isRoad = Em.HasComponent<RoadData>(pr);
+                        var eg = Em.GetComponentData<Edge>(e);
+                        bool endpoint = eg.m_Start == n || eg.m_End == n;
+                        if (isRoad) { if (endpoint) roadEndpoint++; else roadMiddle++; }
+                        edges.Add((isRoad ? "road" : PrefabName(pr)) + (endpoint ? "" : " (middle)"));
+                    }
+                    if (roadEndpoint > 0) { endpointNodes++; if (n == roadEnd) stubEndIsRoadEndpoint = true; }
+                    near.Add(new Dictionary<string, object> { { "id", Id(n) }, { "isStubEnd", n == roadEnd }, { "distance", math.distance(np.xz, p.xz) }, { "dy", np.y - p.y }, { "edges", edges } });
+                }
+                item["nodesWithin3m"] = near;
+                bool bad = stubEndIsRoadEndpoint && endpointNodes > 1;
+                item["roadEndpointNodesWithin3m"] = endpointNodes;
+                item["stubEndIsRoadEndpoint"] = stubEndIsRoadEndpoint;
+                // the stub reaches the road's utility lines when its road end touches a road edge (endpoint or middle)
+                bool linked = false;
+                var rb = Em.GetBuffer<ConnectedEdge>(roadEnd, true);
+                for (int i = 0; i < rb.Length; i++) if (Em.HasComponent<RoadData>(Em.GetComponentData<PrefabRef>(rb[i].m_Edge).m_Prefab)) linked = true;
+                item["stubTouchesRoad"] = linked;
+                if (!linked) unlinked++;
+                item["split"] = bad;
+                if (bad) split++; else ok++;
+            }
+            nodes.Dispose();
+            return new Dictionary<string, object> { { "markers", markers.Count }, { "split", split }, { "ok", ok }, { "notTouchingRoad", unlinked }, { "stubs", res } };
+        }
+
+        /// <summary>Diagnostics: top-level nodes within `radius` of each point, with their edges (id + prefab).</summary>
+        static object NodesNear(Dictionary<string, object> a)
+        {
+            float radius = F(a, "radius", 3f);
+            var res = new List<object>();
+            var nodes = Query(new[] { ComponentType.ReadOnly<Game.Net.Node>(), ComponentType.ReadOnly<ConnectedEdge>() });
+            if (a.TryGetValue("points", out var po) && po is IList<object> pts)
+                foreach (var pt in pts)
+                {
+                    var xz = pt as IList<object>;
+                    var p = new float2(Convert.ToSingle(xz[0]), Convert.ToSingle(xz[1]));
+                    var near = new List<object>();
+                    foreach (var n in nodes)
+                    {
+                        if (Em.HasComponent<Owner>(n)) continue;
+                        var np = Em.GetComponentData<Game.Net.Node>(n).m_Position;
+                        if (math.distance(np.xz, p) > radius) continue;
+                        var edges = new List<object>();
+                        var buf = Em.GetBuffer<ConnectedEdge>(n, true);
+                        for (int i = 0; i < buf.Length; i++) edges.Add(Id(buf[i].m_Edge) + " " + PrefabName(Em.GetComponentData<PrefabRef>(buf[i].m_Edge).m_Prefab));
+                        near.Add(new Dictionary<string, object> { { "id", Id(n) }, { "y", np.y }, { "distance", math.distance(np.xz, p) }, { "edges", edges } });
+                    }
+                    res.Add(new Dictionary<string, object> { { "x", p.x }, { "z", p.y }, { "nodes", near } });
+                }
+            nodes.Dispose();
+            return new Dictionary<string, object> { { "points", res } };
         }
 
         /// <summary>Diagnostics: does each entity ("index:version") still exist, and what is it (node, edges, sub-objects).</summary>

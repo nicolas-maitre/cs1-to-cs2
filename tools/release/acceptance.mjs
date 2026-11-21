@@ -11,7 +11,8 @@
 // 6. restart    start CS2 again, new city on a flat map, paused
 // 7. check      Options → package folder, "Clear the area" on, press Check; then "Prepare map" (terrain, water) and 20 s to settle
 // 8. import     press "Import into this city", wait for the mod to finish
-// 9. verify     lane directions (op "lanedirs" vs the export's CS1 lanes: tools/release/lanedirs-compare.mjs), simulate
+// 9. verify     report completeness (every registered and enabled step has an entry), heights and tunnels (op heights,
+//               CS1 tunnel count), utility stubs (terrain op oc.stubcheck, step utility-stubs), lane directions (op "lanedirs" vs the export's CS1 lanes: tools/release/lanedirs-compare.mjs), simulate
 //               (--simulate s), public-transport vehicles by kind (transit exec library, read-only), utilities supply
 //               (tools/qa, read-only), screenshots, the mod's
 //               import report, save as cs1conv-acceptance-<date>, quit, release the lock
@@ -27,6 +28,7 @@ import { connect, start, stop, status } from '../gamectl/lib/index.js';
 import { REPO, LOCAL_DIR, waitAndTakeLock, releaseLock, planShots } from '../../cs2-importer/lib/driver.mjs';
 import { checkVersions } from './build.mjs';
 import { buildQa, measureUtilities, summariseUtilities } from '../qa/lib/utilities.mjs';
+import { DLL as TERRAIN_DLL } from '../../terrain/apply.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : d; };
@@ -99,7 +101,7 @@ try {
   const rel = path.join(REPO, 'release', v.product);
 
   if (!flag('skip-build')) await step('build', () => node([path.join(REPO, 'tools', 'release', 'build.mjs')], { timeout: 900e3 }).split('\n').slice(-3).join('\n'));
-  await step('build-exec-lib', () => execFileSync('dotnet', ['build', path.join(REPO, 'cs2-importer', 'Cs2Importer.csproj'), '-c', 'Release', '-nologo', '-v', 'q'], { encoding: 'utf8' }).slice(-300));
+  await step('build-exec-lib', () => ['cs2-importer/Cs2Importer.csproj', 'terrain/cs2-apply/TerrainApply.csproj'].map((p) => execFileSync('dotnet', ['build', path.join(REPO, p), '-c', 'Release', '-nologo', '-v', 'q'], { encoding: 'utf8' }).slice(-200)).join(' | '));
 
   await step('package', () => {
     const pkg = path.join(runDir, 'package');
@@ -174,6 +176,49 @@ try {
     }
     return { status: r.StatusText, progress_seen: r.progress_seen, reportPath: r.LastReportPath, report: report && Object.fromEntries(Object.entries(report).map(([k, x]) => [k, JSON.stringify(x).slice(0, 1500)])) };
   });
+  // Report completeness: every step this launch of the mod registered (its log's "import step registered: X" lines:
+  // buildings, objects, districts, surfaces, utilities, powerhook, transit, …) and every built-in step the Options above
+  // enable must have an entry in the import report. A missing one means that step never ran (coordinator, RC3).
+  await step('report-complete', async () => {
+    const report = fs.existsSync(path.join(runDir, 'import-report.json')) ? JSON.parse(fs.readFileSync(path.join(runDir, 'import-report.json'), 'utf8')) : null;
+    if (!report) throw new Error('no import report');
+    const modLog = path.join(os.homedir(), 'AppData', 'LocalLow', 'Colossal Order', 'Cities Skylines II', 'Logs', 'Cs2ImporterMod.log');
+    if (fs.existsSync(modLog)) fs.copyFileSync(modLog, path.join(runDir, 'Cs2ImporterMod.log')); // this game session's log (rewritten at every start)
+    const registered = fs.existsSync(modLog) ? [...fs.readFileSync(modLog, 'utf8').matchAll(/import step registered: (\S+)/g)].map((m) => m[1]) : [];
+    if (!registered.length) throw new Error(`no "import step registered" lines in ${modLog}`);
+    // built-in steps with every Apply* option on (the check step sets them all): Actions.Import
+    const builtIn = ['import', 'traffic', 'trafficmod', 'lanes', 'zoning', 'connections', 'settle', 'lanesrepair'];
+    const expected = [...new Set([...builtIn, ...registered])];
+    const missing = expected.filter((k) => !(k in report));
+    const res = { expected, registered, present: Object.keys(report), missing };
+    if (missing.length) throw new Error(`import report lacks ${missing.length} step(s): ${missing.join(', ')} (${JSON.stringify(res).slice(0, 1200)})`);
+    return res;
+  }).catch(() => {});
+  // Heights and tunnels (RC3): the importer's op "heights" finds a CS2 road for every plan segment the import built (its
+  // "missing" equals the import's failures), and every CS1 tunnel segment was built as a tunnel.
+  await step('heights-tunnels', async () => {
+    const h = await b.exec(LIB, { args: { op: 'heights', plan: path.join(S.package, 'cs1conv-plan.json'), out: path.join(runDir, 'heights.json') }, timeout: 900 });
+    const report = JSON.parse(fs.readFileSync(path.join(runDir, 'import-report.json'), 'utf8'));
+    const imp = report.import ?? {};
+    const res = { segments: h.segments, missing: h.missing, importFailed: imp.segments_failed, tunnelPlanned: imp.tunnel_planned, cs1TunnelsBuilt: imp.cs1_tunnel_segments_built, tunnelBuilt: imp.tunnel_built };
+    const bad = [];
+    if (h.missing > (imp.segments_failed ?? 0)) bad.push(`heights: ${h.missing} plan segments without a CS2 road, the import failed ${imp.segments_failed ?? 0}`);
+    if (imp.tunnel_planned != null && imp.cs1_tunnel_segments_built !== imp.tunnel_planned) bad.push(`tunnels: ${imp.cs1_tunnel_segments_built} of ${imp.tunnel_planned} CS1 tunnel segments built as tunnels`);
+    if (bad.length) throw new Error(bad.join('; ') + ` (${JSON.stringify(res)})`);
+    return res;
+  }).catch(() => {});
+  // Utility outside connections (worker-2, docs/DECISIONS.md #136/#144): every stub the import's Outside connections step
+  // built must leave its road junction whole (by real edge endpoints, #148) and carry its marker. MapPrep oc.stubcheck,
+  // read-only. A split, or no electricity / water outside connection, fails the step; stubs not touching a road are listed.
+  await step('utility-stubs', async () => {
+    if (!fs.existsSync(TERRAIN_DLL)) throw new Error('terrain exec library not built: dotnet build -c Release terrain/cs2-apply');
+    const r = await b.exec(TERRAIN_DLL, { type: 'Cs1ConvTerrain.MapPrep', args: { op: 'oc.stubcheck' }, timeout: 300 });
+    fs.writeFileSync(path.join(runDir, 'stubcheck.json'), JSON.stringify(r, null, 1));
+    const res = { markers: r.markers, split: r.split, ok: r.ok, notTouchingRoad: r.notTouchingRoad };
+    if (r.split > 0) throw new Error(`${r.split} utility stub(s) split a road junction: ${JSON.stringify((r.stubs ?? []).filter((x) => x.split).slice(0, 3)).slice(0, 1500)}`);
+    if (!r.markers) throw new Error('no electricity or water outside connection after the import');
+    return res;
+  }).catch(() => {});
   // One-way and asymmetric roads must run the way they did in CS1 (left-hand cities included): dump every plan
   // segment's CS2 car-lane directions (importer op "lanedirs") and compare them with the export's CS1 lanes.
   await step('lane-directions', async () => {

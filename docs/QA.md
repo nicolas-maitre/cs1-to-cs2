@@ -413,6 +413,26 @@ Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,1
   - "Remove imported" should delete the stubs with the rest, since they are new top-level edges and nodes in the importer's snapshot. Not tested.
   - These runs were on right-hand cities (e2e had skipped the driving side, #138). Driving side doesn't affect lines and pipes.
 
+**Stub starts and junctions (#148)** (web worker; `.gamectl/qa/{beforeafter,variants,oc148,stubcheck}.json`, saves `cs1conv-ocutil-{westfield,skibidi,cacao}-148`).
+- **No split.** A stub start at the road node's spot looked like a split junction: three nodes there listed the same road edge. Read by real endpoints (`Edge.m_Start` / `m_End`), the road keeps its junction node. The line's and the pipe's start nodes list the road edge only as a local connection to its middle, which is how CS2 joins a line or pipe to a road. Measured before and after on Westfield's 5 picks, for four start variants: free start at the node, `m_Entity` = road node (CS2 still makes its own node there), DisableMerge, and setback. No variant moved a road endpoint, and all supply the same.
+- **Default now:** the stub starts 3 m along one of the road node's own road edges (always on the road surface), with DisableMerge. No second node sits at the junction's spot, and position-based tools see one node per junction.
+- **`oc.stubcheck`** (MapPrep, read-only) checks every utility marker's stub:
+  - it follows the stub's chain of line/pipe edges (CS2 may cut a stub where it crosses something) to the node that touches a road;
+  - **split** = that node is a real endpoint of a road edge while another node within 3 m is one too;
+  - **notTouchingRoad** = the chain never reaches a road.
+  - `tools/qa/acceptance-stubcheck.patch` runs it after the import and fails on a split or on no marker.
+- **Results** (acceptance saves of §7, markers added after loading, 3 min at speed 3, saved, reloaded, 1 more min):
+
+| | Westfield | Skibidi 3 km | CacaoCity |
+| --- | --- | --- | --- |
+| Markers electricity + water, after 3 min and after reload | 5+5, 5+5 | 4+4, 4+4 | 4+4, 4+4 |
+| Splits (created / reloaded) | 0 / 0 | 0 / 0 | 0 / 0 |
+| Stubs not reaching a road | 0 | 1 (water) | 0 |
+| Residential electricity / water / sewage, after reload | 98.8 / 98.6 / 98.6 % | 99.2 / 98.6 / 98.6 % | 99.4 / 99.4 / 99.4 % |
+| Electricity import, with 0 production | 27 707 | 138 378 | 102 888 (own plants not on the grid) |
+
+- **Skibidi's unlinked stub:** its pipe start lies 3 m into a three-way junction, and the pipe (10 m down) isn't joined to the road's pipes there. The low-voltage stub at the same spot is joined. The city's other three water connections carry the supply.
+
 **Rail hunt stopped (coordinator #133).** In run 13 (`cs1conv-train6k-st3-yards2`), the opt-in interior SubwayYard02's 110 m link to the elevated metro line **was built**: the yard node has the link edge, and the line node has 3 edges (`.gamectl/tracklink/yardjoint-run13.json`). Metro Lines 1 and 3 have paths (27 and 78 elements). Even so, the yard's 2 trains stayed parked for 480 s and the lines show 0 vehicles.
 - **Open lead:** the depot doesn't dispatch to the lines. Possibly it can't pathfind from the yard to a line waypoint (lane direction), or the dispatch request needs something else.
 - **Status:** trains and metros remain a known limit for this release. Interior yards and bridges stay opt-in or default as recorded in DECISIONS-transit #12–14.
