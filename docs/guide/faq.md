@@ -14,6 +14,10 @@ A CS2 map's playable area is about 14.3 km across, smaller than CS1's 81 tiles (
 
 When the road cs1conv would generate has the same lanes as a vanilla CS2 road (same driving lanes and directions on each side, each within 0.5 m in width, parking and bike lanes on the same sides, the same median, a total width within 1 m and the same speed), the vanilla road is used: fewer Road Builder configs to install, and the roads look like the game's own. Trees, bus lanes and other changes from IMT or TM:PE usually keep a road on Road Builder. **Mapping** gives the reason for each type. To force Road Builder, pick **Road Builder** for the type, or turn off **Prefer vanilla CS2 roads**.
 
+## Why is the terrain reshaped along the roads?
+
+CS1 flattens the ground under its roads, but the exported heightmap is too coarse (16 m cells) to keep that. So the package burns each street's CS1 height profile back into the CS2 terrain, with earth slopes back to the natural ground, and the roads lie exactly at their CS1 height instead of following bumps. Highways keep their CS1 height with retaining walls, and paths follow the ground. Change it per road type in the **Mapping** tab ("Height").
+
 ## Some roads are narrower or wider than in CS1. Why?
 
 Road types are rebuilt with Road Builder, which has fixed lane widths and sidewalks of at most 7 m. A CS1 road with 9 m sidewalks becomes a few metres narrower. Every change is listed under **Road types** and in the report.

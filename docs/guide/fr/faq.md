@@ -14,6 +14,10 @@ La zone jouable d'une carte CS2 mesure environ 14,3 km de côté, moins que les 
 
 Quand la route que cs1conv générerait a les mêmes voies qu'une route CS2 vanilla (mêmes voies de circulation et mêmes sens de chaque côté, chacune à 0,5 m près en largeur, stationnement et pistes cyclables des mêmes côtés, même terre-plein, largeur totale à 1 m près et même vitesse), la route vanilla est utilisée : moins de configurations Road Builder à installer, et des routes identiques à celles du jeu. Les arbres, les voies de bus et les autres changements venant d'IMT ou de TM:PE gardent en général une route sur Road Builder. **Routes** donne la raison pour chaque type. Pour imposer Road Builder, choisissez **Road Builder** pour ce type, ou désactivez **Préférer les routes CS2 vanilla**.
 
+## Pourquoi le terrain est-il remodelé le long des routes ?
+
+CS1 aplanit le sol sous ses routes, mais la carte de hauteur exportée est trop grossière (cellules de 16 m) pour le garder. Le paquet grave donc le profil de hauteur CS1 de chaque rue dans le terrain CS2, avec des talus qui rejoignent le sol naturel, et les routes sont exactement à leur hauteur CS1 au lieu de suivre des bosses. Les autoroutes gardent leur hauteur CS1 avec des murs de soutènement, et les chemins suivent le terrain. Réglable par type de route dans l'onglet **Routes** ("Hauteur").
+
 ## Certaines routes sont plus étroites ou plus larges que dans CS1. Pourquoi ?
 
 Les types de route sont recréés avec Road Builder, qui a des largeurs de voie fixes et des trottoirs de 7 m au plus. Une route CS1 avec des trottoirs de 9 m devient quelques mètres plus étroite. Chaque changement figure sous **Types RB** et dans le rapport.

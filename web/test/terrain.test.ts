@@ -39,7 +39,8 @@ describe('terrain converter port', () => {
     const t = theirs(file, crop, 'syn');
     const city = await readCityFile(new Uint8Array(fs.readFileSync(file)), { hash: false });
     const pkg = buildPackage(city, { crop });
-    const files = completePackage(city, pkg);
+    // terrain/convert.mjs has no road-conformed terrain yet (worker-4 implements schema §2): compare the natural terrain
+    const files = completePackage(city, pkg, { conform: false });
     const get = (p: string) => files.find(f => f.path === p)!.data;
     expect(Buffer.from(get('terrain/heightmap.r16')).equals(t.heightmap)).toBe(true);
     expect(Buffer.from(get('terrain/worldmap.r16')).equals(t.worldmap)).toBe(true);
@@ -72,7 +73,8 @@ describe.skipIf(!fs.existsSync(SAMPLE))('Skibidi: same terrain, water and connec
     const city = await readCityFile(new Uint8Array(buf), { hash: false });
     const crop = { centerX: 3750, centerZ: -1250, size: 3000 };
     const pkg = buildPackage(city, { crop });
-    const files = completePackage(city, pkg);
+    // terrain/convert.mjs has no road-conformed terrain yet (worker-4 implements schema §2): compare the natural terrain
+    const files = completePackage(city, pkg, { conform: false });
     const t = theirs(SAMPLE, crop, 'skibidi');
     expect(Buffer.from(files.find(f => f.path === 'terrain/heightmap.r16')!.data).equals(t.heightmap)).toBe(true);
     expect(Buffer.from(files.find(f => f.path === 'terrain/worldmap.r16')!.data).equals(t.worldmap)).toBe(true);

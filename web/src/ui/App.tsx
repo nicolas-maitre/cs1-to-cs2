@@ -22,6 +22,7 @@ import type { LoadError } from './Landing.tsx';
 import { MapView } from './MapView.tsx';
 import type { MapHandle } from './MapView.tsx';
 import { MappingTable } from './MappingTable.tsx';
+import type { HeightMode } from '../core/types.ts';
 import { ConversionOptions, ConversionPanel, FileCheck, InstallHelp } from './Panels.tsx';
 import type { ConvOptions } from './Panels.tsx';
 import { ReportPanel } from './ReportPanel.tsx';
@@ -39,7 +40,7 @@ interface Loaded extends Source { fileName: string; size: number }
 
 const DEFAULT_CONV: ConvOptions = { preferVanilla: true, zoning: DEFAULT_ZONING, traffic: true, transit: true, water: true, buildings: true, districts: true, objects: true, surfaces: true };
 
-function loadPrefs(): { overrides?: Record<string, MappingOverride>; crops?: Record<string, Crop>; conv?: ConvOptions; assetOverrides?: AssetOverrides; assetFallbacks?: FallbackOverrides } {
+function loadPrefs(): { overrides?: Record<string, MappingOverride>; crops?: Record<string, Crop>; conv?: ConvOptions; assetOverrides?: AssetOverrides; assetFallbacks?: FallbackOverrides; heightModes?: Record<string, HeightMode> } {
   try { return JSON.parse(localStorage.getItem(STORE) ?? '{}'); } catch { return {}; }
 }
 function savePrefs(p: ReturnType<typeof loadPrefs>) {
@@ -80,6 +81,7 @@ export function App() {
   const [showDistricts, setShowDistricts] = useState(true);
   const [assetOverrides, setAssetOverrides] = useState<AssetOverrides>(() => loadPrefs().assetOverrides ?? {});
   const [assetFallbacks, setAssetFallbacks] = useState<FallbackOverrides>(() => loadPrefs().assetFallbacks ?? {});
+  const [heightModes, setHeightModes] = useState<Record<string, HeightMode>>(() => loadPrefs().heightModes ?? {});
   const [catalogue, setCatalogue] = useState<Cs2Catalogue | null>(null);
   const [roads, setRoads] = useState<Cs2RoadCatalogue | null>(null);
   // The bundled vanilla CS2 road list (public/cs2-roads.json) for "Prefer vanilla roads".
@@ -175,8 +177,8 @@ export function App() {
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
   const opts: BuildOptions | null = useMemo(() => (loaded ? {
     crop: committed, overrides, roads, preferVanilla: conv.preferVanilla !== false, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
-    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, depotMode: conv.depotMode, assetOverrides, assetFallbacks, lang,
-  } : null), [loaded, committed, overrides, roads, conv, assetOverrides, assetFallbacks, lang]);
+    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, depotMode: conv.depotMode, assetOverrides, assetFallbacks, heightModes, lang,
+  } : null), [loaded, committed, overrides, roads, conv, assetOverrides, assetFallbacks, heightModes, lang]);
   const { pkg, busy: building, ms, error: buildError, zip: buildZip } = usePackage(loaded, opts, catalogue);
   const [zipping, setZipping] = useState(false);
   const stats = useMemo(() => (pkg ? mappingStats(pkg.mapping) : null), [pkg]);
@@ -184,8 +186,8 @@ export function App() {
   useEffect(() => {
     if (!loaded || loaded.synthetic) return;
     const prefs = loadPrefs();
-    savePrefs({ ...prefs, overrides, conv, assetOverrides, assetFallbacks, crops: { ...prefs.crops, [loaded.city.sha256 ?? loaded.fileName]: committed } });
-  }, [loaded, overrides, committed, conv, assetOverrides, assetFallbacks]);
+    savePrefs({ ...prefs, overrides, conv, assetOverrides, assetFallbacks, heightModes, crops: { ...prefs.crops, [loaded.city.sha256 ?? loaded.fileName]: committed } });
+  }, [loaded, overrides, committed, conv, assetOverrides, assetFallbacks, heightModes]);
 
   const onCrop = useCallback((c: Crop, done: boolean) => {
     const cc = clampCrop(c, loaded?.city.manifest.mapSize);
@@ -348,7 +350,8 @@ export function App() {
                       <p className="small muted">{t(loaded.synthetic ? 'app.builtInSynthetic' : 'app.builtIn', { ms: Math.round(ms) })}</p>
                     </div>
                   )}
-                  {tab === 'mapping' && <MappingTable rows={pkg.mapping} overrides={overrides} onOverride={(name, o) => setOverrides(prev => { const n = { ...prev }; if (o.mode === 'auto') delete n[name]; else n[name] = o; return n; })} />}
+                  {tab === 'mapping' && <MappingTable rows={pkg.mapping} overrides={overrides} onOverride={(name, o) => setOverrides(prev => { const n = { ...prev }; if (o.mode === 'auto') delete n[name]; else n[name] = o; return n; })}
+                    heightModes={heightModes} onHeightMode={(name, m) => setHeightModes(prev => { const n = { ...prev }; if (m) n[name] = m; else delete n[name]; return n; })} />}
                   {tab === 'rb' && <RbList pkg={pkg} />}
                   {tab === 'assets' && <AssetsTable matches={pkg.assetMatches ?? []} overrides={assetOverrides} catalogue={catalogue} catalogueSource={catalogueSource ?? t('app.catalogueBundled')} hasBuildings={!!loaded.city.buildings && !!loaded.city.assets}
                     onLoadCatalogue={() => catalogueInput.current?.click()}

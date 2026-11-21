@@ -283,3 +283,101 @@ Runs: `.gamectl/tracklink/6k-run7`, diagnostics `node transit/tools/node-diag.mj
   - Left for transit: CS2 train stations are 200 m long against CS1's 128 m, so the track link has to join the imported track at the platform ends.
 - **The buses in Cacao and Westfield** (cities without lines) are not from imported lines (routes 0); they're counted as found.
 - **Not run:** the Skibidi crop with a train line crossing the edge (`--crop 500,-400,3000`). With trains a known limit and the yards opt-in, it would only repeat "0 trains". It can be run as is when worker-4's track link and the station fix are both in.
+
+**Verification after buildings 0.3.1 (matcher 1.1.0, buildings decision #36).** Runs: `.gamectl/e2e/20261121-141216` (6 km Skibidi rebuilt, save `cs1conv-train6k-st`), `.gamectl/tracklink/6k-run8`, and `line-diag-run8.json`. Result: still no rail line runs.
+
+6. **All 3 train stations and all 5 underground metro entrances fail as `stationCollision`.** At the CS1 spot the CS2 lot overlaps a road (one Large Trainstation overlaps another imported building), with all 3 prefabs tried. So Train Line 1 and Metro Lines 1–2 are skipped (fewer than 2 stations), and the trim of imported track under long platforms (DECISIONS-transit #12) didn't get exercised.
+7. **The 3 elevated metro stations are placed (SubwayStationElevated01), but with no sub-nets** (`subNetsExpected 0`, `subNetsBuilt 0`).
+   - Metro Line 3 is created on their "Integrated Subway Stop - Middle" stops, but those stops are attached to nothing and have no lanes (`RouteLane 0>0`).
+   - So the segments' `PathTargets` stay empty, and the path is never requested: state 0, 0 elements, and not marked failed.
+   - The integrated stops need the station's own platform tracks, which aren't built for this prefab.
+8. **The imported rail network itself carries trains:** 4 passenger trains (EU_TrainPassengerEngine01 + 12 cars) were running within 240 s, from the rail outside connection.
+
+## 8. Release (RC2, vanilla roads) (cs2-importer worker)
+
+`node tools/release/acceptance.mjs --skip-build --simulate 300 [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after `node tools/release/build.mjs`.
+
+**Clean build:** both ran from a clean `git archive` of fa6eece, not the shared working tree, which held other sessions' uncommitted buildings and transit changes.
+- **Artefacts:** product 0.3.0; exporter 1.2.1, **importer 0.3.2**, **web 0.6.0** (vanilla CS2 roads where they match, #100/#102), buildings 0.3.0. `versions.json` has `git: null` because the export has no `.git`.
+- **Install:** the importer was installed from `cs2-importer-0.3.2.zip` before each city, and the dev mod was restored after each.
+- **Flow:** the same as RC1: Install Road Builder configs → restart → new city on Corral Riches → Check → Prepare map → 20 s → Import → 300 s at speed 3.
+- **Result:** all three **ok=true**; no lock left.
+
+| | Skibidi 3 km (`20261121-143330`) | CacaoCity, left-hand (`20261121-144323`, `qa/cacao-v2.cs1x`) | Westfield (`20261121-150122`) |
+| --- | --- | --- | --- |
+| Package | 2035 roads: **341 segments vanilla** (7 road types) + 26 RB types (was 33); 108 buildings, 4216 trees, 9 lines | 684 roads: **117 vanilla** (3 types in the crop) + 32 RB types (was 42); 43 buildings, 12 260 trees, 44 IMT surfaces | 648 roads: **402 vanilla** (1 type) + 10 RB types (was 15); 13 buildings |
+| Check | all 37 road types available | all 42 available; "The CS1 city drove on the left, this city drives on the right: … Prepare map sets the side" | all 16 available |
+| Prepare map | 15.9 s, terrain 95 % exact | 15.7 s; "Traffic drives on the left, as in the CS1 city." | 15.9 s |
+| Roads | **2035 / 2035** (4.25 s; 1 not-elevated note) | **684 / 684** (2.3 s) | **648 / 648** (2.1 s) |
+| **Lane directions** (CS2 lanes vs CS1, per road) | **all 1949 the same**: 353 one-way, 1590 two-way, 6 asymmetric | **all 554 the same**: 162 one-way, 369 two-way, 23 asymmetric; CS2 city left-hand | **all 647 the same**: 403 one-way, 244 two-way |
+| **Lane connections** (explicit sources as in CS1) | 360 at 69 of 95 junctions; 685/685 refs; **162/176 (92 %)**: 115 at junctions, 47 continuous, 14 not expressible; U-turns 8/8 | 342 at 68 of 79; 727/729 refs; **206/208 (99 %)**; U-turns 25/25 | 127 at 34 of 39; 299/301 refs; **88/92 (95.7 %)**; U-turns 2/2 |
+| Traffic / Traffic mod | 66 turn bans, 123 lights removed; 325 priority signs | 14 lights removed; 57 priority signs | 43 turn bans; 3 priority signs |
+| Zoning | 93.1 % | 91.1 % | 99.99 % |
+| Buildings | **108 / 108** | **43 / 43** | **13 / 13** |
+| Trees and props | 3408 / 4216 | 10 836 / 12 260 | none |
+| IMT surfaces | none | **44 / 44** | none |
+| Transit lines | **9 / 9**, 145 / 145 stops | none in the city | none in the city |
+| Outside connections | 20 / 20 (13 road, 7 train) | 4 / 4 | 22 / 22 |
+| Vehicles after 300 s | **34 buses** (Bus01) + 10 prison vans; 9 routes; **0 metro, 0 train** | 1 bus (no lines) | 8 buses (no lines) |
+| Times | Prepare 15.9 s, import step 52 s | 15.7 s, 15.8 s | 15.9 s, 12.7 s |
+
+**Against RC1 (§7): no regression.**
+- **Roads, lane directions, lane connections (numbers and outcomes), buildings, surfaces, transit, outside connections and zoning:** the same to the digit, or within one (trees +4/+8, lights removed +2/+7, Westfield's priority signs 3 = 3).
+- **Fewer Road Builder configs to install:** Skibidi 26 instead of 33, Cacao 32 instead of 42, Westfield 10 instead of 15.
+- **Vehicles:** Skibidi had 34 buses after 300 s against RC1's 26. That's simulation variance, with the same 9 routes. Cacao 1 against 2 and Westfield 8 against 10: those cities have no lines, so these buses don't come from the import.
+
+**Known limit, not a failure:** trains and metros (DECISIONS.md #99). Skibidi's subway line is created with 0 vehicles; no metro or train ran.
+
+**Height issue reported by the user on this run's CacaoCity save** (a ramp following terrain bumps near the lake interchange): being fixed by road-conformed terrain and per-type height modes (#110–113, `cs2-importer/NOTES-road-heights.md`). It isn't covered by this acceptance's checks.
+
+## 9. Utilities (web worker, docs/DECISIONS.md #109)
+
+Utility networks aren't converted: CS2 roads carry water, sewage and low-voltage power. Service buildings (power plants, pumps, water towers, sewage outlets) are matched and placed. `node tools/qa/run.mjs utilities` measures what that gives, with the exec op `Cs1ConvQa.Utilities` (`tools/qa/README.md`). It reads CS2's own consumer flags, the infoview statistics, each facility's flow edge, and the game's notification icons. It is read-only.
+
+Run on 2026-11-21 on the release-candidate cities of §7. Each save was loaded and given 3 min at top speed, then measured.
+
+| | Skibidi 3 km (`…-133435`) | CacaoCity (`…-134438`) | Westfield (`…-140001`) |
+| --- | --- | --- | --- |
+| Buildings: residential / commercial / industrial / service | 328 / 35 / 206 / 105 | 482 / 35 / 192 / 42 | 223 / 0 / 0 / 13 |
+| **Electricity** demand fulfilled (infoview) | **0 %** (production 0, consumption 150 010) | **86 %** (92 515 of 107 661) | **0 %** (production 0, consumption 24 634) |
+| Buildings with all the electricity they want | 0–1 % | residential 99 %, service 86 % | 3 % |
+| **Water** demand fulfilled | **0 %** (capacity 0) | **37 %** (91 134 of 245 277; capacity 101 304) | **0 %** (capacity 0) |
+| **Sewage** demand fulfilled | **0 %** (capacity 0) | **74 %** (182 277 of 245 277) | **0 %** (capacity 0) |
+| Facilities: power / pumps / outlets / towers | 6 / 0 / 0 / 0 | 7 / 7 / 3 / 0 | 4 / 0 / 0 / 0 |
+| Power plants not connected | **6 of 6** (all incinerators: "high voltage not connected", edge disconnected, production 0) | **7 of 7** show "high voltage not connected"; only one small coal plant actually produces (92 697) | **4 of 4** (incinerators, as in Skibidi) |
+| Pumps / outlets not connected | – | 4 water pumps: "water pipe not connected" and "no electricity", **production 0**; 1 wastewater plant: "sewage/water pipe not connected" | – |
+| Pumps not on water | – | **2** ("not enough surface water": capacity 148 and 18 of 100 000) at CS2 (1156, −60) and (535, −941) | – |
+| Electricity / water outside connections | **0 / 0** (22 road) | **0 / 0** (6 road) | **0 / 0** (24 road) |
+| Buildings with a utility warning | 666 no electricity, 647 no water, 647 sewage backup | 669 no water, 5 no electricity | 225 no electricity, 229 no water, 229 sewage backup |
+
+**What the numbers say:**
+1. **A 3 km crop rarely contains its city's utilities.** Skibidi's and Westfield's power plants, pumps and outlets are outside the crop (or the CS1 city bought from outside). The crops hold only incinerators, so CS2 has nothing to supply them with, and with no utility outside connections the city can't import either. That's 0 % for everything.
+2. **High-voltage producers are never connected.** CS2 roads carry only low voltage. A power plant feeds the grid through high-voltage lines to a transformer, and the converter builds neither. All 17 power plants in the three cities show "high voltage not connected". In Cacao the 86 % comes from one small coal plant that does produce (probably through its low-voltage side).
+3. **Pumps need power and a pipe link.** Cacao's four water pumps produce nothing: they have no electricity and their pipe isn't connected (they stand at the shore, away from the roads' built-in pipes). The water that does flow comes from the two wastewater plants' purified output. Two pumps also stand where there's not enough surface water.
+4. **Sewage works best:** wastewater plants on the road network are connected through the roads. 74 % in Cacao, capped by capacity ("not enough water capacity").
+
+**Proposed fixes (sent to the owners with this evidence):**
+- **Map prep (worker-4):** keep or create the base map's **electricity and water outside connections** after "Clear the area" and Prepare map. All three cities have none; whether Corral Riches had them before the clearing is not measured yet. This is the biggest lever: with them, a crop without plants or pumps imports what it needs, as a CS1 city at the edge of its utilities would.
+- **Buildings (buildings worker):**
+  - for each placed power plant, a short **high-voltage line to a transformer** next to the nearest imported road (or the plant's own transformer upgrade if the prefab has one);
+  - for each water pump and sewage outlet away from a road, a short **pipe link** to the nearest road;
+  - **pumps must stand on water:** snap them to the nearest CS1 shore cell with surface water, or use a groundwater pump when the CS1 spot is dry (`WaterPumpingStationData.m_Types`).
+- **Importer (worker-3):** when the buildings step reports facilities that aren't connected, list them in the import report ("place a power line / pipe yourself"), consistent with #106.
+- **Acceptance (buildings worker's file):** `tools/qa/acceptance-utilities.patch` adds a read-only `utilities` step after the vehicle count. It's informational and doesn't fail the run.
+
+Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,140001}.json`.
+
+**Verification after buildings decision #37** (save `cs1conv-train6k-st2`, runs `.gamectl/tracklink/6k-run9`, `reach-run9.json` from the new `lines.reach` op). Result: still 0 path elements on all 4 rail lines after 300 s.
+
+9. **Stops now have lanes.**
+   - 2 TrainStation03 and 5 SubwayStation01 are placed, each with its own platform tracks.
+   - Their "Integrated … Stop"s give every waypoint a `RouteLane` on the station's platform edge, and every segment has `PathTargets`. So the paths were requested, and they found nothing.
+10. **Track gaps** (`lines.reach`: search over track edges between each segment's start and end lane, ignoring direction):
+    - **Metro, about 450 m and 830 m:** at (−2420, −431), the CS1 metro platforms of the train-station complex weren't reproduced, so the imported metro track dead-ends there on both sides.
+    - **Train:**
+      - one TrainStation03's platform is isolated, because its links weren't built;
+      - the other station's east joint is missing (gap 34 m): its platform overruns the imported dead end, which lies 10.5 m off its axis, outside the 10 m trim limit (now 16 m, DECISIONS-transit #12).
+11. **Connected but still no path.**
+    - Metro Line 1/2/3 segments between the underground stations are connected end to end through the imported track (`reach: true`), and still get 0 path elements.
+    - **So the cause isn't only gaps.** The likely suspect is lane direction: each waypoint gets one platform lane, and nothing makes consecutive stops use lanes whose directions agree.
+    - **Not verified yet.** Next test: a directed lane search (`Lane.m_StartNode` / `m_EndNode`), or a station line built with the game's own line tool on the same stations, to compare the waypoint lanes.

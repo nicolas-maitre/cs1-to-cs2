@@ -8,10 +8,28 @@
 // Writes <out>/heightmap.r16 (what terrain/apply.mjs loads; 14 336 m playable area), <out>/worldmap.r16 (the 57 344 m
 // world/backdrop map around it, same CS1 data; skip with --no-world), <out>/heightmap.png (16-bit greyscale, north up,
 // for the map editor's Import Heightmap) and <out>/terrain-cs2.json (scale, offset, transform, stats).
+// With --plan, the plan's `conform` ground roads are burned into the playable heightmap (schema §2, lib/conform.mjs;
+// --no-conform skips it).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { loadCs1xTerrain, decodeCs1Raw, convert, rawToBytes, flipRows, CS2 } from './lib/heightmap.mjs';
 import { encodeGray16 } from './lib/png.mjs';
+import { readZip } from './lib/zip.mjs';
+
+/** water.json + its depth grid from a .cs1x -> {seaLevel, depthMeta, depth: Float32Array metres}, or null. */
+export function loadCs1xWater(zipBuf) {
+  const zip = readZip(zipBuf);
+  const we = zip.get('water.json');
+  if (!we) return null;
+  const wj = JSON.parse(we.read().toString('utf8'));
+  const de = wj.depth && zip.get(wj.depth.file ?? 'water.r16');
+  let depth = null;
+  if (de) {
+    const raw = de.read(), n = wj.depth.resolution;
+    if (raw.length === n * n * 2) { depth = new Float32Array(n * n); for (let i = 0; i < n * n; i++) depth[i] = raw.readUInt16LE(i * 2) * wj.depth.heightScale; }
+  }
+  return { seaLevel: wj.seaLevel ?? null, depthMeta: depth ? wj.depth : null, depth };
+}
 
 function parseArgs(argv) {
   const a = { png: true, world: true };
@@ -30,6 +48,7 @@ function parseArgs(argv) {
       case '--height-offset': a.heightOffset = Number(v()); break;
       case '--no-png': a.png = false; break;
       case '--no-world': a.world = false; break;
+      case '--no-conform': a.conform = false; break;
       case '-h': case '--help': a.help = true; break;
       default: throw new Error('unknown argument ' + k);
     }
@@ -49,9 +68,9 @@ export function main(argv) {
     const meta = JSON.parse(readFileSync(a.terrainJson, 'utf8'));
     cs1 = { meta, heights: decodeCs1Raw(meta, readFileSync(a.r16)) };
   }
-  let crop, transform;
+  let crop, transform, plan = null, water = null;
   if (a.plan) {
-    const plan = JSON.parse(readFileSync(a.plan, 'utf8'));
+    plan = JSON.parse(readFileSync(a.plan, 'utf8'));
     crop = plan.crop; transform = plan.transform ? { dx: plan.transform.dx, dz: plan.transform.dz } : undefined;
   } else {
     const [centerX, centerZ, size] = a.crop.split(',').map(Number);
@@ -60,8 +79,11 @@ export function main(argv) {
   if (![crop.centerX, crop.centerZ, crop.size].every(Number.isFinite)) throw new Error('bad crop ' + JSON.stringify(crop));
   if (crop.size > CS2.size) console.error(`warning: crop size ${crop.size} m is larger than the CS2 playable area ${CS2.size} m; the edges are cut`);
 
+  // road-conformed terrain (schema §2): with --plan, its `conform` ground roads are burned in; the CS1 water depth
+  // grid (if the .cs1x has one) drives the wet-pixel rule
+  if (plan && a.cs1x && a.conform !== false) water = loadCs1xWater(readFileSync(a.cs1x));
   const t0 = Date.now();
-  const { raw, worldRaw, meta } = convert(cs1.meta, cs1.heights, crop, { transform, mode: a.mode, heightScale: a.heightScale, heightOffset: a.heightOffset, world: a.world });
+  const { raw, worldRaw, meta } = convert(cs1.meta, cs1.heights, crop, { transform, mode: a.mode, heightScale: a.heightScale, heightOffset: a.heightOffset, world: a.world, plan: a.conform === false ? null : plan, water });
   const out = resolve(a.out);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'heightmap.r16'), rawToBytes(raw));

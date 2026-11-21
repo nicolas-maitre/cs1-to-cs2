@@ -131,3 +131,9 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
 
 20. **`run-mapprep.mjs` installs the package's Road Builder types with `--keep-other-rb` before starting CS2.**
     - **Why:** another run's `--install-rb` had removed them, which made 431 of CacaoCity's 684 segments `prefab-missing`.
+
+21. **Road-conformed terrain is burned in `terrain/lib/conform.mjs`** (docs/DECISIONS.md #110–113; contract schema/README.md §2, the same arithmetic as the web core's `conform.ts`).
+    - **When:** `convert.mjs --plan` burns the plan's `conform` ground and slope roads into the playable grid after the resample; `--no-conform` skips it. The height mapping and `stats` then come from the burned grid; the world map is never burned.
+    - **How:** pixels are processed in 256-pixel tiles, so the accumulators stay small on a full city; the contributions to a pixel still arrive in processing order.
+    - **Water:** `mapprep water` re-runs the burn when `plan.terrain.roadConformed` and raises or lowers each source on a changed pixel by H0 − H (`adjustWaterSources`), so its absolute level is kept.
+    - **Checked:** identical to the web port on Skibidi 6 km (test widths: 0 of 4096² pixels differ, same stats and water adjustment; 2962 segments, max cut 24.4 m, max raise 14.1 m).

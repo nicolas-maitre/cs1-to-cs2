@@ -6,7 +6,7 @@
 // confirmed (M0 spikes / Road Builder source). The other names come from the CS2 prefab name list
 // in the game's Locale.cok (Assets.NAME[<prefab>] keys), see web/DECISIONS-web.md.
 
-import type { NetInfo, PrefabType } from './types.ts';
+import type { HeightMode, NetInfo, PrefabType } from './types.ts';
 
 export type NetCategory = 'road' | 'highway' | 'train' | 'metro' | 'tram' | 'monorail' | 'pedestrian' | 'bike' | 'utility' | 'transport-line' | 'building' | 'other';
 
@@ -107,3 +107,19 @@ export function resolveTarget(info: NetInfo, override?: MappingOverride): Resolv
 }
 
 export const prefabKeyVanilla = (name: string) => `v:${name}`;
+
+/**
+ * Default height mode of a CS1 type (docs/DECISIONS.md #113): roads that allow zoning conform (the ground follows the
+ * road), roads that don't (highways, ramps) keep CS1 heights with walls, paths follow the ground, tracks conform.
+ */
+export function defaultHeightMode(info: NetInfo | undefined, cat: NetCategory): HeightMode {
+  if (cat === 'pedestrian' || cat === 'bike') return 'follow';
+  if (cat === 'road' || cat === 'highway') return info?.aiFields?.m_enableZoning === false ? 'walls' : 'conform';
+  return 'conform';
+}
+
+/** The mode a key carries without a suffix: follow for paths, conform for everything else. */
+export const keyHeightMode = (cat: NetCategory): HeightMode => (cat === 'pedestrian' || cat === 'bike' ? 'follow' : 'conform');
+
+/** A non-default mode is folded into the prefab key, so prefabs[key].heightMode is unambiguous (schema §2). */
+export const foldHeightMode = (key: string, mode: HeightMode, cat: NetCategory) => (mode === keyHeightMode(cat) ? key : `${key}|${mode}`);

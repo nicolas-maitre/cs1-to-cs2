@@ -64,6 +64,7 @@ node web/cli/cs1conv.ts plan <file.cs1x> --crop <cx>,<cz>,<size> --out <dir> [--
 node web/cli/cs1conv.ts plan <file.cs1x> --auto-crop 3000 --out <dir> [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low]
      [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--no-zoning] [--no-traffic] [--no-transit] [--no-water] [--no-buildings] [--no-districts]
      [--no-objects] [--no-surfaces] [--no-terrain] [--no-world] [--lang en|fr] [--roads <cs2-roads.json>] [--no-prefer-vanilla]
+     [--height-mode conform|follow|walls] [--height-mode-by-type <map.json>] [--no-conform]
 node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 ```
 
@@ -74,6 +75,7 @@ node web/cli/cs1conv.ts install-rb <package dir> [--prune]
 - **`--fallback`** sets what the importer does for every building type that doesn't fit at its CS1 spot: `nearby` (free land within 400 m), `anywhere` (anywhere along the imported roads in the crop) or `skip`. Without it, every type gets `skip` (docs/DECISIONS.md #106): a building that doesn't fit after its slide and smaller alternatives isn't moved; the report lists it with its CS1 position for you to place. (Until 0.6.0 lots over 400 CS2 cells got `anywhere` and the rest `nearby`.) **`--fallback-by-type`** is a JSON object keyed by CS1 building type name with one of those values.
 - **`--lang fr`** writes the "What converts" lines and `README.txt` in French (report.json stays English).
 - **`--roads`:** the vanilla CS2 road layouts used to prefer vanilla roads (docs/DECISIONS.md #100): a road type whose generated Road Builder road has the same lanes as a vanilla CS2 road uses that road (`v:<name>`, `matched: true`), so fewer Road Builder configs are installed. It defaults to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-roads.json` (the importer's `roadlayouts` exec op writes it), else the bundled `web/public/cs2-roads.json`. **`--no-prefer-vanilla`** keeps every road on Road Builder. An override `{"mode":"rb"}` keeps that type on Road Builder.
+- **Height modes** (docs/DECISIONS.md #110–113, schema §2 "Road-conformed terrain"): each road type's ground segments either `conform` (the CS1 profile is burned into the heightmap, with earth slopes), `follow` (the road follows the natural ground) or `walls` (CS1 height with retaining walls). The defaults are `conform` for zoneable roads and tracks, `walls` for non-zoneable roads (highways, ramps) and `follow` for paths. **`--height-mode`** sets one mode for every type, and **`--height-mode-by-type`** is a JSON object keyed by CS1 ground NetInfo name. **`--no-conform`** writes the natural terrain (the modes stay in the plan), for before/after comparisons.
 - **`--catalogue`:** the CS2 building catalogue. It defaults to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json` when that exists (`node buildings/run.mjs catalogue` writes it). Without a catalogue, buildings aren't matched and the plan has no `buildings` section.
 
 ## Package

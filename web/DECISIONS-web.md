@@ -496,3 +496,20 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - Buildings that fail only at import time are listed by the importer's placer. Its default for plans without `fallback` changes the same way; I've told the buildings worker.
     - **Summary and docs:** the Buildings summary says a building that still doesn't fit isn't moved and is listed for you to place. Updated: the guide's Assets step, the FAQ entry ("A building is missing, or ended up somewhere else (my hospital moved)"), the What-converts row and `web/README.md`, in EN and FR.
     - **Tests:** the default is `skip` even for big lots, an explicit `anywhere` and a global `nearby` still apply, and the not-placed lines carry positions.
+92. **Road-conformed terrain and per-type height modes** (docs/DECISIONS.md #110–113; web 0.7.0). The contract agreed with worker-3 and worker-4 is in schema §2 "Road-conformed terrain".
+    - **Plan:**
+      - every segment has `halfWidth` (the CS1 NetInfo's `m_halfWidth`);
+      - every prefab has `heightMode`: `conform`, `follow` or `walls`. Defaults come from user #113: zoneable roads and tracks `conform`, non-zoneable roads `walls`, paths `follow`;
+      - a mode other than the category's (`follow` for paths, `conform` otherwise) is folded into the key (`…|walls`), so a key never mixes modes. Keys left without segments are dropped.
+    - **Burn** (`terrain/conform.ts`): on the resampled float32 grid before the height mapping; core at the road height, smoothstep blend `b = clamp(2·|Δ|, 3.5, 40)`, junction discs, cores win and blends combine with w⁴ weights; wet pixels get b = 3.5 m and are capped at the water surface; segments more than 30 m from the terrain are skipped and reported.
+      - Water sources keep their absolute level: `height += H0 − H` at their pixel.
+      - `terrain.json` gains `roadConformed` and `conform`, and the plan's `terrain.roadConformed` mirrors it.
+    - **Why the factor 2, not 1.5:** smoothstep's steepest point is 1.5× the average slope, so 2 gives about 37° at the steepest, close to the intended 1 : 1.5.
+    - **Why w⁴ weights:** "largest weight wins" leaves a step where two blend zones meet. A linear mean is smooth but too soft; w⁴ (worker-4) is smooth and close to the winner.
+    - **UI:** a "Height" select per type in the Mapping tab. **CLI:** `--height-mode`, `--height-mode-by-type` and `--no-conform`, the last for before/after comparisons.
+    - **Byte identity with terrain/convert.mjs:** that test compares with `conform: false` until worker-4's `terrain/lib` implements the same contract. Then both sides compare burned packages.
+    - **Skibidi, 3 km crop:** 1747 ground segments and 1407 junctions burned, 270 736 pixels changed (+11.1 / −14.9 m at most), none skipped; about 5 s more per package.
+93. **Utilities check in `tools/qa`** (docs/DECISIONS.md #109). This is my first game-side code: a read-only exec op plus a runner that takes `cs2.lock`, following the importer, buildings and transit pattern.
+    - **What it reads:** CS2's own signals (consumer flags, infoview statistics, facility flow edges, notification icons) rather than a model of the networks, so the numbers are what the player sees.
+    - **Results:** see docs/QA.md §9. Fixes went to their owners: utility outside connections to worker-4; HV lines, transformers, pipe links and pumps on water to the buildings worker; the import report to worker-3.
+    - **Acceptance:** the step reaches `tools/release/acceptance.mjs` as a patch (`tools/qa/acceptance-utilities.patch`), because that file is the buildings worker's.

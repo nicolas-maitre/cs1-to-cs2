@@ -101,14 +101,31 @@ export interface TerrainMeta {
   source: { resolution: number; size: number; heightScale: number; min?: number; max?: number; file?: string };
   stats: { min: number; max: number; clampedFraction: number; saturatedPixels: number; maxQuantizationErrorM: number };
   world?: { file: string; resolution: number; size: number; cellSize: number; stats: { min: number; max: number; clampedFraction: number; saturatedPixels: number } };
+  /** road-conformed terrain (schema §2, #110–113): the conform roads are burned into heightmap.r16 */
+  roadConformed?: boolean;
+  conform?: Record<string, unknown>;
   createdAt?: string;
 }
 
+/** Burns into the resampled playable-area grid (metres, in place); returns terrain.json's `conform` stats or null. */
+export type TerrainBurn = (grid: Float32Array, N: number, size: number) => Record<string, unknown> | null;
+
 /** Converts (crop in CS1 metres; transform defaults to {dx: −centerX, dz: −centerZ}). Same as terrain/lib/heightmap.mjs convert. */
-export function convertTerrain(meta: Cs1TerrainMeta, heights: Float32Array, crop: Crop, opts: { transform?: { dx: number; dz: number }; mode?: string; heightScale?: number; heightOffset?: number; world?: boolean } = {}) {
+export function convertTerrain(meta: Cs1TerrainMeta, heights: Float32Array, crop: Crop, opts: { transform?: { dx: number; dz: number }; mode?: string; heightScale?: number; heightOffset?: number; world?: boolean; burn?: TerrainBurn } = {}) {
   const transform = opts.transform ?? { dx: -crop.centerX, dz: -crop.centerZ };
   const N = CS2_TERRAIN.resolution;
   const r = resample(meta, heights, transform, CS2_TERRAIN.size, N);
+  // road-conformed terrain: burn before the height mapping, which is then chosen from the burned grid
+  let natural: Float32Array | undefined, conform: Record<string, unknown> | null = null;
+  if (opts.burn) {
+    natural = r.heights.slice();
+    conform = opts.burn(r.heights, N, CS2_TERRAIN.size);
+    if (conform) {
+      let min = Infinity, max = -Infinity;
+      for (let i = 0; i < r.heights.length; i++) { const h = r.heights[i]; if (h < min) min = h; if (h > max) max = h; }
+      r.min = min; r.max = max;
+    } else natural = undefined;
+  }
   const map = chooseHeightMapping(r.min, r.max, opts);
   const q = quantize(r.heights, map);
   const out: TerrainMeta = {
@@ -122,6 +139,7 @@ export function convertTerrain(meta: Cs1TerrainMeta, heights: Float32Array, crop
     crop, transform,
     source: { resolution: meta.resolution, size: meta.size, heightScale: meta.heightScale, min: meta.min, max: meta.max },
     stats: { min: round3(r.min), max: round3(r.max), clampedFraction: round6(r.clampedFraction), saturatedPixels: q.saturated, maxQuantizationErrorM: round6(q.maxQuantErr) },
+    ...(conform ? { roadConformed: true, conform } : {}),
   };
   let worldRaw: Uint16Array | undefined;
   if (opts.world) {
@@ -133,7 +151,7 @@ export function convertTerrain(meta: Cs1TerrainMeta, heights: Float32Array, crop
     };
     worldRaw = wq.raw;
   }
-  return { raw: q.raw, worldRaw, meta: out };
+  return { raw: q.raw, worldRaw, meta: out, natural, burned: natural ? r.heights : undefined };
 }
 
 /** Raw uint16 grid → little-endian bytes. */

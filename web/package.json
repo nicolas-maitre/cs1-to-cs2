@@ -1,7 +1,7 @@
 {
   "name": "cs1conv-web",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.7.0",
   "type": "module",
   "description": "CS1 → CS2 converter: .cs1x preview, crop, road mapping and import package writer (web UI + Node CLI)",
   "engines": {

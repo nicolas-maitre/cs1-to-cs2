@@ -336,3 +336,24 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - Segments not running along a converted road are mapped to CS2 power lines and pipes (prefabs found in the game). The ones along roads stay dropped, because CS2 roads carry those utilities.
      - Order: power, then pipes, then pumps on dry land. A dry-land pump snaps to water only within a small radius, otherwise it's swapped for a groundwater pump if one exists, otherwise reported.
      - Scheduled after the train and metro station work.
+116. **Road-conformed terrain is implemented on the package side** (web 0.7.0 + `terrain/convert.mjs`; Claude; contract in `schema/README.md` §2).
+     - Every road segment carries `halfWidth`, and every prefab a `heightMode`.
+     - Defaults follow #113: zoneable roads and tracks `conform`, highways `walls`, paths `follow`. They can be changed per type in the Mapping tab and the CLI.
+     - Ground segments' CS1 profiles are burned into the heightmap with linear side blending. Water sources keep their level.
+     - The web and Node outputs are byte-identical. Skibidi burns 1747 segments, changing the ground by +11/−15 m at most.
+     - The importer side (placing ground roads at CS1 heights per mode) is worker-3's next step.
+117. **The utilities check exists** (`tools/qa/`, read-only; Claude). On the RC saves:
+
+     | | Electricity | Water | Sewage |
+     | --- | --- | --- | --- |
+     | Skibidi | 0% | 0% | 0% |
+     | Westfield | 0% | 0% | 0% |
+     | CacaoCity | 86% | 37% | 74% |
+
+     Causes:
+     - no working plants in a 3 km crop;
+     - power plants without a high-voltage connection;
+     - pumps without power or a pipe link;
+     - no electricity or water outside connections.
+
+     Fixes are assigned: utility outside connections in map prep (worker-4), CS1 off-road power lines and pipes (#115, buildings worker), unconnected facilities in the import report (worker-3).

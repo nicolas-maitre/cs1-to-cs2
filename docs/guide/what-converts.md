@@ -34,6 +34,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
 | Terrain heightmap (and the land around the square) | CS2 terrain at the same heights, plus the world map around it | converts | Applied by the importer's Prepare map, in a new city, before the import. |
+| Ground shaped to the roads (CS1 flattens it under its roads) | Road profiles burned into the CS2 heightmap, with earth slopes | converts | Per road type in the Mapping tab: ground follows the road (streets, tracks), CS1 height with retaining walls (highways), or road follows the ground (paths). |
 | Sea level, rivers and lakes (natural water sources) | CS2 sea level and water sources | converts, approximated | Set by Prepare map. CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled. Pumps and drains come with their buildings. |
 | Highways and railways leaving the square | CS2 outside connections | converts | The importer's last step (Outside connections), so traffic and trains can enter and leave the city. |
 

@@ -477,6 +477,67 @@ The plan points at them:
 
 `seaLevelDry` = `floor(min) − 20`: the sea level `terrain/apply.mjs` uses ("auto") when the city has no water data, so the map is dry. With water data, use `water.apply.seaLevel`.
 
+### Road-conformed terrain (docs/DECISIONS.md #110–113)
+
+The ground follows the road instead of the road following the ground. Agreed by the web worker, worker-3 and worker-4 on 2026-11-21; the importer side is in `cs2-importer/NOTES-road-heights.md`. Two builders implement the burn, the web core (`web/src/core/terrain/conform.ts`, web 0.7.0, implemented) and `terrain/lib` (worker-4). They must stay **byte-identical**, so this text is the contract for both.
+
+**Plan fields:**
+- **`segments[].halfWidth`**: the CS1 NetInfo's `m_halfWidth` in metres (the segment's own NetInfo, else its ground NetInfo), the whole road including sidewalks. It's on every segment, because one prefab key can stand for several CS1 types of different widths.
+- **`prefabs[key].heightMode`**: `conform` | `follow` | `walls`, on every prefab (see the importer notes for what each does to the road).
+  - **Defaults (user #113):** `conform` for roads whose CS1 NetInfo allows zoning (`aiFields.m_enableZoning` not `false`); `walls` for roads that don't (highways, ramps); `conform` for tracks; `follow` for pedestrian and bike paths.
+  - **Choosing it:** the user picks it per CS1 type in the mapping table, or with `--height-mode` / `--height-mode-by-type` on the CLI.
+  - **Shared keys:** a mode other than the category's default (`follow` for paths, `conform` for everything else) is folded into the key, e.g. `v:Highway Oneway - 3 lanes|walls`. Keys stay opaque, so `prefabs[key].heightMode` is always unambiguous.
+- **`terrain.roadConformed`**: `true` when the heightmap was burned, mirroring `terrain.json`. `--no-conform` on the CLI writes the natural terrain, for before/after comparisons.
+
+**Where the burn runs:** on the 4096² playable-area grid, after the bilinear resample, in CS1 metres, before the height mapping and quantization (r16 orientation: row 0 = minimum z). Pixel `(col, row)` has its centre at `x = −size/2 + (col + 0.5) × cell`, `z = −size/2 + (row + 0.5) × cell` (cell 3.5 m), in plan coordinates.
+- `H0` is the resampled natural grid (its float32 values).
+- All burn arithmetic is float64. Each burned pixel's result is stored back into the float32 grid.
+- The height mapping (`fit` mode's min/max) is chosen from the burned grid.
+- The world map is not burned.
+
+**What burns:**
+- Segments with `kind` `ground` or `slope` whose prefab's `heightMode` is `conform`, in plan order (ascending `id`).
+- **Safety:** a segment is skipped and counted (`conform.skipped`) when any of its sample points `P_k` is more than 30 m above or below `H0` at the pixel containing it, i.e. `col = clamp(floor((x + size/2) / cell), 0, N − 1)` and the same for `row`.
+- After the segments, one junction disc per node used by at least one burned segment, in ascending node `id`.
+- Elevated, bridge and tunnel segments don't burn, and nor do `follow` and `walls` segments.
+
+**Per segment:**
+1. **Bezier.** The plan bezier `a, b, c, d` (`x, y, z`; `y` is the absolute CS1 height).
+   - `B(t)`: `u = 1 − t`, `b0 = u*u*u`, `b1 = 3*u*u*t`, `b2 = 3*u*t*t`, `b3 = t*t*t`, then `B = b0*a + b1*b + b2*c + b3*d` per coordinate, summed in that order.
+2. **Sampling.**
+   - `L` = the 3-D length of the 16-piece chord polyline `B(j/16)`, `j = 0…16`, summed in order.
+   - `n = max(1, ceil(L))`.
+   - Sample points `P_k = B(k / n)` for `k = 0…n`.
+3. **Nearest point** for a pixel centre `p`, in x/z only:
+   - For each piece `P_k P_(k+1)`: `u = clamp(((p − P_k) · (P_(k+1) − P_k)) / |P_(k+1) − P_k|², 0, 1)`, using 0 for a zero-length piece. The nearest point is `Q = P_k + u (P_(k+1) − P_k)`.
+   - `d = Math.sqrt(dx*dx + dz*dz)` from `p` to `Q`. Never use `Math.hypot`: it can differ in the last bit between engines.
+   - `h_road = P_k.y + u × (P_(k+1).y − P_k.y)`.
+   - Take the smallest `d`, with a strict `<`, so the lowest `k` wins a tie.
+4. **Zones:** `w = halfWidth`, `Δ = h_road − H0(p)`, blend width `b = min(40, max(3.5, 2 × |Δ|))`.
+   - **Core** (`d ≤ w`): weight 1, target `h_road`.
+   - **Blend** (`w < d ≤ w + b`): `t = (d − w) / b`, `s = t*t*(3 − 2*t)`, weight `1 − s`, target `h_road`.
+   - Beyond that the segment doesn't touch the pixel.
+   - The factor 2 keeps the smoothstep's steepest point near 1 : 1.33 (about 37°). The 3.5 m minimum is one cell. Any pixel window that contains the polyline's bounding box grown by `w + 40` gives the same result.
+5. **Wet pixels.**
+   - `depth` = the CS1 water depth bilinearly sampled at `(x − dx, z − dz)`, exactly like the terrain (0 without water data). `sea` = the CS1 sea level (none without water data).
+   - A pixel is wet when `depth > 0` or `H0 < sea`. On a wet pixel `b` is 3.5 m, and a blend-only result is capped at `surface = max(sea, H0 + depth)`.
+   - Cores are not capped.
+
+**Junction discs:** radius `r` = the largest `halfWidth` among the burned segments at the node, height = the node's `y`, centre = the node's `x, z`, and `d` = the distance to the centre. It's a core within `r` and a blend beyond it, with the same `b`, `t`, weight and wet rules as a segment.
+
+**Combining contributions per pixel** (a sparse map of touched pixels is enough):
+- **Core:** if any core covers the pixel, `h` = the target of the core with the smallest `|Δ|` (strict `<`, so the first one in processing order wins a tie).
+- **Blend only:** with `w4 = (w*w)*(w*w)` per contribution, `target = Σ(w4 × h_road) / Σw4` (both sums in processing order), `W = max w` and `h = H0 + W × (target − H0)`. On a wet pixel, `h = min(h, surface)`.
+- **Untouched:** `h = H0`.
+
+**Water sources:** after the burn, every `water.apply.sources[]` entry whose pixel (the pixel containing its `x, z`, as in the safety rule) changed by more than 1 mm gets `height = round2(max(1, height + H0 − H))`, where `H` is the burned value there. Its absolute level stays as on natural terrain. Both water converters do this.
+
+**`terrain.json`** gains:
+- `roadConformed: true`;
+- `conform: { segments, skipped, nodes, blendFactor: 2, minBlend: 3.5, maxBlend: 40, maxDifference: 30, pixelsChanged, maxRaise, maxCut, belowSeaLevelPixels, before: { min, max } }`. `belowSeaLevelPixels` counts core pixels whose road height is below the sea level; worker-4 checks the Cacao and Skibidi coasts in game, and a channel rule is added only if water gets in. `stats` holds the burned grid.
+
+`plan.terrain.roadConformed` mirrors it.
+
 ### `water.apply` and `water.checkpoints`
 
 Added to the M2 `water` section when the `.cs1x` has `water.json`:

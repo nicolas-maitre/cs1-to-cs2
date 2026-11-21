@@ -3,6 +3,8 @@ import type { T } from '../core/i18n/index.ts';
 import { VANILLA_CHOICES } from '../core/mapping.ts';
 import type { MappingOverride } from '../core/mapping.ts';
 import type { MappingRow } from '../core/plan.ts';
+import { HEIGHT_MODES } from '../core/types.ts';
+import type { HeightMode } from '../core/types.ts';
 import { useI18n } from './i18n.tsx';
 import { CATEGORY_STYLE } from './scene.ts';
 
@@ -10,6 +12,8 @@ interface Props {
   rows: MappingRow[];
   overrides: Record<string, MappingOverride>;
   onOverride: (netInfo: string, o: MappingOverride) => void;
+  heightModes?: Record<string, HeightMode>;
+  onHeightMode?: (netInfo: string, m: HeightMode | null) => void;
 }
 
 const encode = (o: MappingOverride | undefined) => (!o || o.mode === 'auto' ? 'auto' : o.mode === 'vanilla' ? `v|${o.type}|${o.name}` : o.mode);
@@ -18,7 +22,7 @@ const decode = (v: string): MappingOverride => {
   return { mode: v as 'auto' | 'rb' | 'skip' };
 };
 
-export function MappingTable({ rows, overrides, onOverride }: Props) {
+export function MappingTable({ rows, overrides, onOverride, heightModes = {}, onHeightMode }: Props) {
   const { t, tk, n } = useI18n();
   const [all, setAll] = useState(false);
   const shown = rows.filter(r => all || r.segmentsInCrop > 0);
@@ -59,6 +63,14 @@ export function MappingTable({ rows, overrides, onOverride }: Props) {
                   {overrides[r.netInfo] && <div className="small">{t('mapping.override', { target: tg.mode === 'vanilla' ? tg.name : tg.mode === 'skip' ? t('mapping.skip') : t('mapping.autoRb') })}</div>}
                   {r.vanilla && !overrides[r.netInfo] && <div className="small muted">{r.vanilla.road ? t('mapping.vanillaWhy', { reason: r.vanilla.reason }) : t('mapping.rbWhy', { reason: r.vanilla.reason })}</div>}
                   {r.prefabKeys.length > 1 && <div className="small muted">{t('mapping.prefabs', { n: r.prefabKeys.length })}</div>}
+                  {tg.mode !== 'skip' && onHeightMode && (
+                    <label className="fallback small">{t('height.label')}{' '}
+                      <select aria-label={t('height.for', { name: r.title })} value={heightModes[r.netInfo] ?? ''} onChange={e => onHeightMode(r.netInfo, (e.target.value || null) as HeightMode | null)}>
+                        <option value="">{t('assets.auto', { x: t(`height.${r.heightModeAuto}`) })}</option>
+                        {HEIGHT_MODES.map(m => <option key={m} value={m}>{t(`height.${m}`)}</option>)}
+                      </select>
+                    </label>
+                  )}
                 </td>
               </tr>
             );

@@ -3,7 +3,7 @@
 import { bestCropCenter, cropBounds, cropTransform, inCrop, validateCrop } from './crop.ts';
 import { classifyFiller, laneCoverage, overrideSignature, wholeLaneOverrides } from './imt.ts';
 import type { LaneOverrideKind } from './imt.ts';
-import { categorize, prefabKeyVanilla, resolveTarget } from './mapping.ts';
+import { categorize, defaultHeightMode, foldHeightMode, prefabKeyVanilla, resolveTarget } from './mapping.ts';
 import type { MappingOverride, NetCategory, ResolvedTarget } from './mapping.ts';
 import { analyse, convert, netInfoTitle } from './rb.ts';
 import type { RbConfig, RbReport } from './rb.ts';
@@ -35,6 +35,8 @@ import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
   PlanTransit,
 } from './types.ts';
+import { HEIGHT_MODES } from './types.ts';
+import type { HeightMode } from './types.ts';
 import { RAIL_DEPOT_TYPES } from './types.ts';
 
 export const GENERATOR = { name: 'cs1conv-web', version: APP_VERSION };
@@ -77,6 +79,11 @@ export interface BuildOptions {
   surfaces?: boolean;
   /** Outside connections where highways and train tracks leave the crop (default on). */
   outsideConnections?: boolean;
+  /** Height mode per CS1 ground NetInfo (mapping table); others get `heightMode`, else their default (#113). */
+  heightModes?: Record<string, HeightMode>;
+  heightMode?: HeightMode;
+  /** Burn the conform roads into the heightmap when the package is written (default on; #110). */
+  roadConform?: boolean;
 }
 
 export interface MappingRow {
@@ -96,6 +103,9 @@ export interface MappingRow {
   rb?: RbReport;
   /** For rb rows when vanilla roads are preferred: the matching vanilla road of the base profile, or why none fits. */
   vanilla?: VanillaMatch;
+  /** How its ground segments meet the terrain, and the default for the type (#110–113). */
+  heightMode: HeightMode;
+  heightModeAuto: HeightMode;
 }
 
 export interface RbVariant extends RbReport { key: string; segments: number }
@@ -115,6 +125,8 @@ export interface BuiltPackage {
   extraSummary?: ConvCategory[];
   /** M3: every CS1 building type with its CS2 match (for the Assets tab); empty without a catalogue. */
   assetMatches?: AssetMatch[];
+  /** BuildOptions.roadConform, for completePackage */
+  roadConform?: boolean;
 }
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -172,7 +184,11 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
       row = {
         netInfo: base, title: info ? netInfoTitle(info) : base, category: info ? categorize(info) : 'other', ai: info?.ai ?? seg.ai ?? '',
         infos: [], segments: 0, segmentsInCrop: 0, target, override: overrides[base], prefabKeys: [],
+        heightMode: 'conform', heightModeAuto: 'conform',
       };
+      row.heightModeAuto = defaultHeightMode(info, row.category);
+      const hm = opts.heightModes?.[base] ?? opts.heightMode;
+      row.heightMode = hm && HEIGHT_MODES.includes(hm) ? hm : row.heightModeAuto;
       if (info && target.mode === 'rb') row.rb = convert(info)?.report;
       if (row.rb && vanillaAllowed(row)) row.vanilla = matchVanilla(row.rb.profile, opts.roads);
       rows.set(base, row);
@@ -304,6 +320,14 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
       if (!prefabs[key]) prefabs[key] = { type: target.type, name: target.name, source: base };
       else if (prefabs[key].source !== base && !prefabs[key].source.split(', ').includes(base)) prefabs[key].source += `, ${base}`;
     }
+    // height mode (#110–113): a non-default mode gets its own key, so each prefab has one mode
+    const fk = foldHeightMode(key, row.heightMode, row.category);
+    if (fk !== key) {
+      if (!prefabs[fk]) prefabs[fk] = { ...prefabs[key], source: base };
+      else if (!prefabs[fk].source.split(', ').includes(base)) prefabs[fk].source += `, ${base}`;
+      key = fk;
+    }
+    prefabs[key].heightMode = row.heightMode;
     if (!row.prefabKeys.includes(key)) row.prefabKeys.push(key);
 
     const info = infos.get(s.info);
@@ -321,8 +345,11 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
       bez = [bez[3], bez[2], bez[1], bez[0]];
     }
     usedNodes.add(start); usedNodes.add(end);
-    planSegments.push({ id: s.id, prefab: key, start, end, bezier: bez, elevationStart: eStart, elevationEnd: eEnd, kind, ...(reversed ? { reversed } : {}), cs1Info: s.info });
+    const halfWidth = Number(info?.fields.m_halfWidth ?? baseInfo.fields.m_halfWidth ?? 0);
+    planSegments.push({ id: s.id, prefab: key, start, end, bezier: bez, elevationStart: eStart, elevationEnd: eEnd, kind, ...(reversed ? { reversed } : {}), cs1Info: s.info, halfWidth: r2(halfWidth) });
   }
+  // a key whose segments all moved to a folded key is left without segments: drop it
+  { const used = new Set(planSegments.map(s => s.prefab)); for (const k of Object.keys(prefabs)) if (!used.has(k)) delete prefabs[k]; }
 
   const planNodes: PlanNode[] = [...usedNodes].sort((a, b) => a - b).map(id => {
     const n = nodes.get(id)!;
@@ -489,6 +516,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     summary: [],
     extraSummary: [zoning.summary, water.summary, transit.summary, traffic.summary, nc.summary, buildings.summary, districts.summary, objects.summary],
     assetMatches: buildings.matches,
+    roadConform: opts.roadConform !== false,
   };
   pkg.summary = conversionSummary(city, pkg);
   return pkg;
@@ -529,13 +557,21 @@ export function compactJson(v: unknown): string {
  * plan.terrain pointer. Call it once before writing / zipping a package (CLI, download), not on every crop change.
  * Returns the extra files; pkg.plan.terrain and the terrain summary are updated in place.
  */
-export function completePackage(city: Cs1City, pkg: BuiltPackage, opts: { terrain?: boolean; world?: boolean } = {}): { path: string; data: Uint8Array }[] {
+export function completePackage(city: Cs1City, pkg: BuiltPackage, opts: { terrain?: boolean; world?: boolean; conform?: boolean } = {}): { path: string; data: Uint8Array }[] {
   if (opts.terrain === false || !city.terrain) return [];
-  const t = terrainFiles(city, pkg.plan, { world: opts.world });
+  const t = terrainFiles(city, pkg.plan, { world: opts.world, conform: opts.conform ?? pkg.roadConform });
   if (!t) return [];
   pkg.plan.terrain = t.terrain;
+  const c = t.conform;
+  if (c) {
+    pkg.report.items.push({ level: 'info', kind: 'terrain', message: `road-conformed terrain: ${c.segments} ground road segment(s) and ${c.nodes} junction(s) burned into the heightmap (${c.pixelsChanged} pixels, up to +${c.maxRaise} / −${c.maxCut} m)${t.waterSourcesAdjusted ? `; ${t.waterSourcesAdjusted} water source(s) adjusted to keep their level` : ''}`, count: c.segments });
+    if (c.skipped) pkg.report.items.push({ level: 'warning', kind: 'terrain', message: `${c.skipped} ground segment(s) more than ${c.maxDifference} m from the natural terrain were not burned in (segments ${(c.skippedIds ?? []).join(', ')})`, count: c.skipped, cs1: { segments: c.skippedIds ?? [] } });
+  }
   const s = pkg.summary.find(c => c.id === 'terrain');
-  if (s) s.summary = terrainSummary(pkg.plan, pkg.lang);
+  if (s) {
+    s.summary = terrainSummary(pkg.plan, pkg.lang);
+    if (t.terrain.roadConformed) s.details = [...(s.details ?? []).filter(d => d !== translator(pkg.lang)('sum.terrain.conformed')), translator(pkg.lang)('sum.terrain.conformed')];
+  }
   return t.files;
 }
 

@@ -262,7 +262,13 @@ export interface PlanPrefab {
   speedKmh?: number;
   /** A vanilla CS2 road chosen because the generated Road Builder profile matches it (docs/DECISIONS.md #100). */
   matched?: boolean;
+  /** How the ground segments of this prefab meet the terrain (docs/DECISIONS.md #110–113, schema §2). */
+  heightMode?: HeightMode;
 }
+
+/** conform: the ground follows the road (burned into the heightmap); follow: the road follows the ground; walls: CS1 height with retaining walls. */
+export type HeightMode = 'conform' | 'follow' | 'walls';
+export const HEIGHT_MODES: HeightMode[] = ['conform', 'follow', 'walls'];
 
 export interface PlanNode {
   id: number;
@@ -288,6 +294,8 @@ export interface PlanSegment {
   reversed?: boolean;
   /** CS1 NetInfo of the segment (variant name for elevated/bridge/slope/tunnel), for traceability. */
   cs1Info?: string;
+  /** CS1 NetInfo m_halfWidth (m, incl. sidewalks): the corridor a conform road burns into the terrain. */
+  halfWidth?: number;
 }
 
 export interface Plan {
@@ -424,6 +432,8 @@ export interface PlanTerrainRef {
   dir: string; meta: string; heightScale: number; heightOffset: number; heightMode: string;
   /** apply.mjs "auto" sea level for a city without water: floor(min) − 20 */
   seaLevelDry: number; min: number; max: number; world: boolean;
+  /** the heightmap has the conform roads burned in (terrain.json conform) */
+  roadConformed?: boolean;
 }
 
 /** Outside connections where the imported network leaves the crop (terrain/lib/connections.mjs). */
@@ -490,6 +500,7 @@ export interface PlanStats {
 }
 
 export type PackageReportKind =
+  | 'terrain'
   | 'imt-node-fill'
   | 'imt-partial-fill'
   | 'imt-paint'

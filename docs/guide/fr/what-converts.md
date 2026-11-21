@@ -34,6 +34,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
 | Carte de hauteur (et le terrain autour du carré) | Terrain CS2 aux mêmes hauteurs, plus la carte du monde autour | converti | Appliqué par Prepare map de l'importeur, dans une nouvelle ville, avant l'import. |
+| Sol modelé autour des routes (CS1 l'aplanit sous ses routes) | Profils des routes gravés dans la carte de hauteur CS2, avec talus | converti | Par type de route dans l'onglet Routes : le terrain suit la route (rues, voies ferrées), hauteur CS1 avec murs de soutènement (autoroutes) ou la route suit le terrain (chemins). |
 | Niveau de la mer, rivières et lacs (sources d'eau naturelles) | Niveau de la mer et sources d'eau CS2 | converti, approché | Réglés par Prepare map. CS2 simule à nouveau l'eau ; des sources supplémentaires remplissent les rivières et lacs au-dessus de la mer. Pompes et rejets viennent avec leurs bâtiments. |
 | Autoroutes et voies ferrées qui quittent le carré | Connexions extérieures CS2 | converti | Dernière étape de l'importeur (Outside connections), pour que voitures et trains puissent entrer dans la ville et en sortir. |
 

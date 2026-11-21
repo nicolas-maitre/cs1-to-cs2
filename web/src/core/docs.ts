@@ -5,7 +5,7 @@
 import type { Lang } from './i18n/index.ts';
 import { DOCS_FR } from './docs.fr.ts';
 
-export const APP_VERSION = '0.6.1';
+export const APP_VERSION = '0.7.0';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }
@@ -92,7 +92,7 @@ export const DOCS_EN: Docs = {
       title: 'Check the conversion',
       body: [
         '**Overview** shows what converts per category with your city\'s numbers, a preview of the terrain, the options (zone theme, which parts to convert) and the install steps.',
-        '**Mapping** lists every road type with its CS2 equivalent: a vanilla CS2 road when the generated road has the same lanes ("vanilla Small Road (matched)"), else a Road Builder road, with the reason in both cases; you can pick another one. **Prefer vanilla CS2 roads** (in the options, on by default) does the matching; turn it off to make every road a Road Builder road. **Road types** shows the generated Road Builder roads and any width change.',
+        '**Mapping** lists every road type with its CS2 equivalent: a vanilla CS2 road when the generated road has the same lanes ("vanilla Small Road (matched)"), else a Road Builder road, with the reason in both cases; you can pick another one. **Prefer vanilla CS2 roads** (in the options, on by default) does the matching; turn it off to make every road a Road Builder road. Each type also has a **Height** setting: "ground follows the road" (the default for streets and tracks: the terrain is shaped to the road\'s CS1 height, with earth slopes on both sides), "CS1 height, retaining walls" (the default for highways and ramps) or "road follows the ground" (the default for paths). **Road types** shows the generated Road Builder roads and any width change.',
         '**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn\'t fit at its spot. By default it is not moved: it slides a little or takes a smaller alternative, and if it still doesn\'t fit, the import report lists it with its CS1 position so you can place it yourself ("Don\'t move it (list it for me to place)"). You can instead let a type look for free land nearby (up to 400 m) or anywhere in the square.',
         '**Report** lists everything that is approximated or dropped.',
       ],
@@ -155,6 +155,7 @@ export const DOCS_EN: Docs = {
     { q: 'Is my city uploaded anywhere?', a: ['No. The web tool runs entirely in your browser; the file never leaves your computer. There is no server behind the page.'] },
     { q: 'Why can\'t I convert my whole 81-tile city?', a: ['A CS2 map\'s playable area is about 14.3 km across, smaller than CS1\'s 81 tiles (17.3 km). The web tool lets you pick the square that fits; you can convert another square into another city.'] },
     { q: 'Why are some roads vanilla CS2 roads and others Road Builder roads?', a: ['When the road cs1conv would generate has the same lanes as a vanilla CS2 road (same driving lanes and directions on each side, each within 0.5 m in width, parking and bike lanes on the same sides, the same median, a total width within 1 m and the same speed), the vanilla road is used: fewer Road Builder configs to install, and the roads look like the game\'s own. Trees, bus lanes and other changes from IMT or TM:PE usually keep a road on Road Builder. **Mapping** gives the reason for each type. To force Road Builder, pick **Road Builder** for the type, or turn off **Prefer vanilla CS2 roads**.'] },
+    { q: 'Why is the terrain reshaped along the roads?', a: ['CS1 flattens the ground under its roads, but the exported heightmap is too coarse (16 m cells) to keep that. So the package burns each street\'s CS1 height profile back into the CS2 terrain, with earth slopes back to the natural ground, and the roads lie exactly at their CS1 height instead of following bumps. Highways keep their CS1 height with retaining walls, and paths follow the ground. Change it per road type in the **Mapping** tab ("Height").'] },
     { q: 'Some roads are narrower or wider than in CS1. Why?', a: ['Road types are rebuilt with Road Builder, which has fixed lane widths and sidewalks of at most 7 m. A CS1 road with 9 m sidewalks becomes a few metres narrower. Every change is listed under **Road types** and in the report.'] },
     { q: 'The page says it can\'t open my file.', a: ['Open the `.cs1x` written by the exporter, not a `.crp` save. If it says the format version is too new, reload the page to get the latest tool; if it is too old, update the exporter and export again.'] },
     { q: 'A section of my export failed.', a: ['The rest converts normally. Export again; if it keeps failing, the exporter\'s message is in the web tool under Overview → File check.'] },
@@ -187,6 +188,7 @@ export const DOCS_EN: Docs = {
     { area: 'IMT', cs1: 'Pavement, grass and gravel fills at junctions', cs2: 'CS2 surfaces (pavement, grass, sand)', status: 'yes', notes: 'Placed with the buildings step.' },
     { area: 'IMT', cs1: 'Painted markings at junctions', cs2: '–', status: 'report', notes: 'No CS2 equivalent yet (decals are planned).' },
     { area: 'Terrain and water', cs1: 'Terrain heightmap (and the land around the square)', cs2: 'CS2 terrain at the same heights, plus the world map around it', status: 'yes', notes: 'Applied by the importer\'s Prepare map, in a new city, before the import.' },
+    { area: 'Terrain and water', cs1: 'Ground shaped to the roads (CS1 flattens it under its roads)', cs2: 'Road profiles burned into the CS2 heightmap, with earth slopes', status: 'yes', notes: 'Per road type in the Mapping tab: ground follows the road (streets, tracks), CS1 height with retaining walls (highways), or road follows the ground (paths).' },
     { area: 'Terrain and water', cs1: 'Sea level, rivers and lakes (natural water sources)', cs2: 'CS2 sea level and water sources', status: 'approx', notes: 'Set by Prepare map. CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled. Pumps and drains come with their buildings.' },
     { area: 'Terrain and water', cs1: 'Highways and railways leaving the square', cs2: 'CS2 outside connections', status: 'yes', notes: 'The importer\'s last step (Outside connections), so traffic and trains can enter and leave the city.' },
     { area: 'Zoning', cs1: 'Residential, commercial, industrial and office zones', cs2: 'CS2 zones (EU or NA theme)', status: 'approx', notes: 'District specialisations become generic zones.' },
