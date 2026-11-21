@@ -110,3 +110,67 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
 - **CS1 tunnels sometimes become open cuts** (30 in the whole city, 1 in the geometry plan). CS2 picks the composition; forcing a tunnel would need elevation ≤ −12 m on both ends and in the middle.
 - **`heights: "exact"` crash:** see #19.
 - **Not driven yet:** the Options page itself was not opened on screen; scripts drive it through `Actions`. The dropdown of found packages is untested in game.
+
+## M2 plan additions (2026-11-21)
+
+29. **Three separate ops after the road import: `traffic`, `trafficmod`, `zoning`, in that order** (Claude).
+    - Each is switchable in the e2e (`--no-traffic`, `--no-traffic-mod`, `--no-zoning`) and in the mod (one toggle each). All run with phase and pump `tool`, because structural changes from the main-loop pump crash CS2 (terrain worker's finding).
+    - Zoning runs last: the traffic steps mark edges `Updated`, and the zone blocks must be final before they're painted.
+    - The ops don't keep state from the import. They find plan nodes by position and plan segments by walking edges (`Resolve`), the same as `verify`, so each one can also be run on its own.
+30. **Zoning: paint `Cell.m_Zone` directly, as the zone tool's apply does** (`ApplyZonesSystem`: write the block's `Cell` buffer, then `Updated` + `BatchesUpdated`).
+    - It first waits until the number of blocks in the area has been stable for 20 frames; CS2 creates the blocks from the roads itself.
+    - Each plan cell is matched to every CS2 cell whose centre lies within half a cell (4.5 m) of the plan cell's centre, in **every** block, Visible or Shared, not Blocked.
+      - **Why every block:** blocks overlap at corners and along parallel roads. An overlapped cell is `Shared`, and the game keeps both copies in sync, so painting only the nearest copy got 13 450 cells reverted. All of the cells that failed were `Shared`.
+    - When several plan cells land on one CS2 cell (the CS1 and CS2 grids don't line up), the CS2 cell takes the majority zone. On Skibidi only 2 cells had conflicting votes.
+    - **Skibidi 3 km:**
+      - 93.1 % of 76 658 plan cells matched; all 89 848 CS2 cells painted, shared copies included, still hold their zone (0 reverted);
+      - the check after 2 minutes of simulation gives the same;
+      - unmatched: 947 cells with no CS2 block (CS1's blocks reach deeper or lie along roads that don't zone in CS2) and 4343 hidden cells.
+31. **Vanilla traffic settings go in `Game.Net.Upgraded`, the same component as the game's road upgrade tool** (read from `CompositionSelectSystem` in the IL).
+    - Traffic lights, removed lights and all-way stop: `m_General` on the **node** entity. `GetNodeFlags` ORs the node's own `Upgraded` into every node composition.
+    - Turn bans (`ForbidLeft/Right/Straight`) and crosswalks (`Add/RemoveCrosswalk`): side flags on the **edge**, left for the start node and right for the end node. The start node's composition gets the edge's flags mirrored, so each end's flags land on the same side of its own node composition. Measured: 57 of the 59 bans that reached a composition are on that side.
+    - Lights are only changed where CS2's default differs from the plan; the default is read from the node composition first.
+    - **Skibidi:** 518/518 junction light states as planned (1 added, 121 removed); 41 crosswalks removed; 59 of 66 turn-ban ends visible in node compositions.
+    - **Not verified:** the turn bans' effect on lane connections.
+32. **Traffic mod: priority signs only, by reflection, in the mod's own data format** (Claude).
+    - **Detection:** the `Traffic` assembly (Paradox Mods 80095, 0.2.13) with `Traffic.Components.PrioritySigns.LanePriority`. No compile-time reference; skipped and reported when the mod is missing.
+    - **What's written:** the edge gets a `LanePriority` buffer, with entries {`laneIndex` = (composition lane index, group, carriageway), `priority` 1 RightOfWay / 2 Yield / 3 Stop, `isEnd`}, plus a `ModifiedPriorities` tag. These are the same fields the mod's own apply step writes.
+    - **Which lanes:** the same selection as the mod's handle generator: road edge lanes ending at that node, without secondary or master lanes.
+    - **Measured** on the signed junctions' car lanes, CS2's own `CarLaneFlags`: RightOfWay 0 → 836, Yield 532 → 793. The mod's lane system applied them. Yield markings are visible at signed approaches.
+    - **Not applied, reported with counts:** lane connections (237), lane arrows (211) and U-turn rules (31).
+      - The mod stores connections as separate entities (`ModifiedLaneConnections` on the node, `GeneratedConnection` buffers with lane position and carriageway maps), a much deeper format to fake reliably.
+      - Lane arrows are lane connections in that mod.
+      - The parts of the arrows that are plain turn bans already land through the vanilla flags (#31).
+33. **Hooks for transit and buildings.**
+    - **e2e:** `tools/e2e/steps/*.mjs` plug-ins (`{name, after, run(ctx)}`) run as optional steps at `import`, `connections`, `shots` or `end`.
+    - **Mod:** `Cs2ImporterMod.ImportSteps.Register(name, Func<args, IEnumerator>)` (by reflection) adds a step after the built-in ones, in the same ToolUpdate chain and the same combined report.
+34. **The mod's "terrain is converted" toggle is hidden and the mod always uses flat heights.** It selected the `exact` mode, which crashes CS2 (#19), and flat heights are right on converted terrain too.
+35. **e2e additions:** `--simulate s` (unpause at 3× for s seconds before the shots), zone-view screenshots (op `view` activates the zone tool, the only time CS2 draws zoned cells), a final `zoning-check` after the simulation, and `--save-name`.
+
+### Open issues (M2 plan additions)
+
+- Traffic mod lane connections and lane arrows are not applied (see #32).
+- Turn bans are verified in the node compositions only, not in the generated lanes.
+- No services, so the test city doesn't grow beyond a few buildings (population 74 after 2 min, then 54). Zones accept growth, but water, power and services are out of scope here.
+
+## Integration (2026-11-21, after the usage-limit pause)
+
+36. **Bridge: barrier command buffers are allowed before exec code runs** (`BarrierAccess` in `tools/cs2-bridge/BridgeSystems.cs`).
+    - **Symptom** (buildings worker): the first `exec` with phase tool after a `save.load` failed with "Trying to create EntityCommandBuffer when it's not allowed!". Game methods that queue end-of-frame commands (`NameSystem.SetCustomName`, `PoliciesUISystem.SetPolicy`) failed the same way from exec.
+    - **Cause, from the IL:** `Game.SafeCommandBufferSystem` only hands out buffers after its `AllowBarrier<T>` system has run since its last update.
+    - **Fix:** the bridge calls `AllowUsage()` on every safe barrier right before exec code or a coroutine step runs, which is what those systems do every frame.
+37. **The buildings/ worker's steps are compiled into Cs2ImporterMod** (one `Compile Include` of `buildings/src`, `Cs2Buildings.Steps.RegisterAll` in `OnLoad`). One Options toggle, "Buildings, trees, districts", gates all four. They run after zoning.
+38. **e2e plug-ins.** Buildings is the buildings/ worker's own `steps/buildings.mjs` (on by default, `--no-buildings`; my duplicate was removed after both ran in one run). Transit (`steps/20-transit.mjs`, mine) is on by default since the terrain worker verified it (`--no-transit` skips it); it runs after the outside connections and the buildings plug-in (stations and depots first).
+39. **e2e, after the terrain worker's map-prep update:**
+    - **Clear:** with terrain the base-map clear is `mapprep clear` again. It now deletes every top-level net (the crash in #27 came from the power lines it used to keep) and also the base map's buildings: a Sunshine Peninsula landmark kept its old height and stood as a terrain pillar in the screenshots.
+    - **Water check:** `water-check` runs after `--simulate`. Lakes above the sea level fill only while the simulation runs (3–5 simulated minutes).
+40. **Transit in Cs2ImporterMod** (coordinator: a release user flow can't depend on the Node e2e script).
+    - **Their code, compiled in:** the transit worker's library (`transit/cs2-exec/*.cs`) is compiled into the mod by reference, like `buildings/src`.
+    - **`mod/TransitStep.cs`** replays their verified `transit.mjs apply` inside the import coroutine, with the same pacing:
+      - stops 20 at a time, 10 frames apart, then 30 frames;
+      - one line at a time, its `lines.create` coroutine stepped in ToolUpdate, with the forced apply frame;
+      - names and numbers;
+      - a 60-frame settle, then a check.
+    - **Planner:** `BuildJobs` is a C# port of their `transit/lib/plan.mjs` `transitJobs` (kerbside stops keyed by segment:side:t, shared between lines). The two have to be kept in step.
+    - **Names:** `NameSystem` needs the end-frame barrier, so `ImportSystem` allows the safe barriers before every step (the same fix as the bridge's, #36).
+    - **Option and order:** one Options toggle, "Transit lines", on by default. The step runs after the buildings steps, so metro and train lines find their stations.

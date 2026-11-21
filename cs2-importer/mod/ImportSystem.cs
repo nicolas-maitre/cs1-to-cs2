@@ -7,6 +7,33 @@ using Game;
 
 namespace Cs2ImporterMod
 {
+    /// <summary>
+    /// CS2's barrier command buffer systems (Game.SafeCommandBufferSystem) only hand out buffers after their
+    /// AllowBarrier&lt;T&gt; system has run since their last update; the import coroutine runs in ToolUpdate, where that
+    /// isn't guaranteed. Allowing them here is what those systems do every frame (same fix as the bridge's, #36).
+    /// </summary>
+    internal static class BarrierAccess
+    {
+        static Unity.Entities.World s_World;
+        static Game.SafeCommandBufferSystem[] s_Barriers;
+
+        public static void AllowAll(Unity.Entities.World world)
+        {
+            try
+            {
+                if (s_World != world || s_Barriers == null)
+                {
+                    var list = new System.Collections.Generic.List<Game.SafeCommandBufferSystem>();
+                    foreach (var sys in world.Systems) if (sys is Game.SafeCommandBufferSystem b) list.Add(b);
+                    s_Barriers = list.ToArray();
+                    s_World = world;
+                }
+                foreach (var b in s_Barriers) b.AllowUsage();
+            }
+            catch (Exception e) { Mod.Log.Warn("barrier access failed: " + e.Message); s_Barriers = null; }
+        }
+    }
+
     public class ImportSystem : GameSystemBase
     {
         static IEnumerator s_Job;
@@ -37,6 +64,7 @@ namespace Cs2ImporterMod
         protected override void OnUpdate()
         {
             if (s_Job == null) return;
+            BarrierAccess.AllowAll(World); // steps may use game methods that queue end-of-frame commands (NameSystem, …)
             var job = s_Job;
             var done = s_Done;
             try

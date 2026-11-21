@@ -28,7 +28,7 @@ namespace Cs2Importer
     public static class Entry
     {
         public const string Build = "m1";
-        static readonly ILog Log = LogManager.GetLogger("Cs2Importer").SetShowsErrorsInUI(false);
+        internal static readonly ILog Log = LogManager.GetLogger("Cs2Importer").SetShowsErrorsInUI(false);
 
         public static object Run(Dictionary<string, object> args)
         {
@@ -42,7 +42,11 @@ namespace Cs2Importer
                 case "terrain": return TerrainStats(args);
                 case "inspect": return Inspect(args);
                 case "mod": return ModScript.Drive(args);
-                default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify)");
+                case "zoning": return M2Ops.Zoning(args);
+                case "view": return View(args);
+                case "traffic": return M2Ops.Traffic(args);
+                case "trafficmod": return M2Ops.TrafficMod(args);
+                default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify, zoning, traffic, trafficmod, terrain, inspect, mod)");
             }
         }
 
@@ -65,13 +69,22 @@ namespace Cs2Importer
             return o;
         }
 
-        static ImportJob LoadJob(Dictionary<string, object> a)
+        internal static string PlanFile(Dictionary<string, object> a)
         {
             var path = P.Required(a, "plan");
             if (Directory.Exists(path)) path = Path.Combine(path, "cs1conv-plan.json");
             if (!File.Exists(path)) throw new FileNotFoundException("plan not found: " + path);
-            var plan = PlanParser.Parse(File.ReadAllText(path, Encoding.UTF8));
-            return ImportPlanner.Build(plan, Options(a));
+            return path;
+        }
+
+        internal static ImportJob LoadJob(Dictionary<string, object> a)
+        {
+            return LoadJob(a, File.ReadAllText(PlanFile(a), Encoding.UTF8));
+        }
+
+        internal static ImportJob LoadJob(Dictionary<string, object> a, string json)
+        {
+            return ImportPlanner.Build(PlanParser.Parse(json), Options(a));
         }
 
         sealed class PrefabTable
@@ -165,6 +178,29 @@ namespace Cs2Importer
                 { "skipped", ImportPlanner.Samples(job.Skipped, 5) },
                 { "temp", w.TempCounts() },
             };
+        }
+
+        // ---------------------------------------------------------------- view
+
+        /// <summary>
+        /// {tool: "zone" | "default", zone="NA Residential Low"}: activates the zone tool (zoned cells are only drawn while
+        /// it is active) or the default tool, for screenshots.
+        /// </summary>
+        static object View(Dictionary<string, object> a)
+        {
+            var w = new GameWorld();
+            var tools = w.World.GetOrCreateSystemManaged<Game.Tools.ToolSystem>();
+            var tool = P.Str(a, "tool", "default");
+            if (tool == "zone")
+            {
+                var name = P.Str(a, "zone", "NA Residential Low");
+                Game.Prefabs.PrefabBase pb;
+                if (!w.Prefabs.TryGetPrefab(new Game.Prefabs.PrefabID("ZonePrefab", name), out pb)) throw new ArgumentException("no zone prefab " + name);
+                bool ok = tools.ActivatePrefabTool(pb);
+                return new Dictionary<string, object> { { "op", "view" }, { "tool", tools.activeTool?.GetType().Name }, { "activated", ok } };
+            }
+            tools.activeTool = w.World.GetOrCreateSystemManaged<Game.Tools.DefaultToolSystem>();
+            return new Dictionary<string, object> { { "op", "view" }, { "tool", tools.activeTool?.GetType().Name } };
         }
 
         // ---------------------------------------------------------------- inspect
@@ -301,7 +337,7 @@ namespace Cs2Importer
 
         // ---------------------------------------------------------------- import
 
-        sealed class NodeState
+        internal sealed class NodeState
         {
             public NodeJob Job;
             public float3 Pos;         // the one CS2 position used for every segment at this node
@@ -604,7 +640,7 @@ namespace Cs2Importer
             };
         }
 
-        static List<Entity> FindPath(GameWorld w, Entity from, Entity to, HashSet<Entity> planNodes, HashSet<Entity> used)
+        internal static List<Entity> FindPath(GameWorld w, Entity from, Entity to, HashSet<Entity> planNodes, HashSet<Entity> used)
         {
             foreach (var first in w.EdgesOf(from))
             {
@@ -646,6 +682,6 @@ namespace Cs2Importer
         }
 
         static V3 V(float3 p) { return new V3(p.x, p.y, p.z); }
-        static double R(double d) { return Math.Round(d, 2); }
+        internal static double R(double d) { return Math.Round(d, 2); }
     }
 }

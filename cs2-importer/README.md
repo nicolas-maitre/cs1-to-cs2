@@ -19,7 +19,9 @@ The whole pipeline, from CS1 to a saved CS2 city, runs with [`tools/e2e/run.mjs`
 | **Check** | Plan check, plus whether every road type is available. For a missing Road Builder road it says whether its config isn't installed yet ("press Install…, then restart") or is installed but not loaded ("restart the game"). It also counts roads already in the area. |
 | **Install Road Builder configs** | Copies the package's `*-cs1conv.json` to `ModsData\RoadBuilder`, after a confirmation. Road Builder reads configs only at startup, so the game must be restarted. |
 | Clear the area first | On by default. Bulldozes the existing roads in the area. |
-| The terrain is the converted CS1 terrain | Off by default. Turn it on when the city's terrain was converted from the same CS1 city (`terrain/`). |
+| Transit lines | On by default. CS1 bus and tram stops and lines (names, numbers, colours) via the transit worker's library (`transit/cs2-exec`, compiled in; `mod/TransitStep.cs`), after the buildings. Metro and train lines need the stations from the buildings step. |
+| Buildings, trees, districts | On by default. The buildings/ worker's steps (`buildings/src/Steps.cs`, compiled into the mod: buildings, objects, districts, surfaces) run after zoning. A plan without those sections reports them as skipped. |
+| Zoning / Traffic lights, stops, turn bans, crosswalks / Priority signs (Traffic mod) | On by default. The M2 steps run after the roads in one chain, and their results show in the status line and the combined report. Other mods can add steps with `Cs2ImporterMod.ImportSteps.Register` (see `mod/ImportSteps.cs`). |
 | **Import into this city** | After a confirmation, builds the roads over the next frames. It is disabled while an import runs. |
 | Status | Progress ("batch 3 of 6 …"), then the summary: roads built / planned, problems by kind, skipped roads, leftover ghosts, and the path of the full report (`%LOCALAPPDATA%\cs1-to-cs2\import-reports\`). |
 
@@ -63,6 +65,10 @@ gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --phase tool --p
 | `terrain` | phase main | Height range, water and roads in a square (`x, z, size=3200, step=50`): for picking a test spot. |
 | `inspect` | phase main | Real nodes within `r` of `x, z` with their edges: for debugging a failure. |
 | `mod` | phase main; Import with `wait`: phase tool, pump tool | Drives the deployed mod's Options page: `set`, `press`, `wait`. |
+| `traffic` | phase tool, pump tool | M2: traffic lights, all-way stops (node `Upgraded`), turn bans and crosswalks (edge `Upgraded`) from `plan.traffic`. |
+| `trafficmod` | phase tool, pump tool | M2: Traffic mod priority signs (by reflection); lane connections, arrows and U-turns are counted only. Skipped if the mod is missing. |
+| `zoning` | phase tool, pump tool | M2: paints `plan.zoning.cells` onto the zone blocks of the imported roads; `checkOnly` only measures. |
+| `view` | phase main | `{tool: "zone"}` shows the zone overlay for screenshots; `{tool: "default"}` turns it off again. |
 
 Options: `keepEmbankments` (false), `heights` (`flat`; `exact` = CS2 terrain + CS1 `heightAboveTerrain`, experimental, see DECISIONS M2), `trace` (file: segment ids per batch, written before the batch), `offsetX` / `offsetZ` (0), `batchSize` (400), `cellSize` (400 m), `settleFrames` (2), `verifyFrames` (30), `groundSnap` (1 m), `minLength` (0.5 m), `shortLength` (4 m), `margin` (50 m).
 
@@ -133,3 +139,34 @@ New city on Corral Riches, plan shifted by (+2000, −4000), simulation paused, 
 | e2e, whole city (`--auto-crop 14300`, 4740 segments) | **4732 / 4740**, 0 Temp | import 3.0 s, 12 batches (create 5–10 ms, wall 80–200 ms each) | 8 `edge-missing` at two shallow grade separations, where CS2 joined the roads; see the open issues in DECISIONS. 30 CS1 tunnels became lowered cuts. |
 
 - **The mod's other actions, by script:** "Install Road Builder configs" copied 22 configs. Check then reported all 26 road types available and 80 roads in the area. A package without `roadbuilder\` and a non-existent folder both give clear error messages.
+
+## M2 plan additions: results (2026-11-21)
+
+`tools/e2e/run.mjs --apply-terrain --simulate 120 --save-name cs1conv-m2-full`, Skibidi 3 km on converted terrain (Sunshine Peninsula base), then the same chain again through the mod's Import action (`op mod`):
+
+| Step | Result |
+| --- | --- |
+| roads | 2035 / 2035 |
+| traffic | 518 / 518 junction light states as planned (1 added, 121 removed), 66 turn-ban ends (59 in node compositions), 41 crosswalks removed, 1.1 s |
+| trafficmod | 325 priority signs (167 main, 158 yield) on 287 roads; on those junctions' car lanes RightOfWay 0 → 836, Yield 532 → 793; 237 lane connections, 211 arrows, 31 U-turn rules not applied |
+| zoning | 93.1 % of 76 658 cells; all 89 848 CS2 cells painted (shared copies included) hold their zone after the step and after 2 min of simulation |
+| mod chain | roads, traffic and Traffic mod: the same numbers; the status line showed each batch, then traffic, trafficmod and zoning, and the summary. This run used the zoning version from before the shared-cell fix (nearest cell only). The fix was verified with the exec op, then in the mod (mod-only user flow below) |
+
+The city is saved as `cs1conv-m2-full`. Screenshots in `.gamectl/e2e/20261121-054647/`: `zones-*` and `zones-closeup-fixed` (zone overlay), `m2-light` (signal poles), `m2-forbid` (yield triangles on a signed approach next to the highway trench), `roads-*`.
+
+**Integration run** (`.gamectl/e2e/20261121-083655`, then `verify.json` there):
+- **e2e:** `--apply-terrain`, M2 steps, the buildings/ plug-in, 60 s simulation. ok: roads 2035/2035; buildings 96/108 placed (94 connected, 12 collisions); trees, districts and surfaces from the plug-in. Saved as `cs1conv-m2-full`.
+- **Bridge barrier fix:** right after `save.load cs1conv-m2-full`, a phase-tool exec and a main-phase exec both created command buffers from `EndFrameBarrier` and `ModificationBarrier1` without error.
+- **Mod chain by script** on that city: roads 2035/2035; traffic as above; 325 priority signs; zoning 92.9 %; buildings 86 already there + 4 placed (18 collisions, because the city already had them); objects, districts and surfaces skipped (the plan has no such sections). Each step showed in the status line. Saved as `cs1conv-m2-modchain`.
+
+**Full e2e** (`.gamectl/e2e/20261121-090231`): `--apply-terrain`, MapPrep clear (197 edges, 5 buildings), M2 steps, both plug-ins, 60 s simulation. ok: roads 2035/2035; buildings 99/108; objects 3453/4216; transit 145/145 stops, 9/9 lines named, 25 buses running; water check after the simulation: 150/150 dry points dry, 141/150 wet points wet, median error 0.66 m. Saved as `cs1conv-m2-full`.
+
+**Mod-only user flow** (`.gamectl/e2e/20261121-091639`, `modflow.json` there): a city with the converted terrain (`--no-import --keep-cs2`), then only the mod's Check and Import (every toggle on), driven through the `mod` op. Check: "All 37 road types are available." The status after Import:
+- roads 2035/2035 in 4.3 s;
+- Traffic: 1 lights added, 121 removed, 66 turn bans, 41 crosswalk changes;
+- Traffic mod: 325 priority signs on 287 roads;
+- Zoning: 71 348 of 76 658 cells (93.07 %);
+- Buildings: 108 of 108; Objects: 3404 of 4216; districts and surfaces skipped (none in the crop);
+- Transit: 9 of 9 lines, 145 of 145 stops.
+
+Report `%LOCALAPPDATA%\cs1-to-cs2\import-reports\import-20261121-102724.json`; saved as `cs1conv-m2-modflow`. The mod does not apply terrain, water or outside connections: those are still only the terrain/ Node tools.

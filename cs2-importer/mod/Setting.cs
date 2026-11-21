@@ -60,9 +60,32 @@ namespace Cs2ImporterMod
         [SettingsUISection(Section, ImportGroup)]
         public bool ClearArea { get; set; } = true;
 
-        /// <summary>The city's terrain is the converted CS1 terrain: place every node at its exact CS1 height.</summary>
-        [SettingsUISection(Section, ImportGroup)]
+        /// <summary>
+        /// Hidden and unused: the "exact" height mode it selected crashes CS2 on converted terrain (DECISIONS-importer.md
+        /// #19). Flat heights are right on both the converted terrain and a stand-in map.
+        /// </summary>
+        [SettingsUIHidden]
         public bool TerrainIsConverted { get; set; } = false;
+
+        /// <summary>After the roads: paint the plan's zone cells on the new zone blocks.</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ApplyZoning { get; set; } = true;
+
+        /// <summary>After the roads: traffic lights, all-way stops, turn bans and crosswalks (vanilla CS2).</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ApplyTrafficSettings { get; set; } = true;
+
+        /// <summary>After the roads: priority signs through the Traffic mod, when it is installed.</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ApplyTrafficMod { get; set; } = true;
+
+        /// <summary>After the roads and zones: buildings, trees/props, districts and surfaces (buildings/ worker's steps).</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ApplyBuildings { get; set; } = true;
+
+        /// <summary>After the buildings: CS1 bus/tram stops and transit lines (transit/ worker's library).</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ApplyTransit { get; set; } = true;
 
         [SettingsUISection(Section, ImportGroup)]
         [SettingsUIButton]
@@ -98,6 +121,7 @@ namespace Cs2ImporterMod
             PackageFolder = "";
             ClearArea = true;
             TerrainIsConverted = false;
+            ApplyZoning = ApplyTrafficSettings = ApplyTrafficMod = ApplyBuildings = ApplyTransit = true;
             OffsetX = OffsetZ = 0;
             StatusText = "";
             LastReportPath = "";

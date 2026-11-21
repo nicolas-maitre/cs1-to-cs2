@@ -60,7 +60,7 @@ namespace Cs2ImporterMod
             return new Dictionary<string, object>
             {
                 { "op", op }, { "plan", PlanFile(s) }, { "offsetX", (double)s.OffsetX }, { "offsetZ", (double)s.OffsetZ },
-                { "heights", s.TerrainIsConverted ? "exact" : "flat" }, { "clear", s.ClearArea },
+                { "heights", "flat" }, { "clear", s.ClearArea },
             };
         }
 
@@ -165,11 +165,9 @@ namespace Cs2ImporterMod
                 if (ImportSystem.Busy) throw new InvalidOperationException("An import is already running.");
                 var args = Args(s, "import");
                 var report = Path.Combine(LocalRoot, "import-reports", "import-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
-                args["report"] = report;
                 args["_progress"] = (Action<string>)(t => Mod.Instance.SetStatus("Importing… " + t));
-                var job = (IEnumerator)Entry.Run(args);
                 Mod.Instance.SetStatus("Importing…");
-                ImportSystem.Start(job, (result, error) =>
+                ImportSystem.Start(Chain(s, args, report), (result, error) =>
                 {
                     if (error != null) { Mod.Instance.SetStatus("Import failed: " + error.Message); return; }
                     s.LastReportPath = report;
@@ -184,8 +182,61 @@ namespace Cs2ImporterMod
             }
         }
 
-        static string ResultText(Dictionary<string, object> r, string report)
+        /// <summary>
+        /// The whole import as one coroutine: the roads, then each enabled step (zoning, traffic settings, Traffic mod,
+        /// then steps other mods registered in ImportSteps), one after the other. Writes one combined report.
+        /// </summary>
+        static IEnumerator Chain(Setting s, Dictionary<string, object> args, string report)
         {
+            var all = new Dictionary<string, object>();
+            object roads = null;
+            var job = (IEnumerator)Entry.Run(args);
+            while (job.MoveNext()) { if (job.Current != null) roads = job.Current; yield return null; }
+            all["import"] = roads;
+            var steps = new List<KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>>();
+            // zoning last: the traffic steps mark edges Updated, and the blocks must be final when they're painted
+            if (s.ApplyTrafficSettings) steps.Add(Op("traffic"));
+            if (s.ApplyTrafficMod) steps.Add(Op("trafficmod"));
+            if (s.ApplyZoning) steps.Add(Op("zoning"));
+            steps.AddRange(ImportSteps.Registered);
+            foreach (var st in steps)
+            {
+                Mod.Instance.SetStatus("Importing… " + st.Key);
+                var stepArgs = new Dictionary<string, object>(args);
+                stepArgs.Remove("_progress");
+                stepArgs["op"] = st.Key;
+                object last = null;
+                IEnumerator e = null;
+                try { e = st.Value(stepArgs); }
+                catch (Exception ex) { all[st.Key] = new Dictionary<string, object> { { "error", ex.Message } }; continue; }
+                while (true)
+                {
+                    bool more;
+                    try { more = e.MoveNext(); }
+                    catch (Exception ex) { last = new Dictionary<string, object> { { "error", ex.Message } }; Mod.Log.Warn(st.Key + " failed: " + ex); break; }
+                    if (!more) break;
+                    if (e.Current != null) last = e.Current;
+                    yield return null;
+                }
+                all[st.Key] = last;
+            }
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(report));
+                File.WriteAllText(report, MiniJson.Write(all), new UTF8Encoding(false));
+            }
+            catch (Exception ex) { Mod.Log.Warn("report not written: " + ex.Message); }
+            yield return all;
+        }
+
+        static KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>> Op(string op)
+        {
+            return new KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>(op, a => (IEnumerator)Entry.Run(a));
+        }
+
+        static string ResultText(Dictionary<string, object> all, string report)
+        {
+            var r = all != null ? all["import"] as Dictionary<string, object> : null;
             if (r == null) return "Import finished without a report.";
             var res = (Dictionary<string, object>)r["result"];
             var sb = new StringBuilder();
@@ -199,8 +250,45 @@ namespace Cs2ImporterMod
             if (Convert.ToInt32(plan["segments_skipped"]) > 0) sb.Append(plan["segments_skipped"]).Append(" roads in the plan were skipped.\n");
             var temp = (Dictionary<string, object>)r["temp_after"];
             if (Convert.ToInt32(temp["temp_any"]) > 0) sb.Append("Warning: ").Append(temp["temp_any"]).Append(" unfinished (ghost) entities remain.\n");
+            foreach (var kv in all)
+            {
+                if (kv.Key == "import") continue;
+                sb.Append(StepLine(kv.Key, kv.Value as Dictionary<string, object>)).Append('\n');
+            }
             sb.Append("Full report: ").Append(report);
             return sb.ToString();
+        }
+
+        static string StepLine(string name, Dictionary<string, object> d)
+        {
+            if (d == null) return name + ": no result.";
+            object v;
+            if (d.TryGetValue("error", out v)) return name + " failed: " + v;
+            if (d.TryGetValue("skipped", out v)) return name + " skipped: " + v;
+            switch (name)
+            {
+                case "zoning": return "Zoning: " + d["cells_matched"] + " of " + d["plan_cells"] + " cells (" + d["coverage"] + " %), " + d["cells_painted"] + " painted.";
+                case "traffic": return "Traffic: " + d["lights_added"] + " lights added, " + d["lights_removed"] + " removed, " + d["all_way_stops"] + " all-way stops, " + d["turn_ban_ends"] + " turn bans, " + (Convert.ToInt32(d["crosswalks_added"]) + Convert.ToInt32(d["crosswalks_removed"])) + " crosswalk changes.";
+                case "trafficmod": return "Traffic mod: " + d["priority_signs"] + " priority signs on " + d["edges_with_priorities"] + " roads.";
+                case "transit":
+                {
+                    var st = d.TryGetValue("stops", out v) ? v as Dictionary<string, object> : null;
+                    return "Transit: " + d["placed"] + " of " + d["items"] + " lines" + (st != null ? ", " + st["defined"] + " of " + st["requested"] + " stops" : "") + ".";
+                }
+                default:
+                    // buildings/ worker's steps: buildings {items, placed, alreadyPlaced, failed}, objects {items, created},
+                    // districts / surfaces {items, placed, failed}
+                    if (d.TryGetValue("items", out v))
+                    {
+                        object done;
+                        if (!d.TryGetValue("placed", out done)) d.TryGetValue("created", out done);
+                        object already, failed;
+                        d.TryGetValue("alreadyPlaced", out already);
+                        d.TryGetValue("failed", out failed);
+                        return char.ToUpper(name[0]) + name.Substring(1) + ": " + (done ?? 0) + " of " + v + (already != null && Convert.ToInt32(already) > 0 ? " (" + already + " already there)" : "") + (failed != null && Convert.ToInt32(failed) > 0 ? ", " + failed + " failed" : "") + ".";
+                    }
+                    return name + ": done.";
+            }
         }
     }
 }

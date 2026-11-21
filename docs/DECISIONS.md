@@ -171,3 +171,18 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - Plain r16 is deflated inside the zip (64 MB → about 21 MB).
     - Trees, rocks and IMT surfaces are in the plan itself.
 64. **Every building in a package carries a placement `fallback`** (Claude): `anywhere` for CS2 lots over 400 cells, `nearby` otherwise, and the user can change it per type in the Assets tab. Trees that land on a CS2 road are moved off it instead of dropped.
+65. **Cs2ImporterMod runs the whole import from its Options page** (Claude):
+    1. roads;
+    2. vanilla traffic settings;
+    3. Traffic mod priority signs (by reflection; skipped if the mod isn't installed);
+    4. zoning;
+    5. buildings, objects, districts and surfaces (`buildings/src` compiled in);
+    6. transit (`transit/cs2-exec` compiled in).
+
+    Every step has its own toggle. Progress shows in the status line, and a JSON report goes to `%LOCALAPPDATA%\cs1-to-cs2\import-reports`.
+
+    The mod-only user flow on Skibidi 3 km built 2035/2035 roads in 4.3 s, 325 priority signs, 93% of 76 658 zone cells, 108/108 buildings and 9/9 transit lines.
+66. **Heights are always "flat" (terrain-relative)** (Claude). The experimental "exact" mode crashes CS2 natively.
+67. **Bridge and mod call `AllowUsage()` on every `SafeCommandBufferSystem` before running step or exec code** (Claude). This fixes "EntityCommandBuffer not allowed" after `save.load` (decision 54), verified in game.
+68. **Traffic mod lane connections (237) and lane arrows (211) are not applied yet** (Claude). The mod's data model needs lane-handle entities; they're reported for now.
+69. **The e2e has plug-in steps** (`tools/e2e/steps/*.mjs`, each run after a named phase) and a `--no-*` switch for every M2 step (Claude).

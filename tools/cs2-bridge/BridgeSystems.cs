@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Game;
 using GameBridge;
+using Unity.Entities;
 
 namespace Cs2Bridge
 {
@@ -28,6 +29,7 @@ namespace Cs2Bridge
             if (core == null) return;
             try { AutosaveGuard.Apply(World); }
             catch (Exception e) { Mod.Log.Error("autosave guard failed: " + e); }
+            BarrierAccess.AllowAll(World); // exec code and coroutines run inside Tick
             try { core.Tick(); }
             catch (Exception e) { Mod.Log.Error("tick failed: " + e); }
         }
@@ -127,6 +129,8 @@ namespace Cs2Bridge
         {
             var core = Mod.Core;
             if (core == null) return;
+            if (s_Routines.Count == 0 && s_Queue.Count == 0) return;
+            BarrierAccess.AllowAll(World);
             StepRoutines(core);
             if (s_Queue.Count == 0) return;
             var jobs = s_Queue.ToArray();
@@ -154,6 +158,36 @@ namespace Cs2Bridge
                     j.Cmd.Fail(e.GetType().Name + ": " + e.Message);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// CS2's barrier command buffer systems (Game.SafeCommandBufferSystem: EndFrameBarrier, ModificationBarriers, …)
+    /// throw "Trying to create EntityCommandBuffer when it's not allowed!" unless their AllowBarrier&lt;T&gt; system has run
+    /// since their last update. Right after a load, and in the frame slots the bridge runs exec code in, that isn't
+    /// guaranteed, so game methods that queue end-of-frame commands (NameSystem.SetCustomName, PoliciesUISystem.SetPolicy,
+    /// …) failed from exec. The bridge allows every safe barrier right before it runs exec code, which is exactly what
+    /// the game's AllowBarrier systems do every frame; the commands play back at the barrier's next update.
+    /// </summary>
+    internal static class BarrierAccess
+    {
+        static World s_World;
+        static SafeCommandBufferSystem[] s_Barriers;
+
+        public static void AllowAll(World world)
+        {
+            try
+            {
+                if (s_World != world || s_Barriers == null)
+                {
+                    var list = new List<SafeCommandBufferSystem>();
+                    foreach (var sys in world.Systems) if (sys is SafeCommandBufferSystem b) list.Add(b);
+                    s_Barriers = list.ToArray();
+                    s_World = world;
+                }
+                foreach (var b in s_Barriers) b.AllowUsage();
+            }
+            catch (Exception e) { Mod.Log.Warn("barrier access failed: " + e.Message); s_Barriers = null; }
         }
     }
 }

@@ -24,6 +24,10 @@
     <Compile Include="*.cs" />
     <Compile Include="..\src\**\*.cs" Link="src\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\tools\bridge-common\MiniJson.cs" Link="src\MiniJson.cs" />
+    <!-- buildings, objects, districts and surfaces steps (buildings/ worker), registered in Mod.OnLoad -->
+    <Compile Include="..\..\buildings\src\**\*.cs" Link="buildings\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- transit lines (transit/ worker's exec library), driven by TransitStep.cs -->
+    <Compile Include="..\..\transit\cs2-exec\*.cs" Link="transit\%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="$(CS2Managed)\mscorlib.dll" Private="false" />

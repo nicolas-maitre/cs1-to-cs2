@@ -5,6 +5,8 @@
 //                          [--map <CS2 map>] [--apply-terrain] [--clear-with importer|mapprep [--keep-utilities]]
 //                          [--keep-base-nets] [--name <tag>] [--no-save] [--keep-cs2]
 //                          [--batch 400] [--settle 20 (s after terrain)] [--no-import] [--heights flat|exact]
+//                          [--no-zoning] [--no-traffic] [--no-traffic-mod] [--simulate s] [--no-<plug-in>]
+//                          [--save-name cs1conv-…]
 //
 // Steps (each one is timed and recorded in summary.json):
 //   export   CS1: take %LOCALAPPDATA%\cs1-to-cs2\cs1.lock, `gamectl cs1 start --load <save>`, exec the exporter, stop CS1.
@@ -30,7 +32,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { connect, start, stop, status } from '../gamectl/lib/index.js';
 import {
   REPO, buildImporter, readPlan, planShots, summary, waitAndTakeLock, releaseLock,
@@ -60,10 +62,10 @@ const useTerrain = flag('--apply-terrain') && !flag('--no-terrain') && terrainAv
 if (flag('--apply-terrain') && !terrainAvailable) throw new Error('--apply-terrain: terrain/apply.mjs or terrain/convert.mjs is missing');
 // Hook for the base-map clear: "importer" (default) or "mapprep" (terrain/mapprep.mjs clear: every top-level net, like
 // the importer's; --keep-utilities keeps power lines, seaways and pipes).
-// Default: the importer's clear (every top-level net). mapprep clear keeps power lines and seaways; with it, CS2 crashed
-// natively during the road import on Sunshine Peninsula (e2e 20261121-044148), while the importer clear on the same map
-// and export passed (20261121-045036). See cs2-importer/DECISIONS-importer.md #27.
-const clearWith = opt('--clear-with', flag('--mapprep-clear') ? 'mapprep' : 'importer');
+// With terrain: mapprep clear (every top-level net and, since 2026-11-21, the base map's top-level buildings, whose
+// landmarks would keep the old map height). Without terrain: the importer's clear. The earlier crash with mapprep clear
+// came from it keeping power lines (DECISIONS-importer.md #27); it now deletes every net by default.
+const clearWith = opt('--clear-with', flag('--mapprep-clear') || (useTerrain && MAPPREP) ? 'mapprep' : 'importer');
 // DECISIONS-importer.md M2: with terrain, a base map with little water (its water sources stay after the terrain swap);
 // without terrain, the M1 test spot on Corral Riches.
 // With terrain: Sunshine Peninsula, the base map with the fewest nets of all 12 (terrain worker's in-game survey);
@@ -105,6 +107,33 @@ async function step(name, fn) {
 
 function node(args, opts = {}) {
   return execFileSync(process.execPath, args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20, ...opts });
+}
+
+// ------------------------------------------------------------------ hooks for other workers' steps
+//
+// Every tools/e2e/steps/*.mjs module is a step plug-in (transit/, buildings/, …), e.g.
+//   export default { name: 'transit', after: 'import', enabled: (ctx) => !ctx.flag('--no-transit'),
+//                    run: async (ctx) => { … return { counts } } };
+// `after` is one of: import (after the road import and the M2 steps), connections (after the outside connections),
+// shots (after the screenshots, before the save), end (just before the run ends). ctx = { bridge, repo, runDir, cs1x,
+// package, planFile, placement {heights, offsetX, offsetZ}, importerDll, log, opt, flag }. A plug-in runs as an optional
+// step named "<name>" (failure recorded, the run goes on); --no-<name> skips it.
+const HOOKS = [];
+const hookDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'steps');
+if (fs.existsSync(hookDir)) {
+  for (const f of fs.readdirSync(hookDir).filter((x) => x.endsWith('.mjs')).sort()) {
+    try {
+      const m = (await import(pathToFileURL(path.join(hookDir, f)).href)).default;
+      if (m?.name && typeof m.run === 'function') HOOKS.push({ after: 'import', ...m, file: f });
+    } catch (e) { console.error(`[e2e] step plug-in ${f} failed to load: ${e.message}`); }
+  }
+}
+
+async function runHooks(after, ctx) {
+  for (const h of HOOKS.filter((x) => x.after === after)) {
+    if (flag(`--no-${h.name}`) || (h.enabled && !h.enabled(ctx))) continue;
+    S[h.name] = await softStep(h.name, () => h.run(ctx));
+  }
 }
 
 /** Like step(), but a failure is recorded and the run goes on (optional steps owned by other workers). */
@@ -259,6 +288,15 @@ try {
   if (flag('--no-import')) throw new Error('stopped before the import (--no-import)');
   const imp = await step('import', () => importRoads(b, dll, plan.package));
   const placement = imp.placement;
+  const planFile = path.join(plan.package, 'cs1conv-plan.json');
+  const ctx = { bridge: b, repo: REPO, runDir, cs1x: ex.cs1x, package: plan.package, planFile, placement, importerDll: dll, log, opt, flag };
+  // M2 plan additions, each switchable; optional steps (a failure is recorded, the run goes on)
+  const m2 = (op) => b.exec(dll, { phase: 'tool', pump: 'tool', args: { op, plan: planFile, ...placement }, timeout: 900 });
+  // zoning last: the traffic steps mark edges Updated, and the zone blocks must already be final when they're painted
+  if (!flag('--no-traffic')) S.traffic = await softStep('traffic', () => m2('traffic'));
+  if (!flag('--no-traffic-mod')) S.trafficMod = await softStep('trafficmod', () => m2('trafficmod'));
+  if (!flag('--no-zoning')) S.zoning = await softStep('zoning', () => m2('zoning'));
+  await runHooks('import', ctx);
   if (MAPPREP && useTerrain) {
     await softStep('connections', () => {
       const r = mapprep(['connections', '--cs1x', ex.cs1x, '--plan', path.join(plan.package, 'cs1conv-plan.json')]);
@@ -267,14 +305,43 @@ try {
     });
     // optional checks (terrain worker): outside-connection lanes and vehicles, CS2 vs CS1 water depth
     await softStep('counts', () => mapprep(['counts']));
+  }
+  await runHooks('connections', ctx);
+  if (opt('--simulate')) {
+    // let the city run (buildings grow on the zones, traffic uses the junction settings), then pause for the shots
+    await softStep('simulate', async () => {
+      await b.speed(3); await b.resume();
+      const r = await b.wait(0, Number(opt('--simulate')), { timeout: Number(opt('--simulate')) + 120 });
+      await b.pause();
+      return r;
+    });
+  }
+  if (MAPPREP && useTerrain) {
+    // after the simulation: lakes above the sea level only fill while the simulation runs (3–5 simulated minutes,
+    // terrain worker); ResetToSealevel() fills only the sea at once
     await softStep('water-check', () => mapprep(['water-check', '--cs1x', ex.cs1x, '--plan', path.join(plan.package, 'cs1conv-plan.json')]));
   }
   S.shots = await step('shots', () => planShots(b, readPlan(plan.package), { dir: runDir, tag: 'roads', offsetX: placement.offsetX, offsetZ: placement.offsetZ, log }));
+  if (!flag('--no-zoning')) {
+    // zoned cells are only drawn while the zone tool is active
+    await softStep('zone-shots', async () => {
+      await b.exec(dll, { args: { op: 'view', tool: 'zone' } });
+      const files = await planShots(b, readPlan(plan.package), { dir: runDir, tag: 'zones', offsetX: placement.offsetX, offsetZ: placement.offsetZ, log });
+      await b.exec(dll, { args: { op: 'view', tool: 'default' } });
+      return files;
+    });
+  }
+  if (!flag('--no-zoning')) {
+    // the zones as they are at the end (after the simulation): what persisted
+    S.zoningCheck = await softStep('zoning-check', () => b.exec(dll, { phase: 'tool', pump: 'tool', args: { op: 'zoning', plan: planFile, checkOnly: true, ...placement }, timeout: 600 }));
+  }
+  await runHooks('shots', ctx);
   if (!flag('--no-save')) {
     const d = new Date(), p = (n) => String(n).padStart(2, '0');
-    const name = `cs1conv-e2e-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+    const name = opt('--save-name') ?? `cs1conv-e2e-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
     S.save = await step('save', () => b.saveWrite(name));
   }
+  await runHooks('end', ctx);
   const res = imp.result ?? {};
   S.ok = res.segments_failed === 0 && res.segments_built === res.segments_planned && (imp.temp_after?.temp_any ?? 0) === 0;
 } catch (e) {

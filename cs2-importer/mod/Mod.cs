@@ -31,6 +31,11 @@ namespace Cs2ImporterMod
             GameManager.instance.localizationManager.AddSource("en-US", m_Locale);
             AssetDatabase.global.LoadSettings(Setting.SettingsName, Settings, new Setting(this));
             Settings.RegisterInOptionsUI();
+            // buildings/ worker's steps (buildings, objects, districts, surfaces), behind one Options toggle
+            Cs2Buildings.Steps.RegisterAll((name, step) => ImportSteps.Register(name, args =>
+                Settings.ApplyBuildings ? step(args) : SkippedStep(name)));
+            // transit after the buildings (stations and depots first)
+            ImportSteps.Register("transit", args => Settings.ApplyTransit ? TransitStep.Run(args) : SkippedStep("transit"));
             // the import coroutine creates road definitions, which must happen in ToolUpdate (M0 Spike 1b)
             updateSystem.UpdateAt<ImportSystem>(SystemUpdatePhase.ToolUpdate);
         }
@@ -41,6 +46,11 @@ namespace Cs2ImporterMod
             if (Settings != null) Settings.UnregisterInOptionsUI();
             if (m_Locale != null) GameManager.instance.localizationManager.RemoveSource("en-US", m_Locale);
             Instance = null;
+        }
+
+        static IEnumerator SkippedStep(string name)
+        {
+            yield return new Dictionary<string, object> { { "skipped", "turned off in the Options (Buildings, trees, districts)" } };
         }
 
         /// <summary>Rewrites the status line on the Options page (it is a locale entry, so the page re-reads it).</summary>
