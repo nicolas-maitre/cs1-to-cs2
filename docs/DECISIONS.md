@@ -402,3 +402,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 128. **Utility facilities stay strict by default, with a prominent opt-in** (user, 2026-11-21; refines #106). Power plants and water, sewage and treatment facilities follow the "never move" rule by default. CS2 versions are often much bigger, so on CacaoCity all 7 power plants and both treatment plants became "place it yourself" and the city had 0% power.
      - **Web tool:** when the crop contains utility facilities, a prominent one-click option "Let power, water and sewage facilities move nearby (≤ 400 m) if they don't fit", with the reason.
      - **Import report and the mod's status:** a highlighted warning when no power plant or no water facility was placed.
+129. **The CS1 segment kind decides the CS2 composition family** (user report, 2026-11-21; corrects #123). Deep CS1 open trenches had become CS2 tunnels.
+     - CS1 `tunnel` → CS2 tunnel (#124).
+     - CS1 `ground` (deep trench or high embankment) → never a tunnel or pillars. Beyond CS2's wall limit, the ground beside the road is shaped (lowered beside trenches, raised beside embankments) so the walls fit while the road keeps its CS1 height. If that's impossible, the road is clamped to the wall limit and reported.
+     - CS1 `elevated`, `bridge` and `slope` keep their kind.
+
+     Acceptance checks that the tunnel count per city equals CS1's.
