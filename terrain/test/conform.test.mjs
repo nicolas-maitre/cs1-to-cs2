@@ -108,3 +108,25 @@ test('no junction disc on a node shared with a tunnel or slope segment (#124)', 
   assert.equal(st.nodes, 1);                 // only node 11
   // node 10's disc would coincide with segment 1's own rounded end, so the disc count is the check
 });
+
+test('walls burn (#129): ground brought within 7 m below / 11 m above the road; conform cores untouched; > 30 m skipped', async () => {
+  const { wallsTerrain } = await import('../lib/conform.mjs');
+  const wall = (id, bezier, extra = {}) => ({ ...seg(id, bezier, extra), prefab: 'wall' });
+  // a walls ramp 20 m above flat 100 m ground: core (w + 2) raised to 113, blend beyond, natural far away
+  const g = flat(100), natural = g.slice();
+  const st = wallsTerrain(g, N, SIZE, { segments: [wall(1, line(-200, 120, 0, 200, 120, 0))], prefabs }, natural, new Set());
+  assert.equal(g[at(0, 5.25)], 113);
+  assert.ok(g[at(0, 12.25)] > 100 && g[at(0, 12.25)] < 113);
+  assert.equal(g[at(0, 61.25)], 100);
+  assert.deepEqual([st.segments, st.skipped, st.maxRaise], [1, 0, 13]);
+  // a trench 20 m below: ground cut to 11 m above it; a conform core pixel is left alone
+  const g2 = flat(100), core = new Set([at(0, 1.75)]);
+  wallsTerrain(g2, N, SIZE, { segments: [wall(1, line(-200, 80, 0, 200, 80, 0))], prefabs }, g2.slice(), core);
+  assert.equal(g2[at(0, -1.75)], 91);
+  assert.equal(g2[at(0, 1.75)], 100);
+  // more than 30 m from the ground: skipped
+  const g3 = flat(100);
+  const s3 = wallsTerrain(g3, N, SIZE, { segments: [wall(1, line(-200, 150, 0, 200, 150, 0))], prefabs }, g3.slice(), new Set());
+  assert.deepEqual([s3.segments, s3.skipped], [0, 1]);
+  assert.equal(g3[at(0, 1.75)], 100);
+});

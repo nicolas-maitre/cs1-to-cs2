@@ -49,6 +49,7 @@ function parseArgs(argv) {
       case '--no-png': a.png = false; break;
       case '--no-world': a.world = false; break;
       case '--no-conform': a.conform = false; break;
+      case '--no-walls': a.walls = false; break;
       case '-h': case '--help': a.help = true; break;
       default: throw new Error('unknown argument ' + k);
     }
@@ -83,7 +84,7 @@ export function main(argv) {
   // grid (if the .cs1x has one) drives the wet-pixel rule
   if (plan && a.cs1x && a.conform !== false) water = loadCs1xWater(readFileSync(a.cs1x));
   const t0 = Date.now();
-  const { raw, worldRaw, meta } = convert(cs1.meta, cs1.heights, crop, { transform, mode: a.mode, heightScale: a.heightScale, heightOffset: a.heightOffset, world: a.world, plan: a.conform === false ? null : plan, water });
+  const { raw, worldRaw, meta } = convert(cs1.meta, cs1.heights, crop, { transform, mode: a.mode, heightScale: a.heightScale, heightOffset: a.heightOffset, world: a.world, plan: a.conform === false ? null : plan, water, walls: a.walls });
   const out = resolve(a.out);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'heightmap.r16'), rawToBytes(raw));

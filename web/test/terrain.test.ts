@@ -83,13 +83,15 @@ describe.skipIf(!fs.existsSync(SAMPLE))('Skibidi: same terrain, water and connec
     expect(pkg.plan.segments.filter(s => s.kind === 'slope' && pkg.plan.prefabs[s.prefab].heightMode === 'conform').length).toBeGreaterThan(0);
     const planFile = path.join(tmp, 'skibidi-plan.json');
     fs.writeFileSync(planFile, JSON.stringify(pkg.plan));
-    // terrain/convert.mjs has no walls burn yet (#129, worker-4 mirrors schema §2): compare the conform burn alone
-    const files = completePackage(city, pkg, { world: false, walls: false });
+    // conform burn + walls burn (#129), both mirrored in terrain/lib
+    const files = completePackage(city, pkg, { world: false });
     const t = theirsWithPlan(SAMPLE, planFile, 'skibidi-conform');
     const ours = JSON.parse(new TextDecoder().decode(files.find(f => f.path === 'terrain/terrain.json')!.data));
     expect(ours.roadConformed).toBe(true);
     expect(ours.conform).toMatchObject({ segments: 786, nodes: 659, pixelsChanged: 108500 });
     expect(t.meta.conform).toEqual(ours.conform);
+    expect(ours.walls?.segments).toBeGreaterThan(0);
+    expect(t.meta.walls).toEqual(ours.walls);
     expect(Buffer.from(files.find(f => f.path === 'terrain/heightmap.r16')!.data).equals(t.heightmap)).toBe(true);
   }, 120_000);
 

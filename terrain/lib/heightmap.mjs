@@ -1,6 +1,6 @@
 // CS1 heightmap (from .cs1x) → CS2 playable-area heightmap. See terrain/NOTES-cs2-terrain.md for the CS2 side.
 import { readZip } from './zip.mjs';
-import { conformTerrain, conformInput } from './conform.mjs';
+import { conformTerrain, conformInput, wallsTerrain } from './conform.mjs';
 
 /** CS2 constants, read from Game.dll (TerrainSystem..cctor, GetHeightData). */
 export const CS2 = Object.freeze({
@@ -128,11 +128,15 @@ export function convert(cs1Meta, cs1Heights, crop, opts = {}) {
   const r = resample(cs1Meta, cs1Heights, transform, CS2.size, N);
   // road-conformed terrain: burn before the height mapping, which is then chosen from the burned grid
   const input = opts.plan ? conformInput(opts.plan, opts.water ? { ...opts.water, dx: transform.dx, dz: transform.dz } : null) : null;
-  let natural = null, conform = null;
+  let natural = null, conform = null, walls = null;
   if (input) {
     natural = r.heights.slice();
-    conform = conformTerrain(r.heights, N, CS2.size, input);
-    if (conform) {
+    const cores = new Set();
+    conform = conformTerrain(r.heights, N, CS2.size, input, { cores });
+    // walls burn (#129) after the conform burn, never inside a conform core
+    walls = opts.walls === false ? null : wallsTerrain(r.heights, N, CS2.size, input, natural, cores);
+    if (walls && !walls.segments) walls = null;
+    if (conform || walls) {
       let min = Infinity, max = -Infinity;
       for (let i = 0; i < r.heights.length; i++) { const h = r.heights[i]; if (h < min) min = h; if (h > max) max = h; }
       r.min = min; r.max = max;
@@ -158,8 +162,9 @@ export function convert(cs1Meta, cs1Heights, crop, opts = {}) {
     },
   };
   if (conform) { const { skippedIds, ...json } = conform; meta.roadConformed = true; meta.conform = json; }
+  if (walls) { const { skippedIds, ...json } = walls; meta.walls = json; }
   const out = { raw: q.raw, meta };
-  if (conform) { out.natural = natural; out.burned = r.heights; out.conform = conform; }
+  if (conform || walls) { out.natural = natural; out.burned = r.heights; out.conform = conform; out.walls = walls; }
   if (opts.world) {
     const w = resample(cs1Meta, cs1Heights, transform, CS2.worldSize, N);
     const wq = quantize(w.heights, map);

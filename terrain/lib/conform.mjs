@@ -54,7 +54,7 @@ function nearest(P, px, pz) {
  * water: {seaLevel|null, depthMeta, depth: Float32Array|null, dx, dz} or null. Returns the stats (terrain.json
  * `conform`, plus skippedIds for the report) or null when no segment burns (the grid is then untouched).
  */
-export function conformTerrain(grid, N, size, { segments = [], nodes = [], prefabs = {}, water = null } = {}) {
+export function conformTerrain(grid, N, size, { segments = [], nodes = [], prefabs = {}, water = null } = {}, out = null) {
   const cell = size / N, half = size / 2;
   const H0 = grid; // read only until the write pass
   const pix = (v) => { let i = Math.floor((v + half) / cell); if (i < 0) i = 0; else if (i > N - 1) i = N - 1; return i; };
@@ -147,7 +147,7 @@ export function conformTerrain(grid, N, size, { segments = [], nodes = [], prefa
       if (!touched[li]) continue;
       const idx = row * N + col, h0 = H0[idx];
       let h;
-      if (core[li]) { h = coreH[li]; if (sea != null && h < sea) belowSea++; }
+      if (core[li]) { h = coreH[li]; if (sea != null && h < sea) belowSea++; out?.cores?.add(idx); }
       else if (maxW[li] > 0 && sumW4[li] > 0) {
         const target = sumW4H[li] / sumW4[li];
         h = h0 + maxW[li] * (target - h0);
@@ -190,6 +190,94 @@ export function adjustWaterSources(sources, natural, burned, N, size) {
 
 /** The plan's conform input for conformTerrain, or null when no prefab is `conform`. */
 export function conformInput(plan, water) {
-  if (!plan?.segments?.length || !plan.prefabs || !Object.values(plan.prefabs).some(p => p.heightMode === 'conform')) return null;
+  if (!plan?.segments?.length || !plan.prefabs || !Object.values(plan.prefabs).some(p => p.heightMode === 'conform' || p.heightMode === 'walls')) return null;
   return { segments: plan.segments, nodes: plan.nodes ?? [], prefabs: plan.prefabs, water };
+}
+
+/** Walls burn (docs/DECISIONS.md #129, schema §2 "Walls burn"): constants. */
+export const WALLS = Object.freeze({ below: 7, above: 11, footprint: 2, blendFactor: 2, minBlend: 3.5, maxBlend: 40, maxDifference: 30 });
+
+/**
+ * Walls burn (#129), the web core's wallsTerrain arithmetic: a `walls` ground road keeps its CS1 height, and CS2 can
+ * only hold it with retaining walls, so the ground beside it is brought to at most 7 m below and 11 m above the road.
+ * Runs after conformTerrain on the same grid (`n` = the conform-burned height); `natural` = the grid before any burn
+ * (wet rule only); `cores` = conformTerrain's core pixels, which it never changes. Returns {segments, skipped,
+ * pixelsChanged, maxRaise, maxCut, skippedIds}, or null when there's nothing to burn.
+ */
+export function wallsTerrain(grid, N, size, input, natural, cores) {
+  const cell = size / N, half = size / 2;
+  const pix = (v) => { let i = Math.floor((v + half) / cell); if (i < 0) i = 0; else if (i > N - 1) i = N - 1; return i; };
+  const water = input.water ?? null;
+  const sea = water?.seaLevel ?? null;
+  const depthAt = (x, z) => (water?.depth && water.depthMeta ? sampleCs1(water.depthMeta, water.depth, x - water.dx, z - water.dz) : 0);
+  const wetOf = (idx, x, z) => { const h0 = natural[idx], dep = depthAt(x, z); return { wet: dep > 0 || (sea != null && h0 < sea), surface: Math.max(sea ?? -Infinity, h0 + dep) }; };
+  const target = (n, h) => { const lo = h - WALLS.below, hi = h + WALLS.above; return n < lo ? lo : n > hi ? hi : n; };
+  const acc = new Map();
+  const segs = (input.segments || []).filter(s => s.kind === 'ground' && input.prefabs[s.prefab]?.heightMode === 'walls').sort((a, b) => a.id - b.id);
+  let burned = 0, skipped = 0;
+  const skippedIds = [];
+  for (const s of segs) {
+    const wc = (s.halfWidth ?? 0) + WALLS.footprint;
+    const P = samplePoints(s.bezier);
+    if (P.some(p => { const n = grid[pix(p[2]) * N + pix(p[0])]; return Math.abs(target(n, p[1]) - n) > WALLS.maxDifference; })) { skipped++; if (skippedIds.length < 50) skippedIds.push(s.id); continue; }
+    burned++;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of P) { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[2] < minZ) minZ = p[2]; if (p[2] > maxZ) maxZ = p[2]; }
+    const R = wc + WALLS.maxBlend + cell;
+    const c0 = Math.max(0, Math.floor((minX - R + half) / cell)), c1 = Math.min(N - 1, Math.floor((maxX + R + half) / cell));
+    const r0 = Math.max(0, Math.floor((minZ - R + half) / cell)), r1 = Math.min(N - 1, Math.floor((maxZ + R + half) / cell));
+    for (let row = r0; row <= r1; row++) {
+      const pz = -half + (row + 0.5) * cell;
+      for (let col = c0; col <= c1; col++) {
+        const idx = row * N + col;
+        if (cores.has(idx)) continue;
+        const px = -half + (col + 0.5) * cell;
+        const [best, bestH] = nearest(P, px, pz);
+        if (best > wc + WALLS.maxBlend) continue;
+        const n = grid[idx], t = target(n, bestH);
+        if (t === n) continue;
+        const ad = Math.abs(t - n);
+        let b = Math.min(WALLS.maxBlend, Math.max(WALLS.minBlend, WALLS.blendFactor * ad));
+        if (best > wc) {
+          if (wetOf(idx, px, pz).wet) b = WALLS.minBlend;
+          if (best > wc + b) continue;
+        }
+        let a = acc.get(idx);
+        if (!a) { a = { core: false, coreH: 0, coreAbsD: Infinity, sumW4: 0, sumW4H: 0, maxW: 0 }; acc.set(idx, a); }
+        if (best <= wc) {
+          if (!a.core || ad < a.coreAbsD) { a.core = true; a.coreH = t; a.coreAbsD = ad; }
+          continue;
+        }
+        const tt = (best - wc) / b;
+        const sm = tt * tt * (3 - 2 * tt);
+        const wt = 1 - sm;
+        const w4 = (wt * wt) * (wt * wt);
+        a.sumW4 += w4;
+        a.sumW4H += w4 * t;
+        if (wt > a.maxW) a.maxW = wt;
+      }
+    }
+  }
+  if (!burned) return skipped ? { segments: 0, skipped, pixelsChanged: 0, maxRaise: 0, maxCut: 0, skippedIds } : null;
+  const res = new Map();
+  for (const [idx, a] of acc) {
+    const n = grid[idx];
+    let h;
+    if (a.core) h = a.coreH;
+    else if (a.maxW > 0 && a.sumW4 > 0) h = n + a.maxW * (a.sumW4H / a.sumW4 - n);
+    else continue;
+    // a wet pixel is never raised above the CS1 water surface
+    const col = idx % N, row = Math.floor(idx / N);
+    if (h > n) { const wi = wetOf(idx, -half + (col + 0.5) * cell, -half + (row + 0.5) * cell); if (wi.wet && h > wi.surface) h = Math.max(n, wi.surface); }
+    res.set(idx, h);
+  }
+  let changed = 0, maxRaise = 0, maxCut = 0;
+  for (const [idx, h] of res) {
+    const n = grid[idx];
+    grid[idx] = h;
+    const diff = grid[idx] - n;
+    if (diff !== 0) { changed++; if (diff > maxRaise) maxRaise = diff; if (-diff > maxCut) maxCut = -diff; }
+  }
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  return { segments: burned, skipped, pixelsChanged: changed, maxRaise: r3(maxRaise), maxCut: r3(maxCut), skippedIds };
 }
