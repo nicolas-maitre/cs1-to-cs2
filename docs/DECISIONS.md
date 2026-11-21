@@ -296,3 +296,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      | Lane connections matched (web 0.6.0 packages) | 92% | 95.7% | 99% |
 
      That's the same as with all Road Builder roads, and connections persist through save/load.
+106. **Buildings are never moved to free land by default** (user, 2026-11-21; supersedes the defaults in #64 and #81). The placer tries:
+     1. the exact CS1 spot;
+     2. a short slide along the same road;
+     3. a smaller CS2 alternative of the same kind.
+
+     If none fits, the building isn't placed. The import report lists it as "place it yourself", with its CS1 position and the reason. "Look nearby" and "anywhere in the crop" stay available as explicit per-type choices in the web tool, off by default. This applies to plans without a `fallback` field too.
