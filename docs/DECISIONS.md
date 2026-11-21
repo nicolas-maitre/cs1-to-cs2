@@ -110,3 +110,17 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     | Transit lines | CS2 lines (the station lines need stations) |
     | Water | sea level + sources |
     | Node Controller | reported only |
+
+## 2026-11-21: M3 (overnight)
+
+40. **CS2 building catalogue + CS1 → CS2 matching** (Claude; details in `buildings/DECISIONS-buildings.md`).
+    - **Catalogue:** dumped from the running game: 3571 buildings, of which 263 placeable building prefabs are kept in a slim copy for the web tool.
+    - **Matching:** the same family on both sides, then a score from kind, capacity, lot size and name. Capacity ranks the candidates but isn't converted, because the units differ between the games.
+    - **Growables** are left to CS2 zoning.
+    - **Not placed:** pillars, poles, pipe junctions and outside connections are skipped. Library, taxi stand, cable car station and ferry depot have no CS2 equivalent.
+41. **Building placement uses the game's own recipe** (Claude): `CreationDefinition` Permanent + `ObjectDefinition`, as `ZoneSpawnSystem` does.
+    - The lot front snaps to the imported road on the building's CS1 side, facing the road.
+    - On a collision it slides ±24 m along the road, then tries the matcher's alternatives.
+    - Skibidi 3 km: 77 of 108 placed, 71 of them connected.
+    - 31 refused, because CS2 service lots are much bigger (e.g. CS1 crematory 3×3 cells vs CS2 8×10).
+    - **Open:** a user choice (smaller alternative, nearby free land, or accept) belongs in the web tool. Roads on embankments block building access.
