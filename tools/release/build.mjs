@@ -35,9 +35,13 @@ export const COMPONENTS = [
     changelog: 'cs1-exporter/CHANGELOG.md',
   },
   {
-    id: 'cs2-importer', title: 'CS1 → CS2 Importer (Cities: Skylines II mod, includes the buildings steps when integrated)',
+    id: 'cs2-importer', title: 'CS1 → CS2 Importer (Cities: Skylines II mod, with the buildings, objects, districts and transit steps)',
     primary: { file: 'cs2-importer/mod/Mod.cs', re: /public const string Version = "([^"]+)"/ },
-    also: [{ file: 'cs2-importer/mod/Cs2ImporterMod.csproj', re: /<Version>([^<]+)<\/Version>/ }],
+    also: [
+      { file: 'cs2-importer/mod/Cs2ImporterMod.csproj', re: /<Version>([^<]+)<\/Version>/ },
+      { file: 'cs2-importer/mod/Properties/PublishConfiguration.xml', re: /<ModVersion Value="([^"]+)"/ },
+      { file: 'cs2-importer/CHANGELOG.md', re: /^## ([0-9][^\s]*)/m },
+    ],
     changelog: 'cs2-importer/CHANGELOG.md',
   },
   {
@@ -185,6 +189,9 @@ async function main() {
 
     const cs2 = path.join(out, 'cs2-importer');
     run('dotnet', ['build', 'cs2-importer/mod/Cs2ImporterMod.csproj', '-c', 'Release', '-nologo', '-v', 'q', `-p:CS2LocalMods=${cs2}`]);
+    // Paradox Mods packaging (PublishConfiguration.xml, Thumbnail.png; not the thumbnail script) and the changelog.
+    fs.cpSync(path.join(REPO, 'cs2-importer/mod/Properties'), path.join(cs2, 'Properties'), { recursive: true, filter: (f) => !f.endsWith('.py') });
+    fs.copyFileSync(path.join(REPO, 'cs2-importer/CHANGELOG.md'), path.join(cs2, 'CHANGELOG.md'));
     built.push({ id: 'cs2-importer', dir: cs2 });
   } else log('skipping the game mod builds (--skip-games)');
 
@@ -242,7 +249,7 @@ export function releaseNotes(v, zips, sums) {
   }
   lines.push('## Install', '',
     '- **CS1 exporter:** copy the `Cs1Exporter` folder to `%LOCALAPPDATA%\\Colossal Order\\Cities_Skylines\\Addons\\Mods\\` and enable it in Content Manager.',
-    '- **CS2 importer:** copy the `Cs2Importer` folder to `%USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Mods\\`.',
+    '- **CS2 importer:** copy the `Cs2Importer` folder to `%USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Mods\\` (or publish to Paradox Mods with `Properties/PublishConfiguration.xml`; its ModId is empty until the first upload).',
     '- **Web tool:** unzip and serve the folder (any static web server), or open it from a host.', '',
     '## SHA-256', '', '```', ...sums, '```', '');
   return lines.join('\n');

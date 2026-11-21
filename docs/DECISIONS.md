@@ -222,3 +222,11 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - The web tool offers per type: "Depot at the crop edge" (default for rail/subway) or "I'll place it myself".
     - Bus and tram default depots stay automatic for now (small, road-only); open for the user to change.
 84. **Placed buildings get their own internal networks** (station and depot tracks, internal paths, parking; Claude). They're created as owned sub-nets, the way the game does it, so "Remove imported" deletes them with their building. Verified on 110 Skibidi buildings with none missing. Default depots are now bus and tram only (#83).
+85. **Cs2ImporterMod 0.3.0 is release-grade, but not published** (Claude; details in `cs2-importer/DECISIONS-importer.md` #47–53).
+    - **Packaging:** Paradox Mods publish config (Road Builder as dependency; Traffic is optional and only mentioned, because the format has no optional dependencies) and a thumbnail. **Uploading is the user's call.**
+    - **Packages:** a Windows "Browse…" picker; zips are unpacked automatically; the last 5 packages are remembered.
+    - **Errors and checks:** clear error texts. Import refuses a city that wasn't prepared (median terrain gap over 1 m; "Keep this map's terrain" overrides).
+    - **Controls:** Cancel during Prepare map and Import, and confirmations before destructive actions.
+    - **French:** follows the game's language.
+86. **"Remove imported"** (Claude). The import records what it created as the difference between a snapshot before and after, stored per city by kind, prefab and position (entity ids don't survive save/load). Removal uses the game's own deletion patterns. Verified after save/load: everything created was removed, back to exactly the prepared city.
+87. **Traffic mod lane connections and arrows: experimental, OFF by default** (Claude). They go through the Traffic mod's own data model by reflection: 429 connections on 90/94 junctions, but only 117 of 156 explicit lanes match CS1 exactly, and persistence after save/load isn't checked. U-turn rules aren't applied.

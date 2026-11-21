@@ -217,3 +217,49 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
     - `Actions.WaterCheck` (not a button) lets scripts re-run the wet/dry check after simulating (op `mod`, `press: "WaterCheck"`).
     - The `mod` op's `wait` works for `PrepareMap` too.
     - Lane connections and lane arrows stay report-only for this release (coordinator #3; the web worker puts them in the user guide's limits).
+
+## Release-grade mod, 0.3.0 (2026-11-21, coordinator task after b03c9a5)
+
+47. **Version and packaging.**
+    - **Version:** 0.3.0 in `Mod.Version`, the csproj `<Version>`, `Properties/PublishConfiguration.xml` `ModVersion` and the top of the new `CHANGELOG.md`. `tools/release/build.mjs --check` passes. The extra checks and copying `Properties/` and the changelog into the release are a change for the buildings worker, who owns `build.mjs`; the patch was sent to them.
+    - **Paradox Mods:** `mod/Properties/PublishConfiguration.xml` is in the CS2 toolchain's ModPublisher format: display name, short and long description, Code Mod / Tools tags, `Dependency` on Road Builder [BETA] (87190). The format has no optional dependencies, so Traffic (80095) is only named in the description. Nothing is uploaded.
+    - **Thumbnail:** `Thumbnail.png` (512²), drawn by `make-thumbnail.py` (Pillow, reproducible).
+    - **In game:** the version shows in the About line, with whether Road Builder and Traffic are running.
+48. **Choosing a package.**
+    - **Browse… opens Windows' own Open dialog** (`GetOpenFileNameW` by P/Invoke; the settings UI can't browse), modal over the game. The filter is `cs1conv-plan.json;*.zip`. It starts in the folder of the last package, else Downloads.
+    - **Zips** are unpacked to `%LOCALAPPDATA%\cs1-to-cs2\packages\<zip name>\`, replacing an earlier copy, with a guard against `..\` entries. A zip without a plan is refused.
+    - **Pasted paths:** the folder, its plan or a zip, with or without quotes or spaces; a plan one level down (a zip's own folder) is found too.
+    - **Recent packages:** the last five are kept in a hidden setting and listed first in "Packages on this PC". "Open packages folder" opens the unpack folder in Explorer.
+    - **Tests:** the op `mod` can answer the dialog: a background thread finds it by title, types the path into the file-name box (control 0x47C) and presses Open or Cancel.
+49. **Clearer errors** (all texts are in `Strings.cs`, English and French):
+    - package format older or newer than this mod reads (with what to update); not a package; damaged plan; zip without a plan;
+    - Road Builder not running (by its loaded assembly), or its configs folder missing (with "Install…, then restart");
+    - **a city that wasn't prepared:** Import samples 181 terrain points against the package's heightmap. A median gap over 1 m means not prepared (308.6 m on a fresh Sunshine Peninsula, 0 m after Prepare map), and Import refuses with what to do. "Keep this map's terrain" lets it import anyway. Check reports the same.
+50. **Cancel** (Status group, enabled only while something runs). It's cooperative: Import stops between road batches (the road import reads a `_cancel` flag) or between steps; Prepare map between clear, terrain and water (or cuts the settle short); Remove imported between batches. Interrupting a step in the middle of a frame's work could leave half-made definitions, so it never does. What's built so far stays and is recorded, so Remove imported deletes it.
+51. **Remove imported** (`mod/Undo.cs`).
+    - **Snapshot and diff:** the import runs between two snapshots of the top-level entities: roads, nodes, buildings, static objects, areas and transit routes. Everything new was made by the import, whichever step and whoever's code made it, so the buildings and transit steps need no change.
+    - **Stable keys:** entity ids don't survive a save/load, so each item is stored by kind, prefab and position (edge: curve middle; area: first node; route: first waypoint) in `import-reports\undo-<city>.json`, and found again within 0.25 m. Several imports into one city add up.
+    - **Deletion:** routes as the game's transport overview deletes a line (`Deleted` on the route, read from its IL); areas, objects, buildings and roads with `Deleted` on them and their sub-objects; then the imported nodes left without a road. A node that another, not imported, road still uses stays and is updated.
+    - **Limits:**
+      - Zoning and traffic settings go with the roads.
+      - The base map removed by Prepare map doesn't come back.
+      - An existing road that CS2 split to connect an imported one counts as imported. Clear the area first makes this rare.
+52. **Traffic mod lane connections and lane arrows: in, experimental, off by default** (time box of about 1 h, coordinator #5; `src/Game/LaneOps.cs`, op `lanes`).
+    - **Data model, read from Traffic.dll 0.2.13's IL:**
+      - the node gets the tag `ModifiedConnections` and a buffer `ModifiedLaneConnections`, one element per source lane: lane index, carriageway and group, position, source edge, and a connections entity;
+      - that entity holds `DataOwner(node)`, a `PrefabRef` to the mod's fake prefab (`ModDefaultsSystem.FakePrefabRef`) and the `GeneratedConnection` rows;
+      - then `Updated` on the node and its edges.
+      
+      This is the recipe of the mod's own `TLEDataMigrationSystem`, which builds connections from data outside the tool. Lane positions and carriageway/group come from its `NetUtils.GetAdditionalLaneDetails`. Everything is by reflection; if the mod or those types are missing, the step is skipped and the report says which.
+    - **Matching the plan's lanes** (schema §2 "Lane references"): the CS2 edge's car lanes at that node, sorted left → right in the plan segment's direction. The ordinal picks one; the count must match. Inbound lanes must end at the node, targets must start there.
+    - **Arrows:** they become connections to the junction's existing CS2 lanes from that source whose turn flags the arrows allow. Explicit connections win over arrows (as in TM:PE).
+    - **Verified in game** (`.gamectl/modprep/lanes1`, Skibidi 3 km, after Prepare map):
+      - 237 connections + 211 arrows in the plan (124 arrows overridden), on 94 junctions;
+      - 90 junctions written, 429 connections; every lane reference matched (no count or ordinal problems);
+      - after the mod regenerated the lanes, 117 of 156 explicit source lanes lead exactly to CS1's targets;
+      - traffic ran normally afterwards (104 cars, 14 trains after 60 s).
+    - **Why off by default:** a quarter of the explicit lanes differ, and the cause isn't known yet (it may be where the mod merges or splits lanes). Persistence after a save/load wasn't checked; the Traffic mod serializes these components itself.
+    - **U-turn rules** are still not applied.
+53. **French Options page** (`LocaleFR.cs`; status and error texts in `Strings.cs`). It uses the web tool's French terms: paquet, zonage, quartiers, connexions extérieures, configurations Road Builder, Préparer la carte. Both locale sources are registered (`en-US`, `fr-FR`), and the status line follows the game's language. The road import's own English progress ("batch i of n …") is translated in the mod.
+    - **Verified:** every label read back from the game's active dictionary after `SetActiveLocale("fr-FR")`, plus a French Check status.
+    - `LocaleEN.cs` keeps the `Get…LocaleID(…), "label"` form the web tool's guide test parses.

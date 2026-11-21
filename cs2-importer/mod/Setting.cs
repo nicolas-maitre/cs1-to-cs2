@@ -46,6 +46,18 @@ namespace Cs2ImporterMod
             set { if (!string.IsNullOrEmpty(value)) { PackageFolder = value; Check = true; } }
         }
 
+        /// <summary>Windows' file dialog for a package's cs1conv-plan.json or its .zip (the settings UI can't browse).</summary>
+        [SettingsUISection(Section, PackageGroup)]
+        [SettingsUIButton]
+        [SettingsUIButtonGroup("pick")]
+        public bool Browse { set { Actions.Browse(this); } }
+
+        /// <summary>Opens %LOCALAPPDATA%\cs1-to-cs2\packages in Explorer (where zips are unpacked; unzip packages there too).</summary>
+        [SettingsUISection(Section, PackageGroup)]
+        [SettingsUIButton]
+        [SettingsUIButtonGroup("pick")]
+        public bool OpenPackagesFolder { set { Actions.OpenPackagesFolder(this); } }
+
         [SettingsUISection(Section, PackageGroup)]
         [SettingsUIButton]
         public bool Check { set { Actions.Check(this); } }
@@ -77,6 +89,10 @@ namespace Cs2ImporterMod
         [SettingsUIHidden]
         public bool TerrainIsConverted { get; set; } = false;
 
+        /// <summary>Import a package with terrain into a city that wasn't prepared with it (otherwise Import refuses).</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool KeepMapTerrain { get; set; } = false;
+
         /// <summary>After the roads: paint the plan's zone cells on the new zone blocks.</summary>
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyZoning { get; set; } = true;
@@ -88,6 +104,10 @@ namespace Cs2ImporterMod
         /// <summary>After the roads: priority signs through the Traffic mod, when it is installed.</summary>
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyTrafficMod { get; set; } = true;
+
+        /// <summary>After the priority signs: TM:PE lane connections through the Traffic mod (DECISIONS-importer.md #52).</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ApplyLaneConnections { get; set; } = false;
 
         /// <summary>After the roads and zones: buildings, trees/props, districts and surfaces (buildings/ worker's steps).</summary>
         [SettingsUISection(Section, ImportGroup)]
@@ -107,6 +127,13 @@ namespace Cs2ImporterMod
         [SettingsUIDisableByCondition(typeof(Setting), nameof(ImportDisabled))]
         public bool Import { set { Actions.Import(this); } }
 
+        /// <summary>Deletes everything the imports into this city created (Undo.cs), after a confirmation.</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        [SettingsUIButton]
+        [SettingsUIConfirmation]
+        [SettingsUIDisableByCondition(typeof(Setting), nameof(ImportDisabled))]
+        public bool RemoveImported { set { Actions.RemoveImported(this); } }
+
         /// <summary>Test placement only (hidden): shift the whole plan.</summary>
         [SettingsUIHidden]
         public float OffsetX { get; set; }
@@ -121,6 +148,17 @@ namespace Cs2ImporterMod
         [SettingsUIMultilineText]
         public string Status => string.Empty;
 
+        /// <summary>Stops Prepare map, Import or Remove imported at the next safe point; enabled only while one runs.</summary>
+        [SettingsUISection(Section, ResultGroup)]
+        [SettingsUIButton]
+        [SettingsUIDisableByCondition(typeof(Setting), nameof(CancelDisabled))]
+        public bool Cancel { set { Actions.Cancel(this); } }
+
+        /// <summary>Version and whether Road Builder and Traffic are running (a label, rebuilt with the locale).</summary>
+        [SettingsUISection(Section, ResultGroup)]
+        [SettingsUIMultilineText]
+        public string About => string.Empty;
+
         /// <summary>The same text, readable by scripts (not shown).</summary>
         [SettingsUIHidden]
         public string StatusText { get; set; } = "";
@@ -128,7 +166,19 @@ namespace Cs2ImporterMod
         [SettingsUIHidden]
         public string LastReportPath { get; set; } = "";
 
+        /// <summary>The last five package folders used, '|'-separated (newest first).</summary>
+        [SettingsUIHidden]
+        public string RecentPackages { get; set; } = "";
+
+        /// <summary>For scripts: the "unpacked … to …" note of the last zip, and the last Remove imported result.</summary>
+        [SettingsUIHidden]
+        public string LastUnpacked { get; set; }
+
+        [SettingsUIHidden]
+        public string LastUndo { get; set; }
+
         public bool ImportDisabled() { return ImportSystem.Busy; }
+        public bool CancelDisabled() { return !ImportSystem.Busy; }
 
         public override void SetDefaults()
         {
@@ -136,6 +186,8 @@ namespace Cs2ImporterMod
             ClearArea = true;
             TerrainIsConverted = false;
             ApplyZoning = ApplyTrafficSettings = ApplyTrafficMod = ApplyBuildings = ApplyTransit = ApplyConnections = true;
+            ApplyLaneConnections = KeepMapTerrain = false;
+            RecentPackages = "";
             OffsetX = OffsetZ = 0;
             StatusText = "";
             LastReportPath = "";
@@ -143,9 +195,13 @@ namespace Cs2ImporterMod
 
         public DropdownItem<string>[] GetPackageItems()
         {
-            var items = new List<DropdownItem<string>> { new DropdownItem<string> { value = "", displayName = "(choose a package found on this PC)" } };
-            foreach (var dir in Actions.FindPackages())
-                items.Add(new DropdownItem<string> { value = dir, displayName = Actions.Describe(dir) });
+            var items = new List<DropdownItem<string>> { new DropdownItem<string> { value = "", displayName = T.S("pick.choose") } };
+            var recent = Packages.Recent(this);
+            foreach (var dir in recent)
+                items.Add(new DropdownItem<string> { value = dir, displayName = T.S("pick.recent", Packages.Describe(dir)) });
+            foreach (var dir in Packages.Found())
+                if (!recent.Any(r => string.Equals(r, dir, StringComparison.OrdinalIgnoreCase)))
+                    items.Add(new DropdownItem<string> { value = dir, displayName = Packages.Describe(dir) });
             return items.ToArray();
         }
     }

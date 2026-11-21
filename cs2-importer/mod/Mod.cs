@@ -13,7 +13,7 @@ namespace Cs2ImporterMod
 {
     public sealed class Mod : IMod
     {
-        public const string Version = "0.2.0";
+        public const string Version = "0.3.0";
         public static readonly ILog Log = LogManager.GetLogger("Cs2ImporterMod").SetShowsErrorsInUI(false);
 
         /// <summary>The loaded mod instance; exec scripts reach the settings through it (see ScriptApi).</summary>
@@ -21,6 +21,7 @@ namespace Cs2ImporterMod
 
         public Setting Settings { get; private set; }
         LocaleEN m_Locale;
+        LocaleFR m_LocaleFr;
 
         public void OnLoad(UpdateSystem updateSystem)
         {
@@ -29,13 +30,15 @@ namespace Cs2ImporterMod
             Settings = new Setting(this);
             m_Locale = new LocaleEN(Settings);
             GameManager.instance.localizationManager.AddSource("en-US", m_Locale);
+            m_LocaleFr = new LocaleFR(Settings);
+            GameManager.instance.localizationManager.AddSource("fr-FR", m_LocaleFr);
             AssetDatabase.global.LoadSettings(Setting.SettingsName, Settings, new Setting(this));
             Settings.RegisterInOptionsUI();
             // buildings/ worker's steps (buildings, objects, districts, surfaces), behind one Options toggle
             Cs2Buildings.Steps.RegisterAll((name, step) => ImportSteps.Register(name, args =>
-                Settings.ApplyBuildings ? step(args) : SkippedStep("Buildings, trees, districts")));
+                Settings.ApplyBuildings ? step(args) : SkippedStep("label.ApplyBuildings")));
             // transit after the buildings (stations and depots first)
-            ImportSteps.Register("transit", args => Settings.ApplyTransit ? TransitStep.Run(args) : SkippedStep("Transit lines"));
+            ImportSteps.Register("transit", args => Settings.ApplyTransit ? TransitStep.Run(args) : SkippedStep("label.ApplyTransit"));
             // the import coroutine creates road definitions, which must happen in ToolUpdate (M0 Spike 1b)
             updateSystem.UpdateAt<ImportSystem>(SystemUpdatePhase.ToolUpdate);
         }
@@ -45,13 +48,14 @@ namespace Cs2ImporterMod
             Log.Info("OnDispose");
             if (Settings != null) Settings.UnregisterInOptionsUI();
             if (m_Locale != null) GameManager.instance.localizationManager.RemoveSource("en-US", m_Locale);
+            if (m_LocaleFr != null) GameManager.instance.localizationManager.RemoveSource("fr-FR", m_LocaleFr);
             Instance = null;
         }
 
-        /// <param name="toggle">The Options label that turned the step off.</param>
-        static IEnumerator SkippedStep(string toggle)
+        /// <param name="labelKey">The Strings key of the Options label that turned the step off.</param>
+        static IEnumerator SkippedStep(string labelKey)
         {
-            yield return new Dictionary<string, object> { { "skipped", "turned off in the Options (" + toggle + ")" } };
+            yield return new Dictionary<string, object> { { "skipped", T.S("line.off", T.S(labelKey)) } };
         }
 
         /// <summary>Rewrites the status line on the Options page (it is a locale entry, so the page re-reads it).</summary>
@@ -59,7 +63,7 @@ namespace Cs2ImporterMod
         {
             if (Settings != null) Settings.StatusText = text;
             if (m_Locale == null) return;
-            m_Locale.Status = text;
+            ModLocale.Status = text;
             try { GameManager.instance.localizationManager.ReloadActiveLocale(); }
             catch (Exception e) { Log.Warn("locale reload failed: " + e.Message); }
         }

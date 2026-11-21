@@ -42,11 +42,22 @@ namespace Cs2ImporterMod
 
         public static bool Busy { get { return s_Job != null; } }
 
+        /// <summary>Set by the Cancel button; the running job stops at its next safe point (between steps or batches).</summary>
+        public static bool CancelRequested { get; private set; }
+
+        public static bool Cancel()
+        {
+            if (s_Job == null) return false;
+            CancelRequested = true;
+            return true;
+        }
+
         /// <summary>Main thread only. Fails when an import is already running.</summary>
         public static void Start(IEnumerator job, Action<object, Exception> done)
         {
             if (s_Job != null) throw new InvalidOperationException("an import is already running");
             s_Job = job;
+            CancelRequested = false;
             s_Last = null;
             s_Done = done;
         }

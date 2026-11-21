@@ -20,14 +20,15 @@ namespace Cs2ImporterMod
         /// A fresh city → the package's map: delete the base map's top-level nets and buildings, apply the heightmap and
         /// world map, set the sea level and the CS1 water sources (or a dry map), then check the terrain against the file.
         /// </summary>
-        public static IEnumerator PrepareMap(string planFile, Action<string> progress)
+        public static IEnumerator PrepareMap(string planFile, Action<string> progress, Func<bool> cancelled = null)
         {
             var pkg = Path.GetDirectoryName(Path.GetFullPath(planFile));
             var plan = (Dictionary<string, object>)MiniJson.Parse(File.ReadAllText(planFile));
             var result = new Dictionary<string, object>();
 
             // 1. base map: every top-level net (all:true, terrain/mapprep.mjs clear's default) and building
-            progress("removing the base map's roads and buildings");
+            cancelled = cancelled ?? (() => false);
+            progress("prep.step.clear");
             var clear = Drive(MapPrep.Run(new Dictionary<string, object> { { "op", "clear" }, { "frames", 10.0 }, { "all", true } }));
             while (clear.MoveNext()) yield return null;
             result["clear"] = Pick(clear.Result, "edgesDeleted", "nodesDeleted", "buildingsDeleted", "keptOwnedEdges", "keptOtherEdges");
@@ -49,7 +50,8 @@ namespace Cs2ImporterMod
             double? seaLevel = apply != null && P.Has(apply, "seaLevel") ? P.Num(apply, "seaLevel", 0) : terrain != null && P.Has(terrain, "seaLevelDry") ? P.Num(terrain, "seaLevelDry", 0) : (double?)null;
             if (meta != null)
             {
-                progress("applying the terrain");
+                if (cancelled()) { result["cancelled"] = "prep.step.clear"; yield return result; yield break; }
+                progress("prep.step.terrain");
                 var file = Path.Combine(metaDir, P.Required(meta, "file"));
                 var world = P.Obj(meta, "world");
                 var worldFile = world != null && P.Has(world, "file") ? Path.Combine(metaDir, P.Str(world, "file", "")) : null;
@@ -74,7 +76,8 @@ namespace Cs2ImporterMod
             // 3. water: the CS1 sources (water.apply), else a dry map at the lowered sea level (only with our terrain)
             if (apply != null || meta != null)
             {
-                progress("setting up the water");
+                if (cancelled()) { result["cancelled"] = meta != null ? "prep.step.terrain" : "prep.step.clear"; yield return result; yield break; }
+                progress("prep.step.water");
                 var sources = apply != null && apply.TryGetValue("sources", out var so) && so is List<object> l ? l : new List<object>();
                 var set = MapPrep.Run(new Dictionary<string, object> { { "op", "water.set" }, { "seaLevel", seaLevel.HasValue ? (object)seaLevel.Value : null }, { "clear", true }, { "sources", sources } }) as Dictionary<string, object>;
                 MapPrep.Run(new Dictionary<string, object> { { "op", "water.reset" }, { "mode", "sea" } });
@@ -87,10 +90,34 @@ namespace Cs2ImporterMod
             else result["water"] = new Dictionary<string, object> { { "skipped", "the package has no water or terrain" } };
 
             // settle before the road import, as tools/e2e does (terrain worker: about 600 frames after terrain + water)
-            progress("letting the terrain and water settle");
-            for (int i = 0; i < 600; i++) yield return null;
+            progress("prep.step.settle");
+            for (int i = 0; i < 600 && !cancelled(); i++) yield return null; // a cancel only cuts the wait short
             if (water != null && P.Has(water, "checkpoints")) result["water_check"] = WaterCheck(plan);
             yield return result;
+        }
+
+        /// <summary>Median gap (m) under which a city counts as prepared with this package's terrain.</summary>
+        public const double PreparedTolerance = 1.0;
+
+        /// <summary>
+        /// Median |game height − package height| at the check points, or null without terrain in the package: tells a
+        /// city prepared for this package (≈ 0 m) from any other map. Synchronous (CPU heights).
+        /// </summary>
+        public static double? TerrainMismatch(string planFile)
+        {
+            var pkg = Path.GetDirectoryName(Path.GetFullPath(planFile));
+            var plan = (Dictionary<string, object>)MiniJson.Parse(File.ReadAllText(planFile));
+            var terrain = P.Obj(plan, "terrain");
+            if (terrain == null) return null;
+            var metaFile = Path.Combine(pkg, P.Str(terrain, "meta", "terrain/terrain.json").Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(metaFile)) return null;
+            var meta = (Dictionary<string, object>)MiniJson.Parse(File.ReadAllText(metaFile));
+            var file = Path.Combine(Path.GetDirectoryName(metaFile), P.Required(meta, "file"));
+            var points = CheckPoints(meta);
+            var d = Drive(Ops.Run(new Dictionary<string, object> { { "op", "sample" }, { "points", points } }));
+            while (d.MoveNext()) { }
+            var check = TerrainCheck(meta, file, d.Result, false, null);
+            return Convert.ToDouble(check["medianError"]);
         }
 
         /// <summary>A 9 × 9 grid over the playable area (terrain/apply.mjs gridCheckpoints) plus 10 × 10 over the crop.</summary>

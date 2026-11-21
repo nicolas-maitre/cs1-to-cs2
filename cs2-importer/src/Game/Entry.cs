@@ -46,6 +46,7 @@ namespace Cs2Importer
                 case "view": return View(args);
                 case "traffic": return M2Ops.Traffic(args);
                 case "trafficmod": return M2Ops.TrafficMod(args);
+                case "lanes": return LaneOps.Apply(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify, zoning, traffic, trafficmod, terrain, inspect, mod)");
             }
         }
@@ -350,6 +351,8 @@ namespace Cs2Importer
             var total = Stopwatch.StartNew();
             // in-process callers (the mod's options page) can pass a progress callback; exec callers can't (JSON args)
             var progress = a != null && a.TryGetValue("_progress", out object pcb) ? pcb as Action<string> : null;
+            // ...and a cancel flag, read between batches: what's built stays, and verify covers the batches done
+            var cancel = a != null && a.TryGetValue("_cancel", out object ccb) ? ccb as Func<bool> : null;
             var job = LoadJob(a);
             var w = new GameWorld();
             int settle = Math.Max(1, (int)P.Num(a, "settleFrames", 2));
@@ -496,6 +499,7 @@ namespace Cs2Importer
                 batchRows.Add(row);
                 Log.Info("import: batch " + (bi + 1) + "/" + job.Batches.Count + " " + MiniJson.Write(row));
                 if (progress != null) progress("batch " + (bi + 1) + " of " + job.Batches.Count + ": " + attempted.Count + " of " + job.Segments.Count + " segments placed");
+                if (cancel != null && cancel() && bi + 1 < job.Batches.Count) { report["cancelled_after_batch"] = bi + 1; break; }
             }
             report["batches"] = batchRows;
 

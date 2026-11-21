@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paradox Mods publish configuration, in the format of the Cities: Skylines II modding toolchain's ModPublisher
+  (Properties/PublishConfiguration.xml next to the mod project). Not uploaded by any script here: a maintainer publishes
+  with the toolchain (PublishNewMod, then PublishNewVersion with ModId filled in) or the in-game uploader.
+  Keep ModVersion equal to Mod.Version (mod/Mod.cs); `node tools/release/build.mjs --check` verifies it.
+-->
+<Publish>
+  <!-- Paradox Mods id: empty until the first upload, then fill it in so later uploads update the same mod -->
+  <ModId Value="" />
+  <DisplayName Value="CS1 → CS2 Importer" />
+  <ShortDescription Value="Rebuild your Cities: Skylines city in Cities: Skylines II: roads, terrain, water, zones, traffic rules, buildings, trees and transit lines." />
+  <LongDescription>
+Brings a city from **Cities: Skylines** into **Cities: Skylines II**.
+
+How it works:
+
+1. In Cities: Skylines, export the city with the **CS1 → CS2 Exporter** mod (Steam Workshop).
+2. Open the export in the **cs1conv web tool**: pick the area, check how roads, buildings and transit convert, and download the import package.
+3. Install the package's Road Builder roads from the Options page here (**Install Road Builder configs**), then restart the game.
+4. Start a new city, open **Options → CS1 → CS2 importer**, pick the package, press **Prepare map**, then **Import into this city**.
+
+What it imports:
+
+* **Map:** the terrain, the surrounding world map, the sea level and the CS1 water sources.
+* **Roads, tracks and paths:** with their elevations, bridges, tunnels and custom road types (through Road Builder).
+* **Zoning;** traffic lights, all-way stops, turn bans and crosswalks; and priority signs (with the Traffic mod).
+* **Service buildings, parks and landmarks** (matched to CS2 assets), trees and rocks, districts with their policies, and surface areas.
+* **Bus, tram, metro and train lines** with their stops, names, numbers and colours.
+* **Outside connections** where highways and railways leave the imported area.
+
+Every step can be turned off. **Remove imported** deletes everything an import created.
+
+Requirements:
+
+* **Road Builder** (required): CS1 road types without a CS2 equivalent become Road Builder roads.
+* **Traffic** (optional): for TM:PE priority signs. Without it, that step is skipped.
+
+Known limits:
+
+* TM:PE lane connections and lane arrows are listed in the import report but not applied.
+* Growable buildings are left to the zoning.
+* Water, power and services still need building.
+  </LongDescription>
+  <Thumbnail Value="Properties/Thumbnail.png" />
+  <Tag Value="Code Mod" />
+  <Tag Value="Tools" />
+  <ModVersion Value="0.3.0" />
+  <GameVersion Value="1.*" />
+  <!-- Road Builder [BETA] (Paradox Mods 87190) is required. Traffic (80095) is optional: the publish format has no
+       optional dependencies, so it is only named in the description. -->
+  <Dependency Id="87190" />
+  <ChangeLog>
+* Browse for a package folder or zip, recent packages, clearer errors (Road Builder missing, newer package format, a city that wasn't prepared).
+* Cancel during Prepare map and Import; Remove imported deletes what an import created.
+* French Options page.
+  </ChangeLog>
+</Publish>

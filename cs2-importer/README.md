@@ -13,19 +13,24 @@ The whole pipeline, from CS1 to a saved CS2 city, runs with [`tools/e2e/run.mjs`
 
 ## The mod's Options page
 
-| Control | What it does |
+English and French (`LocaleEN.cs`, `LocaleFR.cs`; status and error texts in `Strings.cs`), following the game's language.
+
+| Control (EN / FR) | What it does |
 | --- | --- |
-| Package folder / Packages on this PC | The import package (the folder with `cs1conv-plan.json` and `roadbuilder\`). The dropdown lists packages under `%LOCALAPPDATA%\cs1-to-cs2`; picking one also runs Check. |
-| **Check** | Plan check, plus whether every road type is available. For a missing Road Builder road it says whether its config isn't installed yet ("press Install…, then restart") or is installed but not loaded ("restart the game"). It also counts roads already in the area. |
-| **Install Road Builder configs** | Copies the package's `*-cs1conv.json` to `ModsData\RoadBuilder`, after a confirmation. Road Builder reads configs only at startup, so the game must be restarted. |
-| **Prepare map** (group "New city") | In a new city, before Import, after a confirmation: removes the base map's roads, tracks and buildings, then applies the package's terrain and world map, the CS1 sea level and water sources (or a dry map), and checks the terrain against the file and the water at the package's checkpoints. It uses the terrain worker's library (`terrain/cs2-apply`, compiled in; `mod/MapSteps.cs`). About 15 s. |
-| Clear the area first | On by default. Bulldozes the existing roads in the area. |
-| Outside connections | On by default, the last step. Where CS1 highways and train tracks leave the crop, the imported end nodes become CS2 outside connections (`plan.outsideConnections`, `MapPrep oc.create`). |
-| Transit lines | On by default. CS1 bus and tram stops and lines (names, numbers, colours) via the transit worker's library (`transit/cs2-exec`, compiled in; `mod/TransitStep.cs`), after the buildings. Metro and train lines need the stations from the buildings step. |
-| Buildings, trees, districts | On by default. The buildings/ worker's steps (`buildings/src/Steps.cs`, compiled into the mod: buildings, objects, districts, surfaces) run after zoning. A plan without those sections reports them as skipped. |
-| Zoning / Traffic lights, stops, turn bans, crosswalks / Priority signs (Traffic mod) | On by default. The M2 steps run after the roads in one chain, and their results show in the status line and the combined report. Other mods can add steps with `Cs2ImporterMod.ImportSteps.Register` (see `mod/ImportSteps.cs`). |
-| **Import into this city** | After a confirmation, builds the roads over the next frames. It is disabled while an import runs. |
-| Status | Progress ("batch 3 of 6 …"), then the summary: roads built / planned, problems by kind, skipped roads, leftover ghosts, and the path of the full report (`%LOCALAPPDATA%\cs1-to-cs2\import-reports\`). |
+| Package folder / Dossier du paquet | The import package: its folder, its `cs1conv-plan.json`, or the web tool's `.zip` (unpacked under `%LOCALAPPDATA%\cs1-to-cs2\packages`). A pasted path may have quotes or spaces around it. |
+| **Browse…** / **Parcourir…** | Windows' own Open dialog (the game waits while it's open), filtered to `cs1conv-plan.json` and `*.zip`; then Check. |
+| **Open packages folder** | Opens the packages folder in Explorer. |
+| Packages on this PC / Paquets sur ce PC | The last five packages used, then those found under `%LOCALAPPDATA%\cs1-to-cs2`; picking one runs Check. |
+| **Check** / **Vérifier** | The package's format, every road type (with what to do when a Road Builder config isn't installed, isn't loaded, or Road Builder isn't running), roads already in the area, the map data the package brings, and whether this city's terrain is the package's. |
+| **Install Road Builder configs** | Copies the package's `*-cs1conv.json` to `ModsData\RoadBuilder` after a confirmation, then asks for a restart. |
+| **Prepare map** / **Préparer la carte** (group "New city") | In a new city, after a confirmation: removes the base map's roads, tracks and buildings, applies the package's terrain, world map, sea level and water, and checks them. Uses `terrain/cs2-apply`, compiled in (`mod/MapSteps.cs`). About 10–20 s. |
+| Clear the area first | On by default. Bulldozes existing roads in the area. |
+| Keep this map's terrain | Off by default. Import refuses a city whose terrain isn't the package's (not prepared); this imports anyway. |
+| Zoning / Traffic lights… / Priority signs (Traffic mod) / Lane connections (Traffic mod) / Buildings, trees, districts / Transit lines / Outside connections | The steps after the roads, in that order, each behind its toggle (lane connections: DECISIONS #52). Other code can add steps with `Cs2ImporterMod.ImportSteps.Register` (`mod/ImportSteps.cs`). |
+| **Import into this city** / **Importer dans cette ville** | After a confirmation: the roads, then the steps; progress and a summary in the status line, the full report in `%LOCALAPPDATA%\cs1-to-cs2\import-reports\`. |
+| **Remove imported** / **Retirer l'import** | After a confirmation, deletes everything the imports into this city created, also after save/load (`mod/Undo.cs`, DECISIONS #51). |
+| Status / État, **Cancel** / **Annuler** | Progress and results. Cancel stops Prepare map, Import or Remove imported at the next step or batch; what's done stays. |
+| About | Version, and whether Road Builder and Traffic are running. |
 
 **Testing by script:** the exec library's op `mod` sets these values and presses the buttons through the same `Actions` the page calls:
 
@@ -43,6 +48,15 @@ gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --args '{"op":"m
 4. Options → CS1 → CS2 importer: pick the package; it runs Check.
 5. Press **Prepare map**, then **Import into this city**.
 6. Unpause for a few minutes so rivers and lakes fill.
+
+**Release checks of 0.3.0** (`.gamectl/release/run3`, `release-test.json`; scripted through op `mod` on a new Sunshine Peninsula city):
+- **Languages:** every label in English and French, read back from the game's dictionary.
+- **Errors:** newer package format, not a package, no plan in a folder, Road Builder configs folder missing, and the unprepared city (Import refused: terrain 308.6 m off).
+- **Browse:** Windows' dialog answered with Cancel, then with a zip (unpacked to `packages\`).
+- **Pasted path** with quotes and spaces; recent packages in order.
+- **Cancel:** during Prepare map (stopped after the clear), and during Import (stopped after batch 4 of 6, 1600 roads).
+- **Remove imported:** on the partial import, 1688 roads and 1389 nodes removed. Then a full import, a save and a load, and Remove imported again: 2160 roads, 1794 nodes, 108 buildings, 3549 trees and props, and 9 transit lines removed. Every count is back to the prepared city's, and nothing was missing.
+- **Lane connections:** `.gamectl/modprep/lanes1` (DECISIONS #52).
 
 ## Quick start (scripts)
 

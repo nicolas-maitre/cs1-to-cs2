@@ -34,6 +34,7 @@
     <Reference Include="$(CS2Managed)\Colossal.Logging.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Colossal.Mathematics.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Colossal.Collections.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.Localization.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Unity.Entities.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Unity.Mathematics.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Unity.Collections.dll" Private="false" />

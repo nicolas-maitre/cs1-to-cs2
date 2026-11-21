@@ -1,10 +1,12 @@
-// What the Options page buttons do. Kept apart from Setting so scripts and the UI share one code path.
+// What the Options page buttons do. Kept apart from Setting so scripts and the UI share one code path. Every text the
+// player sees goes through T.S (Strings.cs: English and French).
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Cs2Importer;
 using Game;
 using Game.SceneFlow;
@@ -14,45 +16,56 @@ namespace Cs2ImporterMod
 {
     public static class Actions
     {
-        public static string LocalRoot
-        {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "cs1-to-cs2"); }
-        }
+        public static string LocalRoot { get { return Packages.LocalRoot; } }
+
+        /// <summary>Test hook (scripts, op "mod" setStatic): stands in for Road Builder's configs folder.</summary>
+        public static string TestRoadBuilderFolder;
 
         public static string RoadBuilderFolder
         {
-            get { return Path.Combine(UnityEngine.Application.persistentDataPath, "ModsData", "RoadBuilder"); }
+            get { return TestRoadBuilderFolder ?? Path.Combine(UnityEngine.Application.persistentDataPath, "ModsData", "RoadBuilder"); }
         }
 
-        /// <summary>Folders with a cs1conv-plan.json under %LOCALAPPDATA%\cs1-to-cs2 (3 levels deep), newest first.</summary>
-        public static List<string> FindPackages()
+        /// <summary>Is a mod's assembly loaded (Road Builder: "RoadBuilder", Traffic: "Traffic")?</summary>
+        public static bool ModLoaded(string assembly)
         {
-            var found = new List<string>();
-            try { Walk(LocalRoot, 0, found); } catch (Exception e) { Mod.Log.Warn("package search failed: " + e.Message); }
-            found.Sort((a, b) => File.GetLastWriteTimeUtc(Path.Combine(b, "cs1conv-plan.json")).CompareTo(File.GetLastWriteTimeUtc(Path.Combine(a, "cs1conv-plan.json"))));
-            return found;
+            try { return AppDomain.CurrentDomain.GetAssemblies().Any(a => string.Equals(a.GetName().Name, assembly, StringComparison.OrdinalIgnoreCase)); }
+            catch { return false; }
         }
 
-        static void Walk(string dir, int depth, List<string> found)
-        {
-            if (!Directory.Exists(dir) || depth > 3) return;
-            if (File.Exists(Path.Combine(dir, "cs1conv-plan.json"))) { found.Add(dir); return; }
-            foreach (var d in Directory.GetDirectories(dir)) Walk(d, depth + 1, found);
-        }
+        public static List<string> FindPackages() { return Packages.Found(); }
+        public static string Describe(string dir) { return Packages.Describe(dir); }
 
-        public static string Describe(string dir)
-        {
-            var name = Path.GetFileName(dir.TrimEnd('\\', '/'));
-            return name + "  (" + File.GetLastWriteTime(Path.Combine(dir, "cs1conv-plan.json")).ToString("yyyy-MM-dd HH:mm") + ")";
-        }
+        // ---------------------------------------------------------------- package
 
+        /// <summary>
+        /// The plan file of the chosen package: resolves a pasted folder / plan / zip (a zip is unpacked and the folder
+        /// replaces it in the setting), checks the plan's format, and remembers the package as recent.
+        /// </summary>
         static string PlanFile(Setting s)
         {
-            var dir = (s.PackageFolder ?? "").Trim().Trim('"');
-            if (dir.Length == 0) throw new InvalidOperationException("Enter the package folder first (the folder with cs1conv-plan.json).");
-            var plan = Directory.Exists(dir) ? Path.Combine(dir, "cs1conv-plan.json") : dir;
-            if (!File.Exists(plan)) throw new InvalidOperationException("No cs1conv-plan.json in " + dir + ".");
+            string unpacked;
+            var plan = Packages.Resolve(s.PackageFolder, out unpacked);
+            var dir = Path.GetDirectoryName(plan);
+            if (unpacked != null || !string.Equals((s.PackageFolder ?? "").Trim().Trim('"'), dir, StringComparison.OrdinalIgnoreCase)) s.PackageFolder = dir;
+            if (unpacked != null) s.LastUnpacked = T.S("pick.unpacked", Path.GetFileName(unpacked), dir);
+            CheckFormat(plan);
+            Packages.Remember(s, dir);
             return plan;
+        }
+
+        /// <summary>Format and version, read before anything else so the message says what to do.</summary>
+        static void CheckFormat(string planFile)
+        {
+            Dictionary<string, object> root;
+            try { root = MiniJson.Parse(File.ReadAllText(planFile)) as Dictionary<string, object>; }
+            catch (Exception e) { throw new InvalidOperationException(T.S("err.damaged", e.Message)); }
+            if (root == null) throw new InvalidOperationException(T.S("err.damaged", "not a JSON object"));
+            var format = P.Str(root, "format", null);
+            if (format != Cs2Importer.Core.PlanParser.Format) throw new InvalidOperationException(T.S("err.notPackage", "format \"" + format + "\""));
+            int v = (int)P.Num(root, "formatVersion", 0), mine = Cs2Importer.Core.PlanParser.Version;
+            if (v > mine) throw new InvalidOperationException(T.S("err.newerFormat", v, mine));
+            if (v < mine) throw new InvalidOperationException(T.S("err.olderFormat", v, mine));
         }
 
         static Dictionary<string, object> Args(Setting s, string op)
@@ -64,26 +77,75 @@ namespace Cs2ImporterMod
             };
         }
 
+        /// <summary>Windows' file dialog for a plan file or a zip; then Check.</summary>
+        public static Dictionary<string, object> Browse(Setting s)
+        {
+            string file;
+            try { file = Packages.BrowseFile(Packages.InitialDir(s)); }
+            catch (Exception e)
+            {
+                Mod.Instance.SetStatus(T.S("pick.unavailable", e.Message));
+                return new Dictionary<string, object> { { "error", e.Message } };
+            }
+            if (file == null)
+            {
+                Mod.Instance.SetStatus(T.S("pick.none"));
+                return new Dictionary<string, object> { { "chosen", null } };
+            }
+            s.PackageFolder = file;
+            var r = Check(s);
+            r["chosen"] = file;
+            return r;
+        }
+
+        public static Dictionary<string, object> OpenPackagesFolder(Setting s)
+        {
+            try
+            {
+                Directory.CreateDirectory(Packages.PackagesRoot);
+                System.Diagnostics.Process.Start("explorer.exe", "\"" + Packages.PackagesRoot + "\"");
+                return new Dictionary<string, object> { { "opened", Packages.PackagesRoot } };
+            }
+            catch (Exception e) { return new Dictionary<string, object> { { "error", e.Message } }; }
+        }
+
         // ---------------------------------------------------------------- check
 
-        /// <summary>Plan check plus the Road Builder state: missing config files vs. files copied after CS2 started.</summary>
+        /// <summary>Plan check plus the Road Builder state, the package's map data and whether this city was prepared.</summary>
         public static Dictionary<string, object> Check(Setting s)
         {
             try
             {
+                s.LastUnpacked = null;
+                var planFile = PlanFile(s);
                 var r = (Dictionary<string, object>)Entry.Run(Args(s, "check"));
                 var rb = RoadBuilderState(s, r);
                 r["roadbuilder"] = rb;
-                var map = MapContents(PlanFile(s));
+                var map = MapContents(planFile);
                 r["map"] = map;
-                Mod.Instance.SetStatus(CheckText(r, rb) + "\n" + MapText(map));
+                var sb = new StringBuilder();
+                if (!string.IsNullOrEmpty(s.LastUnpacked)) sb.Append(s.LastUnpacked).Append('\n');
+                sb.Append(CheckText(r, rb)).Append('\n').Append(MapText(map));
+                if ((bool)map["terrain"] && InCity())
+                {
+                    var diff = MapSteps.TerrainMismatch(planFile);
+                    r["terrain_mismatch_m"] = diff;
+                    if (diff.HasValue) sb.Append('\n').Append(diff.Value <= MapSteps.PreparedTolerance ? T.S("check.cityPrepared") : T.S("check.cityNotPrepared", Math.Round(diff.Value, 1)));
+                }
+                Mod.Instance.SetStatus(sb.ToString());
                 return r;
             }
             catch (Exception e)
             {
-                Mod.Instance.SetStatus("Check failed: " + e.Message);
+                Mod.Instance.SetStatus(T.S("check.failed", e.Message));
                 return new Dictionary<string, object> { { "error", e.Message } };
             }
+        }
+
+        static bool InCity()
+        {
+            var gm = GameManager.instance;
+            return gm != null && !gm.isGameLoading && gm.gameMode.IsGame();
         }
 
         /// <summary>What the package brings for "Prepare map" and the connections step (schema §2).</summary>
@@ -112,36 +174,38 @@ namespace Cs2ImporterMod
 
         static string MapText(Dictionary<string, object> m)
         {
-            var sb = new StringBuilder("Map: ");
-            if (!(bool)m["terrain"]) sb.Append("no terrain in the package (the map's own terrain stays)");
+            var sb = new StringBuilder();
+            if (!(bool)m["terrain"]) sb.Append(T.S("check.mapNone"));
             else
             {
-                sb.Append("terrain").Append((bool)m["world"] ? " with its surroundings" : "");
-                if ((bool)m["water"]) sb.Append(", sea level ").Append(Math.Round(Convert.ToDouble(m["seaLevel"]), 1)).Append(" m, ").Append(m["waterSources"]).Append(" water sources");
-                else sb.Append(", no water (a dry map)");
+                sb.Append(T.S("check.mapTerrain")).Append((bool)m["world"] ? T.S("check.mapWorld") : "");
+                if ((bool)m["water"]) sb.Append(T.S("check.mapWater", Math.Round(Convert.ToDouble(m["seaLevel"]), 1), m["waterSources"]));
+                else sb.Append(T.S("check.mapDry"));
             }
-            sb.Append(", ").Append(m["outsideConnections"]).Append(" outside connections.");
-            if ((bool)m["terrain"]) sb.Append(" In a new city, press \"Prepare map\" before importing.");
+            sb.Append(T.S("check.mapConnections", m["outsideConnections"]));
+            if ((bool)m["terrain"]) sb.Append(T.S("check.mapPrepare"));
             return sb.ToString();
         }
 
         static Dictionary<string, object> RoadBuilderState(Setting s, Dictionary<string, object> check)
         {
             var pkg = Path.GetDirectoryName(PlanFile(s));
-            int missingFile = 0, notLoaded = 0, packaged = 0;
+            int missingFile = 0, notLoaded = 0, packaged = 0, needed = 0;
             var pkgRb = Path.Combine(pkg, "roadbuilder");
             if (Directory.Exists(pkgRb)) packaged = Directory.GetFiles(pkgRb, "*-cs1conv.json").Length;
             foreach (var o in (List<object>)check["prefabs"])
             {
                 var p = (Dictionary<string, object>)o;
-                if ((string)p["type"] != "RoadBuilderPrefab" || (bool)p["found"]) continue;
+                if ((string)p["type"] != "RoadBuilderPrefab") continue;
+                needed++;
+                if ((bool)p["found"]) continue;
                 if (File.Exists(Path.Combine(RoadBuilderFolder, (string)p["name"] + ".json"))) notLoaded++;
                 else missingFile++;
             }
             return new Dictionary<string, object>
             {
-                { "folder", RoadBuilderFolder }, { "configs_in_package", packaged },
-                { "missing_files", missingFile }, { "copied_but_not_loaded", notLoaded },
+                { "folder", RoadBuilderFolder }, { "folder_exists", Directory.Exists(RoadBuilderFolder) }, { "mod_loaded", ModLoaded("RoadBuilder") },
+                { "types_needed", needed }, { "configs_in_package", packaged }, { "missing_files", missingFile }, { "copied_but_not_loaded", notLoaded },
             };
         }
 
@@ -149,24 +213,27 @@ namespace Cs2ImporterMod
         {
             var plan = (Dictionary<string, object>)r["plan"];
             var sb = new StringBuilder();
-            sb.Append("Package: ").Append(plan["source"]).Append(", ").Append(plan["segments_to_build"]).Append(" roads to build");
-            if (Convert.ToInt32(plan["segments_skipped"]) > 0) sb.Append(" (").Append(plan["segments_skipped"]).Append(" skipped)");
+            sb.Append(T.S("check.package", plan["source"], plan["segments_to_build"]));
+            if (Convert.ToInt32(plan["segments_skipped"]) > 0) sb.Append(T.S("check.skipped", plan["segments_skipped"]));
             sb.Append(".\n");
             int missing = Convert.ToInt32(r["prefabs_missing"]);
             int missingFiles = Convert.ToInt32(rb["missing_files"]), notLoaded = Convert.ToInt32(rb["copied_but_not_loaded"]);
-            if (missing == 0) sb.Append("All ").Append(((List<object>)r["prefabs"]).Count).Append(" road types are available.\n");
+            bool rbNeeded = Convert.ToInt32(rb["types_needed"]) > 0;
+            if (rbNeeded && !(bool)rb["mod_loaded"]) sb.Append(T.S("err.rbNotLoaded")).Append('\n');
+            if (missing == 0) sb.Append(T.S("check.allTypes", ((List<object>)r["prefabs"]).Count)).Append('\n');
             else
             {
-                sb.Append(missing).Append(" road types are missing. ");
-                if (missingFiles > 0) sb.Append(missingFiles).Append(" Road Builder configs aren't installed: press \"Install Road Builder configs\", then restart Cities: Skylines II (Road Builder only reads its configs at startup). ");
-                if (notLoaded > 0) sb.Append(notLoaded).Append(" Road Builder configs are installed but not loaded yet: restart Cities: Skylines II. ");
-                if (missing > missingFiles + notLoaded) sb.Append("Other missing types are listed in the log. ");
-                sb.Append("Roads of a missing type are skipped.\n");
+                sb.Append(T.S("check.missing", missing)).Append(' ');
+                if (missingFiles > 0 && !(bool)rb["folder_exists"] && (bool)rb["mod_loaded"]) sb.Append(T.S("err.rbFolderMissing", RoadBuilderFolder)).Append(' ');
+                else if (missingFiles > 0 && (bool)rb["mod_loaded"]) sb.Append(T.S("check.rbMissingFiles", missingFiles)).Append(' ');
+                if (notLoaded > 0 && (bool)rb["mod_loaded"]) sb.Append(T.S("check.rbNotLoaded", notLoaded)).Append(' ');
+                if (missing > missingFiles + notLoaded) sb.Append(T.S("check.otherMissing")).Append(' ');
+                sb.Append(T.S("check.missingSkipped")).Append('\n');
             }
             int existing = r.ContainsKey("existing_edges_in_area") ? Convert.ToInt32(r["existing_edges_in_area"]) : 0;
-            if (existing > 0) sb.Append(existing).Append(" roads already in the area: keep \"Clear the area first\" on.\n");
+            if (existing > 0) sb.Append(T.S("check.existing", existing)).Append('\n');
             var b = (Dictionary<string, object>)r["bounds"];
-            if (!(bool)b["inside_cs2_map"]) sb.Append("The crop doesn't fit the CS2 map.\n");
+            if (!(bool)b["inside_cs2_map"]) sb.Append(T.S("check.outside")).Append('\n');
             return sb.ToString().TrimEnd();
         }
 
@@ -177,7 +244,7 @@ namespace Cs2ImporterMod
             try
             {
                 var src = Path.Combine(Path.GetDirectoryName(PlanFile(s)), "roadbuilder");
-                if (!Directory.Exists(src)) throw new InvalidOperationException("The package has no roadbuilder folder.");
+                if (!Directory.Exists(src)) throw new InvalidOperationException(T.S("rb.noFolder"));
                 Directory.CreateDirectory(RoadBuilderFolder);
                 int n = 0;
                 foreach (var f in Directory.GetFiles(src, "*-cs1conv.json")) // only ever our own generated configs
@@ -185,12 +252,12 @@ namespace Cs2ImporterMod
                     File.Copy(f, Path.Combine(RoadBuilderFolder, Path.GetFileName(f)), true);
                     n++;
                 }
-                Mod.Instance.SetStatus("Copied " + n + " Road Builder configs. Restart Cities: Skylines II so Road Builder loads them, then import.");
+                Mod.Instance.SetStatus(T.S("rb.copied", n) + (ModLoaded("RoadBuilder") ? "" : "\n" + T.S("err.rbNotLoaded")));
                 return new Dictionary<string, object> { { "copied", n }, { "to", RoadBuilderFolder } };
             }
             catch (Exception e)
             {
-                Mod.Instance.SetStatus("Installing the Road Builder configs failed: " + e.Message);
+                Mod.Instance.SetStatus(T.S("rb.failed", e.Message));
                 return new Dictionary<string, object> { { "error", e.Message } };
             }
         }
@@ -201,32 +268,38 @@ namespace Cs2ImporterMod
         {
             try
             {
-                var gm = GameManager.instance;
-                if (gm == null || gm.isGameLoading || !gm.gameMode.IsGame()) throw new InvalidOperationException("Start a new city first.");
-                if (ImportSystem.Busy) throw new InvalidOperationException("An import is already running.");
+                if (!InCity()) throw new InvalidOperationException(T.S("err.noNewCity"));
+                if (ImportSystem.Busy) throw new InvalidOperationException(T.S("err.busy"));
                 var plan = PlanFile(s);
                 var report = Path.Combine(LocalRoot, "import-reports", "prepare-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
-                Mod.Instance.SetStatus("Preparing the map…");
-                ImportSystem.Start(MapSteps.PrepareMap(plan, t => Mod.Instance.SetStatus("Preparing the map… " + t)), (result, error) =>
+                Mod.Instance.SetStatus(T.S("prep.running"));
+                ImportSystem.Start(MapSteps.PrepareMap(plan, k => Mod.Instance.SetStatus(T.S("prep.progress", T.S(k))), () => ImportSystem.CancelRequested), (result, error) =>
                 {
-                    if (error != null) { Mod.Instance.SetStatus("Preparing the map failed: " + error.Message); return; }
+                    if (error != null) { Mod.Instance.SetStatus(T.S("prep.failed", error.Message)); return; }
                     var r = result as Dictionary<string, object>;
-                    try
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(report));
-                        File.WriteAllText(report, MiniJson.Write(r), new UTF8Encoding(false));
-                        s.LastReportPath = report;
-                    }
-                    catch (Exception ex) { Mod.Log.Warn("report not written: " + ex.Message); }
+                    WriteReport(s, report, r);
+                    object at;
+                    if (r != null && r.TryGetValue("cancelled", out at)) { Mod.Instance.SetStatus(T.S("prep.cancelled", T.S((string)at))); return; }
                     Mod.Instance.SetStatus(PrepareText(r, report));
                 });
                 return true;
             }
             catch (Exception e)
             {
-                Mod.Instance.SetStatus("Map not prepared: " + e.Message);
+                Mod.Instance.SetStatus(T.S("prep.notStarted", e.Message));
                 return false;
             }
+        }
+
+        static void WriteReport(Setting s, string report, object r)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(report));
+                File.WriteAllText(report, MiniJson.Write(r), new UTF8Encoding(false));
+                s.LastReportPath = report;
+            }
+            catch (Exception ex) { Mod.Log.Warn("report not written: " + ex.Message); }
         }
 
         /// <summary>Not a button: scripts (op "mod", press "WaterCheck") read CS2's water at the package's CS1 checkpoints,
@@ -239,20 +312,20 @@ namespace Cs2ImporterMod
 
         static string PrepareText(Dictionary<string, object> r, string report)
         {
-            if (r == null) return "Map prepared, without a report.";
-            var sb = new StringBuilder("Map prepared.\n");
+            if (r == null) return T.S("prep.noReport");
+            var sb = new StringBuilder(T.S("prep.done")).Append('\n');
             object v;
             var c = r.TryGetValue("clear", out v) ? v as Dictionary<string, object> : null;
-            if (c != null) sb.Append("Removed ").Append(c.TryGetValue("edgesDeleted", out v) ? v : 0).Append(" roads and tracks and ").Append(c.TryGetValue("buildingsDeleted", out v) ? v : 0).Append(" buildings of the base map.\n");
+            if (c != null) sb.Append(T.S("prep.removed", c.TryGetValue("edgesDeleted", out v) ? v : 0, c.TryGetValue("buildingsDeleted", out v) ? v : 0)).Append('\n');
             var t = r.TryGetValue("terrain", out v) ? v as Dictionary<string, object> : null;
-            if (t != null && t.TryGetValue("skipped", out v)) sb.Append("Terrain skipped: ").Append(v).Append(".\n");
-            else if (t != null) sb.Append("Terrain applied").Append((bool)t["worldMap"] ? " with its surroundings" : "").Append(": within ").Append(t["p95Error"]).Append(" m of the package at 95 % of ").Append(t["points"]).Append(" check points.\n");
+            if (t != null && t.ContainsKey("skipped")) sb.Append(T.S("prep.terrainSkipped")).Append('\n');
+            else if (t != null) sb.Append(T.S("prep.terrain", (bool)t["worldMap"] ? T.S("check.mapWorld") : "", t["p95Error"], t["points"])).Append('\n');
             var w = r.TryGetValue("water", out v) ? v as Dictionary<string, object> : null;
-            if (w != null && w.TryGetValue("skipped", out v)) sb.Append("Water skipped: ").Append(v).Append(".\n");
-            else if (w != null && (string)w["mode"] == "cs1") sb.Append("Water: sea level ").Append(Math.Round(Convert.ToDouble(w["seaLevel"]), 1)).Append(" m, ").Append(w["sources"]).Append(" CS1 water sources. Unpause for a while to let rivers and lakes fill.\n");
-            else if (w != null) sb.Append("Water: none in the package, the map is dry.\n");
-            sb.Append("Next: press \"Import into this city\".\n");
-            sb.Append("Full report: ").Append(report);
+            if (w != null && w.ContainsKey("skipped")) sb.Append(T.S("prep.waterSkipped")).Append('\n');
+            else if (w != null && (string)w["mode"] == "cs1") sb.Append(T.S("prep.water", Math.Round(Convert.ToDouble(w["seaLevel"]), 1), w["sources"])).Append('\n');
+            else if (w != null) sb.Append(T.S("prep.dry")).Append('\n');
+            sb.Append(T.S("prep.next")).Append('\n');
+            sb.Append(T.S("report", report));
             return sb.ToString();
         }
 
@@ -262,16 +335,21 @@ namespace Cs2ImporterMod
         {
             try
             {
-                var gm = GameManager.instance;
-                if (gm == null || gm.isGameLoading || !gm.gameMode.IsGame()) throw new InvalidOperationException("Load or start a city first.");
-                if (ImportSystem.Busy) throw new InvalidOperationException("An import is already running.");
+                if (!InCity()) throw new InvalidOperationException(T.S("err.noCity"));
+                if (ImportSystem.Busy) throw new InvalidOperationException(T.S("err.busy"));
                 var args = Args(s, "import");
+                if (!s.KeepMapTerrain && (bool)MapContents((string)args["plan"])["terrain"])
+                {
+                    var diff = MapSteps.TerrainMismatch((string)args["plan"]);
+                    if (diff.HasValue && diff.Value > MapSteps.PreparedTolerance) throw new InvalidOperationException(T.S("err.notPrepared", Math.Round(diff.Value, 1)));
+                }
                 var report = Path.Combine(LocalRoot, "import-reports", "import-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
-                args["_progress"] = (Action<string>)(t => Mod.Instance.SetStatus("Importing… " + t));
-                Mod.Instance.SetStatus("Importing…");
+                args["_progress"] = (Action<string>)(t => Mod.Instance.SetStatus(T.S("imp.progress", TranslateProgress(t))));
+                args["_cancel"] = (Func<bool>)(() => ImportSystem.CancelRequested);
+                Mod.Instance.SetStatus(T.S("imp.running"));
                 ImportSystem.Start(Chain(s, args, report), (result, error) =>
                 {
-                    if (error != null) { Mod.Instance.SetStatus("Import failed: " + error.Message); return; }
+                    if (error != null) { Mod.Instance.SetStatus(T.S("imp.failed", error.Message)); return; }
                     s.LastReportPath = report;
                     Mod.Instance.SetStatus(ResultText(result as Dictionary<string, object>, report));
                 });
@@ -279,40 +357,54 @@ namespace Cs2ImporterMod
             }
             catch (Exception e)
             {
-                Mod.Instance.SetStatus("Import not started: " + e.Message);
+                Mod.Instance.SetStatus(T.S("imp.notStarted", e.Message));
                 return false;
             }
         }
 
+        static readonly Regex BatchProgress = new Regex(@"^batch (\d+) of (\d+): (\d+) of (\d+) segments placed$");
+
+        /// <summary>The road import reports its progress in English; the status line shows it in the game's language.</summary>
+        static string TranslateProgress(string t)
+        {
+            var m = BatchProgress.Match(t ?? "");
+            if (m.Success) return T.S("imp.batch", m.Groups[1].Value, m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value);
+            if (t == "checking what was built") return T.S("imp.verify");
+            return t;
+        }
+
         /// <summary>
-        /// The whole import as one coroutine: the roads, then each enabled step (zoning, traffic settings, Traffic mod,
-        /// then steps other mods registered in ImportSteps), one after the other. Writes one combined report.
+        /// The whole import as one coroutine: a snapshot for "Remove imported", the roads, then each enabled step (traffic
+        /// settings, Traffic mod, zoning, the steps other code registered in ImportSteps, outside connections), one after
+        /// the other, then the record of what was created and one combined report. Cancel stops between steps (and the
+        /// roads between batches); what's built so far is recorded too.
         /// </summary>
         static IEnumerator Chain(Setting s, Dictionary<string, object> args, string report)
         {
             var all = new Dictionary<string, object>();
-            object roads = null;
-            var job = (IEnumerator)Entry.Run(args);
-            while (job.MoveNext()) { if (job.Current != null) roads = job.Current; yield return null; }
-            all["import"] = roads;
+            Undo.Snapshot before = null;
+            try { before = Undo.Take(); }
+            catch (Exception ex) { Mod.Log.Warn("undo snapshot failed: " + ex); all["undo"] = new Dictionary<string, object> { { "error", ex.Message } }; }
+
             var steps = new List<KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>>();
-            // zoning last: the traffic steps mark edges Updated, and the blocks must be final when they're painted
+            steps.Add(new KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>("import", a => (IEnumerator)Entry.Run(a)));
+            // zoning after the traffic steps: they mark edges Updated, and the blocks must be final when they're painted
             if (s.ApplyTrafficSettings) steps.Add(Op("traffic"));
             if (s.ApplyTrafficMod) steps.Add(Op("trafficmod"));
+            if (s.ApplyLaneConnections) steps.Add(Op("lanes"));
             if (s.ApplyZoning) steps.Add(Op("zoning"));
             steps.AddRange(ImportSteps.Registered);
             // last: the connections own the imported end nodes, and nothing may rebuild those nodes afterwards
             if (s.ApplyConnections) steps.Add(new KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>("connections", MapSteps.Connections));
             foreach (var st in steps)
             {
-                Mod.Instance.SetStatus("Importing… " + st.Key);
+                if (ImportSystem.CancelRequested) { all["cancelled"] = st.Key; break; }
                 var stepArgs = new Dictionary<string, object>(args);
-                stepArgs.Remove("_progress");
-                stepArgs["op"] = st.Key;
+                if (st.Key != "import") { stepArgs.Remove("_progress"); stepArgs.Remove("_cancel"); stepArgs["op"] = st.Key; Mod.Instance.SetStatus(T.S("imp.progress", T.Step(st.Key))); }
                 object last = null;
                 IEnumerator e = null;
                 try { e = st.Value(stepArgs); }
-                catch (Exception ex) { all[st.Key] = new Dictionary<string, object> { { "error", ex.Message } }; continue; }
+                catch (Exception ex) { all[st.Key] = new Dictionary<string, object> { { "error", ex.Message } }; Mod.Log.Warn(st.Key + " failed: " + ex); continue; }
                 while (true)
                 {
                     bool more;
@@ -323,6 +415,13 @@ namespace Cs2ImporterMod
                     yield return null;
                 }
                 all[st.Key] = last;
+                var lr = last as Dictionary<string, object>;
+                if (st.Key == "import" && lr != null && lr.ContainsKey("cancelled_after_batch")) { all["cancelled"] = "import"; break; }
+            }
+            if (before != null)
+            {
+                try { all["undo"] = Undo.Record(before, (string)args["plan"]); }
+                catch (Exception ex) { Mod.Log.Warn("undo record failed: " + ex); all["undo"] = new Dictionary<string, object> { { "error", ex.Message } }; }
             }
             try
             {
@@ -340,45 +439,52 @@ namespace Cs2ImporterMod
 
         static string ResultText(Dictionary<string, object> all, string report)
         {
-            var r = all != null ? all["import"] as Dictionary<string, object> : null;
-            if (r == null) return "Import finished without a report.";
+            var r = all != null && all.ContainsKey("import") ? all["import"] as Dictionary<string, object> : null;
+            if (r == null || !r.ContainsKey("result")) return all != null && all.ContainsKey("import") && all["import"] is Dictionary<string, object> d && d.ContainsKey("error") ? T.S("imp.failed", d["error"]) : T.S("imp.noReport");
             var res = (Dictionary<string, object>)r["result"];
             var sb = new StringBuilder();
-            sb.Append("Done in ").Append(r["seconds"]).Append(" s: ").Append(res["segments_built"]).Append(" of ").Append(res["segments_planned"]).Append(" roads built");
+            object c;
+            if (all.TryGetValue("cancelled", out c)) sb.Append(T.S("imp.cancelled", T.Step(c as string == "import" ? "roads" : (string)c))).Append('\n');
+            sb.Append(T.S("imp.done", r["seconds"], res["segments_built"], res["segments_planned"]));
             int failed = Convert.ToInt32(res["segments_failed"]);
-            if (failed > 0) sb.Append(", ").Append(failed).Append(" failed");
+            if (failed > 0) sb.Append(T.S("imp.failedN", failed));
             sb.Append(".\n");
             var fails = (Dictionary<string, object>)r["failures_by_reason"];
-            if (fails.Count > 0) sb.Append("Problems: ").Append(string.Join(", ", fails.Select(kv => kv.Value + " " + kv.Key).ToArray())).Append(".\n");
+            if (fails.Count > 0) sb.Append(T.S("imp.problems", string.Join(", ", fails.Select(kv => kv.Value + " " + kv.Key).ToArray()))).Append('\n');
             var plan = (Dictionary<string, object>)r["plan"];
-            if (Convert.ToInt32(plan["segments_skipped"]) > 0) sb.Append(plan["segments_skipped"]).Append(" roads in the plan were skipped.\n");
+            if (Convert.ToInt32(plan["segments_skipped"]) > 0) sb.Append(T.S("imp.planSkipped", plan["segments_skipped"])).Append('\n');
             var temp = (Dictionary<string, object>)r["temp_after"];
-            if (Convert.ToInt32(temp["temp_any"]) > 0) sb.Append("Warning: ").Append(temp["temp_any"]).Append(" unfinished (ghost) entities remain.\n");
+            if (Convert.ToInt32(temp["temp_any"]) > 0) sb.Append(T.S("imp.ghosts", temp["temp_any"])).Append('\n');
             foreach (var kv in all)
             {
-                if (kv.Key == "import") continue;
+                if (kv.Key == "import" || kv.Key == "cancelled" || kv.Key == "undo") continue;
                 sb.Append(StepLine(kv.Key, kv.Value as Dictionary<string, object>)).Append('\n');
             }
-            sb.Append("Full report: ").Append(report);
+            object u;
+            if (all.TryGetValue("undo", out u) && u is Dictionary<string, object> ud && ud.ContainsKey("total")) sb.Append(T.S("imp.recorded", ud["total"])).Append('\n');
+            sb.Append(T.S("report", report));
             return sb.ToString();
         }
 
         static string StepLine(string name, Dictionary<string, object> d)
         {
-            if (d == null) return name + ": no result.";
+            string title = T.Step(name);
+            title = char.ToUpper(title[0]) + title.Substring(1);
+            if (d == null) return T.S("line.noResult", title);
             object v;
-            if (d.TryGetValue("error", out v)) return name + " failed: " + v;
-            if (d.TryGetValue("skipped", out v)) return name + " skipped: " + v;
+            if (d.TryGetValue("error", out v)) return T.S("line.failed", title, v);
+            if (d.TryGetValue("skipped", out v)) return T.S("line.skipped", title, v);
             switch (name)
             {
-                case "zoning": return "Zoning: " + d["cells_matched"] + " of " + d["plan_cells"] + " cells (" + d["coverage"] + " %), " + d["cells_painted"] + " painted.";
-                case "traffic": return "Traffic: " + d["lights_added"] + " lights added, " + d["lights_removed"] + " removed, " + d["all_way_stops"] + " all-way stops, " + d["turn_ban_ends"] + " turn bans, " + (Convert.ToInt32(d["crosswalks_added"]) + Convert.ToInt32(d["crosswalks_removed"])) + " crosswalk changes.";
-                case "trafficmod": return "Traffic mod: " + d["priority_signs"] + " priority signs on " + d["edges_with_priorities"] + " roads.";
-                case "connections": return "Outside connections: " + d["placed"] + " of " + d["items"] + " (" + d["road"] + " road, " + d["train"] + " train)" + (Convert.ToInt32(d["failed"]) > 0 ? ", " + d["failed"] + " without an imported end node" : "") + ".";
+                case "zoning": return T.S("line.zoning", d["cells_matched"], d["plan_cells"], d["coverage"], d["cells_painted"]);
+                case "traffic": return T.S("line.traffic", d["lights_added"], d["lights_removed"], d["all_way_stops"], d["turn_ban_ends"], Convert.ToInt32(d["crosswalks_added"]) + Convert.ToInt32(d["crosswalks_removed"]));
+                case "trafficmod": return T.S("line.trafficmod", d["priority_signs"], d["edges_with_priorities"]);
+                case "lanes": return T.S("line.lanes", d["nodes_done"], d["nodes_planned"], d["connections"]);
+                case "connections": return T.S("line.connections", d["placed"], d["items"], d["road"], d["train"], Convert.ToInt32(d["failed"]) > 0 ? T.S("line.connectionsFailed", d["failed"]) : "");
                 case "transit":
                 {
                     var st = d.TryGetValue("stops", out v) ? v as Dictionary<string, object> : null;
-                    return "Transit: " + d["placed"] + " of " + d["items"] + " lines" + (st != null ? ", " + st["defined"] + " of " + st["requested"] + " stops" : "") + ".";
+                    return T.S("line.transit", d["placed"], d["items"], st != null ? T.S("line.transitStops", st["defined"], st["requested"]) : "");
                 }
                 default:
                     // buildings/ worker's steps: buildings {items, placed, alreadyPlaced, failed}, objects {items, created},
@@ -387,12 +493,52 @@ namespace Cs2ImporterMod
                     {
                         object done;
                         if (!d.TryGetValue("placed", out done)) d.TryGetValue("created", out done);
-                        object already, failed;
+                        object already, failedN;
                         d.TryGetValue("alreadyPlaced", out already);
-                        d.TryGetValue("failed", out failed);
-                        return char.ToUpper(name[0]) + name.Substring(1) + ": " + (done ?? 0) + " of " + v + (already != null && Convert.ToInt32(already) > 0 ? " (" + already + " already there)" : "") + (failed != null && Convert.ToInt32(failed) > 0 ? ", " + failed + " failed" : "") + ".";
+                        d.TryGetValue("failed", out failedN);
+                        return T.S("line.generic", title, done ?? 0, v,
+                            already != null && Convert.ToInt32(already) > 0 ? T.S("line.already", already) : "",
+                            failedN != null && Convert.ToInt32(failedN) > 0 ? T.S("line.failedN", failedN) : "");
                     }
-                    return name + ": done.";
+                    return T.S("line.done", title);
+            }
+        }
+
+        // ---------------------------------------------------------------- cancel + remove imported
+
+        public static bool Cancel(Setting s)
+        {
+            bool ok = ImportSystem.Cancel();
+            Mod.Instance.SetStatus(T.S(ok ? "cancel.requested" : "cancel.none"));
+            return ok;
+        }
+
+        public static bool RemoveImported(Setting s)
+        {
+            try
+            {
+                if (!InCity()) throw new InvalidOperationException(T.S("err.noCity"));
+                if (ImportSystem.Busy) throw new InvalidOperationException(T.S("err.busy"));
+                if (Undo.Recorded() == 0) { Mod.Instance.SetStatus(T.S("undo.nothing")); return false; }
+                Mod.Instance.SetStatus(T.S("undo.running"));
+                ImportSystem.Start(Undo.Remove(() => ImportSystem.CancelRequested, k => Mod.Instance.SetStatus(T.S("undo.progress", k))), (result, error) =>
+                {
+                    if (error != null) { Mod.Instance.SetStatus(T.S("undo.failed", error.Message)); return; }
+                    var r = result as Dictionary<string, object>;
+                    if (r == null || r.ContainsKey("nothing")) { Mod.Instance.SetStatus(T.S("undo.nothing")); return; }
+                    if (r.ContainsKey("cancelled")) { Mod.Instance.SetStatus(T.S("undo.cancelled")); return; }
+                    var n = (Dictionary<string, object>)r["removed"];
+                    Func<string, int> c = k => Convert.ToInt32(n[k]);
+                    int gone = Convert.ToInt32(r["gone"]);
+                    Mod.Instance.SetStatus(T.S("undo.done", c("edge"), c("building"), c("object"), c("area"), c("route")) + (gone > 0 ? T.S("undo.gone", gone) : ""));
+                    s.LastUndo = MiniJson.Write(r);
+                });
+                return true;
+            }
+            catch (Exception e)
+            {
+                Mod.Instance.SetStatus(T.S("undo.notStarted", e.Message));
+                return false;
             }
         }
     }
