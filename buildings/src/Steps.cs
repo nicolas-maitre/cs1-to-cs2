@@ -28,7 +28,7 @@ namespace Cs2Buildings
 {
     public static class Steps
     {
-        public const string Version = "0.3.3";
+        public const string Version = "0.4.0";
 
         /// <summary>Registers "buildings", "objects", "districts", "surfaces", "utilities" and "powerhook" (in that order) with a step hook.</summary>
         public static void RegisterAll(Action<string, Func<Dictionary<string, object>, IEnumerator>> register)

@@ -2,9 +2,9 @@
 
 The CS1 → CS2 converter as a whole. The version is in [`VERSION`](VERSION); the scheme is in [docs/RELEASE.md](docs/RELEASE.md). Each component also keeps its own changelog (for example [cs1-exporter/CHANGELOG.md](cs1-exporter/CHANGELOG.md)), and the release notes combine them.
 
-## Unreleased (release candidate 3 passed, 2026-11-22; proposed 0.3.1)
+## 0.3.1 (2026-11-22)
 
-RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), importer 0.3.4 → proposed 0.4.0, web tool 0.9.3 (0.9.4 since RC3: phone layout and guide only), buildings 0.3.3 → proposed 0.4.0.
+RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), **importer 0.4.0**, **web tool 0.9.4**, **buildings 0.4.0** (RC3 tested importer 0.3.4, web tool 0.9.3 and buildings 0.3.3; the changes since are listed below).
 
 **What works now**
 - **Roads at their CS1 heights:** the ground follows zoneable roads; highways and ramps keep their CS1 height with retaining walls or embankments; paths lie on the ground. Each road type's mode can be changed in the web tool. CS1 tunnels stay tunnels.
@@ -26,6 +26,8 @@ RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build t
 - IMT junction fills aren't converted; a few roads lose their traffic upgrade flags on reload (#149).
 
 **Since RC3**
+- **Bus and tram depots** (buildings 0.4.0, #152): when none of a city's bus or tram depots fits at its CS1 spot, one is placed nearby so its lines get buses (Skibidi: 31 buses, 4 in RC3). Other buildings and rail yards still never move.
+- **Matcher 1.2.1:** CS1's Water Tower becomes the CS2 groundwater pump.
 - **Web tool 0.9.4:**
   - phone layout: the tabs wrap instead of hiding behind a sideways scroll, and the feature table's status badges no longer break mid-word;
   - guide and FAQ (English and French) updated to what the importer does now: electricity and water come in through outside connections, power plants need a transformer station (opt-in) or get a short line to the road, and bus and tram depots are placed nearby when none fits at its spot.

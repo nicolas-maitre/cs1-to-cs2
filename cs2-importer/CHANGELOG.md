@@ -2,9 +2,9 @@
 
 The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The version is `Mod.Version` in `mod/Mod.cs` (the `<Version>` in `mod/Cs2ImporterMod.csproj` must match; `node tools/release/build.mjs --check` verifies both).
 
-## Unreleased (release candidate 3, proposed 0.4.0)
+## 0.4.0 (2026-11-22)
 
-Passed RC3 on Skibidi, CacaoCity (left-hand) and Westfield through the real mod flow (docs/QA.md §11).
+Passed release candidate 3 on Skibidi, CacaoCity (left-hand) and Westfield through the real mod flow (docs/QA.md §11), with buildings 0.4.0.
 
 **New**
 - **Power and water from outside the map.** Prepare map's clearing removed the base map's only power connection, and the maps have no water connection. Import now adds electricity and water outside connections at the edge of the imported roads, each on a short stub of its own (DECISIONS.md #144, #146, #148). A city with no power plant or pump of its own still gets power and water: in RC3, 99.4 % of homes on Skibidi and 100 % on CacaoCity and Westfield were supplied after 5 minutes.
@@ -14,6 +14,7 @@ Passed RC3 on Skibidi, CacaoCity (left-hand) and Westfield through the real mod 
   - roads keep their lanes (bus-stop roads get their bus bay at once, not on the next load);
   - lane connections and arrows survive the reload, with no Traffic mod load failures;
   - lane arrows follow CS1's geometry.
+- **Bus and tram lines get a depot** (#152): when none of the city's bus (or tram) depots fits at its CS1 spot, one is placed nearby, and the report says so. On Skibidi, the Bus Depot is placed 117 m away and its 9 lines run 31 buses (4 in RC3). Rail and subway yards and other buildings still never move.
 - **The import report lists every step**, and names each building it couldn't place, each power plant that needs a transformer, and each depot type left with none (#121, #150, #152).
 
 **Opt-in**

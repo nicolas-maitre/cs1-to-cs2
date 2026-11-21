@@ -2,6 +2,11 @@
 
 The web tool (https://nicolas-maitre.github.io/cs1-to-cs2/): it turns a CS1 export (`.cs1x`) into an import package for the CS2 mod. The version is `version` in `web/package.json`. Decision numbers refer to [docs/DECISIONS.md](../docs/DECISIONS.md).
 
+## 0.9.4 (2026-11-22)
+
+- **Phone layout:** the tabs wrap instead of hiding behind a sideways scroll, and the feature table's status badges no longer break mid-word.
+- **Guide and FAQ** (English and French) match the importer after RC3: electricity and water come in through outside connections, power plants need a transformer station (opt-in) or get a short line to the road, and bus and tram depots are placed nearby when none fits at its spot.
+
 ## 0.9.3 (2026-11-21, release candidate 3)
 
 - **Walls burn** (#129, #132): beside roads in "CS1 height with walls" mode, the ground is brought within 7 m below and 11 m above the road. CS2 then builds retaining walls and embankments where CS1 had them, instead of tunnels under deep trenches or pillars under high ramps.

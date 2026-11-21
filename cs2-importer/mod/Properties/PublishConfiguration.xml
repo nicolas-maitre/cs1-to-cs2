@@ -38,22 +38,24 @@ Requirements:
 
 Known limits:
 
-* TM:PE lane connections and lane arrows are listed in the import report but not applied.
+* **Trains and metros don't run yet:** their lines and stations are created, but no train leaves its yard.
+* Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed; the report lists each one ("place it yourself").
+* Big power plants feed the city only through a transformer station (opt-in setting); producers away from any road produce nothing.
 * Growable buildings are left to the zoning.
-* Water, power and services still need building.
   </LongDescription>
   <Thumbnail Value="Properties/Thumbnail.png" />
   <Tag Value="Code Mod" />
   <Tag Value="Tools" />
-  <ModVersion Value="0.3.4" />
+  <ModVersion Value="0.4.0" />
   <GameVersion Value="1.*" />
   <!-- Road Builder [BETA] (Paradox Mods 87190) is required. Traffic (80095) is optional: the publish format has no
        optional dependencies, so it is only named in the description. -->
   <Dependency Id="87190" />
   <ChangeLog>
-* Import refuses a package meant for the other side of the road; start a new city and press Prepare map (or turn on "Import into a city driving on the other side").
-* Road ends keep the CS1 city's Node Controller shifts.
-* Road heights follow CS1: highways and ramps keep their CS1 height with walls or embankments, and CS1 tunnels stay tunnels.
-* Lane connections are only written at junctions whose roads line up with CS1's.
+* Power and water from outside the map: electricity and water outside connections at the edge of the imported roads, so a city without its own plants still gets supplied.
+* CS1's own power lines and pipes are rebuilt; small power plants get a line to the nearest road. Transformer stations next to big power plants are an opt-in setting.
+* The city stays the same after a save and reload: roads keep their lanes, and lane connections and arrows survive.
+* Bus and tram lines get a depot: when none fits at its CS1 spot, one is placed nearby.
+* The import report lists every step and everything left to do by hand.
   </ChangeLog>
 </Publish>

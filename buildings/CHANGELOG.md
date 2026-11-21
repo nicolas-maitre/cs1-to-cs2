@@ -2,13 +2,14 @@
 
 The buildings, objects, districts and utilities steps (`buildings/`), compiled into the CS2 importer mod. The version is `Steps.Version` in `src/Steps.cs`; the matcher (`match/match.mjs`, shared with the web tool) has its own version. Players see these changes through the importer's changelog. Decision numbers refer to [docs/DECISIONS.md](../docs/DECISIONS.md) unless marked "buildings #".
 
-## Unreleased (release candidate 3, proposed 0.4.0)
+## 0.4.0 (2026-11-22)
 
 - **Power plants join the grid** (#150, buildings #44–45): a new `powerhook` step, after `utilities`.
   - Low-voltage producers (wind turbines) get a low-voltage line to the nearest non-highway road node.
   - A transformer station and the high-voltage line to it are opt-in (mod setting "Add a transformer station next to each imported power plant", off by default). Otherwise the report names each plant that needs one.
 - **Utility lines never touch road topology** (#145, #148): line ends stop 3 m short of road nodes and don't merge into them, highways aren't targets, and `utilities` and `powerhook` fail if any road edge's endpoints change.
-- **Depots:** the report warns when a bus or tram depot type the plan has ends up with none placed, because its lines then get no vehicles (RC3). With #152, that depot is placed with the default depots' `nearby` fallback (behind the same opt-out).
+- **Bus and tram depots** (#152, buildings #46): after the normal pass, a bus or tram depot kind with none placed retries one CS1 depot with the default depots' `nearby` fallback, so its lines get vehicles. Opt-out `depotFallback` (default on); the report gives `depotsMoved`, `depotRetries` and a reason note. Rail and subway yards and other buildings never move. Skibidi: the Bus Depot is placed 117 m away, 31 buses on 9 routes after 300 s (RC3: 4).
+- **Depot warning:** the report warns when a depot type the plan has still ends up with none placed, because its lines then get no vehicles (RC3).
 - **Matcher 1.2.1:** CS1's Water Tower (with a groundwater intake) matches the CS2 groundwater pump (buildings #43).
 
 ## 0.3.3 (2026-11-21)
