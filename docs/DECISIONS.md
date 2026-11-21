@@ -27,4 +27,4 @@ Important decisions, newest last. Each entry says what was decided, why, and who
    - A grey solid fill on a segment would also be reported only. It's paint, not a kerb, so it doesn't become a median.
 9. **Test saves** (user): Claude may create new CS1/CS2 cities and saves for tests, named `cs1conv-…`. Existing named saves (e.g. Skibidi.02) are only ever loaded read-only and are never overwritten.
 10. **Landing work** (user): sub-sessions build; Claude reviews, merges into `main` and pushes. No PRs.
-11. **Overnight scope** (user): after M1, keep going on follow-ups (M2 and beyond) and make the result release-grade: polished mods and website. Claude coordinates the 4 worker sessions and checks on them every 30 minutes, restarting any that stalled (usage limits, errors).
+11. **Overnight scope** (user): after M1, keep going through M2 and M3 (buildings/assets, parks, services, IMT node-fill decals) and make the result release-grade: polished mods and website. Claude coordinates the 4 worker sessions and checks on them every 30 minutes, restarting any that stalled (usage limits, errors).
