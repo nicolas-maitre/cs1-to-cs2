@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { ZoningOptions } from '../core/m2/zoning.ts';
+import { RAIL_DEPOT_TYPES } from '../core/types.ts';
+import type { RailDepotMode } from '../core/types.ts';
 import { RB_FOLDER } from '../core/readme.ts';
 import type { ConvCategory } from '../core/summary.ts';
 import type { SectionCheck } from '../core/summary.ts';
@@ -7,14 +9,15 @@ import type { Cs1City } from '../core/types.ts';
 import { useI18n } from './i18n.tsx';
 import { Rich } from './Rich.tsx';
 
-export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean }
+export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean; depotMode?: Partial<Record<(typeof RAIL_DEPOT_TYPES)[number], RailDepotMode>> }
 
 /** Which sections to convert and how zones map. */
 export function ConversionOptions({ value, onChange, city }: { value: ConvOptions; onChange: (v: ConvOptions) => void; city: Cs1City }) {
   const { t } = useI18n();
   const z = value.zoning;
   const setZ = (p: Partial<ZoningOptions>) => onChange({ ...value, zoning: { ...z, ...p } });
-  const check = (key: keyof Omit<ConvOptions, 'zoning'>, label: string, disabled = false) => (
+  const railTypes = RAIL_DEPOT_TYPES.filter(type => city.transit?.lines.some(l => l.type === type));
+  const check = (key: keyof Omit<ConvOptions, 'zoning' | 'depotMode'>, label: string, disabled = false) => (
     <label className="check"><input type="checkbox" checked={value[key]} disabled={disabled} onChange={e => onChange({ ...value, [key]: e.target.checked })} /> {label}</label>
   );
   return (
@@ -43,6 +46,14 @@ export function ConversionOptions({ value, onChange, city }: { value: ConvOption
       </fieldset>
       {check('traffic', t('opt.traffic'))}
       {check('transit', t('opt.transit'), !city.transit)}
+      {value.transit && railTypes.map(type => (
+        <label key={type} className="sub-option">{t(`opt.depot.${type}`)}
+          <select value={value.depotMode?.[type] ?? 'edge'} onChange={e => onChange({ ...value, depotMode: { ...value.depotMode, [type]: e.target.value as RailDepotMode } })}>
+            <option value="edge">{t('opt.depot.edge')}</option>
+            <option value="manual">{t('opt.depot.manual')}</option>
+          </select>
+        </label>
+      ))}
       {check('water', t('opt.water'), !city.water)}
       {check('buildings', t('opt.buildings'), !city.buildings)}
       {check('districts', t('opt.districts'), !city.districts)}
@@ -132,8 +143,8 @@ function CopyBox({ text, label }: { text: string; label: string }) {
     catch { /* clipboard blocked: the text stays selectable */ }
   };
   return (
-    <div className="copybox">
-      <code tabIndex={0} aria-label={label}>{text}</code>
+    <div className="copybox" role="group" aria-label={label}>
+      <code tabIndex={0}>{text}</code>
       <button onClick={copy} aria-label={t('copy.aria', { label })}>{done ? t('copy.copied') : t('copy.copy')}</button>
     </div>
   );

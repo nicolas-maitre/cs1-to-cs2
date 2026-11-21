@@ -52,5 +52,5 @@ export default defineConfig({
   build: { chunkSizeWarningLimit: 700 },
   // the buildings worker's matcher lives in ../buildings and is imported by relative path
   server: { port: 5178, strictPort: true, fs: { allow: ['..'] } },
-  test: { include: ['test/**/*.test.ts'] },
+  test: { include: ['test/**/*.test.{ts,tsx}'] },
 } as never);

@@ -369,3 +369,47 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - Limits: TM:PE lane connections, lane arrows and U-turn rules are not applied in this version (only priority signs); about 7 % of zone cells find no CS2 block; metro and train lines need their stations; rail yards need their track linked by hand.
     - Two new FAQ entries, and the matrix notes updated. The Overview install steps, README.txt and the top-level README follow the same flow.
     - Worker-4's expected water source counts match the web port (Skibidi 14 region sources, Cacao 23).
+
+## Automated UI quality (0.5.1)
+
+67. **UI tests run the real app in jsdom** with React Testing Library and axe-core. The new dev dependencies are jsdom, @testing-library/react, @testing-library/dom and axe-core, and none of them is bundled.
+    - **No browser in CI:** Playwright would bring a browser download and a second runner for six smoke tests. jsdom lacks canvas, Path2D, ResizeObserver and Worker, and `test/ui/dom.ts` stubs the first three in about 60 lines. Without Worker, `usePackage` already falls back to building on the main thread, which the tests want anyway.
+    - **Synthetic `.cs1x`:** the test zips `syntheticCity()` into a real `.cs1x` and opens it through the file input, so the reader is covered too.
+    - **Downloads:** they are captured from `URL.createObjectURL` plus the anchor click, and the zip is unpacked and checked.
+68. **axe-core on every view:** the landing page in EN and FR, all five tabs, and the four Help sections. A test fails on violations and on undecided results.
+    - **Undecided rules:** jsdom has no layout, so axe reports page-has-heading-one, landmark-one-main, heading-order and color-contrast as undecided even when the page is fine. The tests skip those four, assert one `<h1>` and one `<main>` per view directly, and contrast was checked in Chromium (dev server plus axe).
+    - **Checks have been proven:** a planted low-contrast paragraph and planted unlabelled controls were caught in both environments.
+69. **Violations found and fixed:**
+    - The main view had no `<h1>`: it now has a visually hidden "Converting {city}". The map and package halves have hidden `<h2>`s, so the Overview's `<h3>`s follow in order.
+    - `aria-label` sat on the map legend `<div>` and on the `<code>` copy boxes, where ARIA doesn't allow it. They are now labelled groups.
+    - The ✕ buttons' names didn't contain their visible text. The symbol is now `aria-hidden`, with hidden text for the name.
+    - The Help body scrolled but couldn't take focus. It is now a focusable, labelled region.
+    - The Help conversion table had spanning area-header rows with no data cells. It is now one table per area with a `<caption>`, like the Markdown version.
+70. **"Prepare map" in the guide:** worker-3's labels landed in `cs2-importer/mod/LocaleEN.cs` (commit b03c9a5).
+    - The guide (EN + FR) gains step 10, "Prepare the map" (group **New city**, about 8 s for a 3 km crop). The import step ends with **Outside connections**, and "After the import" says to let the water fill.
+    - The What-converts table marks terrain and outside connections "converts" and water "approximated" (CS2 re-simulates it). The FAQ answer about missing hills and rivers is rewritten. The install steps, README.txt and the top-level README include Prepare map.
+    - The label test now requires every option, group and tab label of the importer's page to be quoted in the guide, in both languages, so a new option can't go undocumented.
+71. **Version 0.5.1:** user-visible changes are the guide, the Help table layout and the accessibility fixes.
+
+72. **Guide brought to worker-3's verified in-game texts:**
+    - **Check** quotes the new "Map: …" line.
+    - **Prepare map** quotes its progress and result lines, takes 10–20 s, and gives the "Start a new city first" and "no terrain in the package" cases.
+    - **Import** quotes "Outside connections: 20 of 20 (13 road, 7 train)." and the "turned off in the Options" skip text.
+    - **Limits:** the shallow-junction sentence is replaced with worker-3's wording: CS2 merges the first metres of roads leaving at a very shallow angle, and a few overlapping CS1 bits are left out and reported.
+
+73. **Metro and train yards follow decision #83 (never inside the city):**
+    - **Field:** the plan writes `transit.depotMode = { Metro | Train: "edge" | "manual" }`, worker-4's proposed field, one key per rail type that has lines in the plan. The default is "edge". formatVersion is unchanged.
+    - **Choosing it:** in the UI, a select per type under Transit lines, "at the crop edge (where the line's track leaves the area)" or "I'll place it myself"; it is saved with the options. In the CLI, `--metro-depot` and `--train-depot`.
+    - **Bus and tram:** `addDefaultDepots` is now called with the bus and tram lines only. The buildings worker's `plan.mjs` dropped rail on its side too, so both agree and the Skibidi parity test still holds.
+    - **Text:** one report line and one "What converts" detail per rail type; the FAQ, the matrix, the guide's limits and schema §2 are updated.
+74. **The importer-label test reads `LocaleEN.cs` as committed (`git show HEAD:…`, falling back to the file).** Worker-3's uncommitted new options in the shared checkout (Browse…, Remove imported, lane connections, a French Options page) had turned the web suite red mid-work. CI sees HEAD, so the guide must still follow as soon as they are committed.
+
+75. **Guide updated for Cs2ImporterMod 0.3.0** (worker-3's verified labels; uncommitted on their side):
+    - **Packages:** no need to unzip. **Browse…** takes the downloaded zip and unpacks it under `%LOCALAPPDATA%\cs1-to-cs2\packages\`; **Open packages folder** opens that folder.
+    - **New import toggles:** **Keep this map's terrain** (off: the import refuses a city that wasn't prepared) and **Lane connections (Traffic mod)** (experimental, off).
+    - **New controls:** **Remove imported** undoes an import, **Cancel** stops after the current step.
+    - **"Start a new city first"** only appears with no city loaded.
+    - **Lane arrows and lane connections:** the matrix now says "approximated, experimental"; U-turn rules are "report only".
+    - **FAQ:** two new entries (undo an import; "terrain isn't the package's").
+    - **French guide:** it quotes the importer's French labels and status texts (`LocaleFR.cs`, `Strings.cs`), since the mod's page follows the game's language. It also says to see the English guide when the game runs in English.
+    - **Label test:** it checks each guide against its own locale file. `CS1CONV_IMPORTER_WORKTREE=1` checks the working copy; it passes now against worker-3's uncommitted files.

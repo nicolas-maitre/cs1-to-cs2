@@ -5,7 +5,7 @@
 import type { Lang } from './i18n/index.ts';
 import { DOCS_FR } from './docs.fr.ts';
 
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '0.5.1';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }
@@ -101,46 +101,52 @@ export const DOCS_EN: Docs = {
       title: 'Download the package',
       body: [
         'Press **Download package (.zip)**. Building it takes a few seconds: the terrain is two 4096 × 4096 heightmaps.',
-        'Unzip it into its own folder under `%LOCALAPPDATA%\\cs1-to-cs2\\` (paste that path into the Explorer address bar), for example `%LOCALAPPDATA%\\cs1-to-cs2\\my-city\\`. The importer then lists it under **Packages on this PC**. Any other folder works too; you then type it in **Package folder**.',
-        'The folder holds `cs1conv-plan.json`, `report.json`, the `roadbuilder` and `terrain` folders and a `README.txt`.',
+        'There is no need to unzip it: the importer takes the zip and unpacks it itself. It holds `cs1conv-plan.json`, `report.json`, the `roadbuilder` and `terrain` folders and a `README.txt`.',
       ],
     },
     {
       title: 'Install the mods and the road types in CS2',
       body: [
-        'Enable **Road Builder** and the **CS1 → CS2 Importer**. **Traffic** is optional: without it, the priority signs are skipped.',
-        'Road Builder reads its road types only when the game starts, so install them first. Start CS2, open Options → **CS1 → CS2 importer**, pick the package (as in step 9) and press **Install Road Builder configs**. Confirm, wait for "Copied N Road Builder configs", then **restart the game**. Or, with CS2 closed, copy the files from the package\'s `roadbuilder` folder into `%USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\ModsData\\RoadBuilder\\`.',
+        'Enable **Road Builder** and the **CS1 → CS2 Importer**. **Traffic** is optional: it sets the priority signs (and, experimentally, the lane connections). The line at the bottom of the importer\'s page says whether Road Builder and Traffic are running.',
+        'Start CS2 and open Options → **CS1 → CS2 importer** (tab **Import**). Press **Browse…** and choose the downloaded zip: the importer unpacks it under `%LOCALAPPDATA%\\cs1-to-cs2\\packages\\`, shows "Unpacked <zip> to <folder>." and checks it. **Open packages folder** shows that folder in Explorer.',
+        'Road Builder reads its road types only when the game starts, so install them now: press **Install Road Builder configs**, confirm, wait for "Copied N Road Builder configs", then **restart the game**. (Or, with CS2 closed, copy the files from the package\'s `roadbuilder` folder into `%USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\ModsData\\RoadBuilder\\`.)',
       ],
     },
     {
       title: 'Start a new city',
       body: [
-        'Start a new game (not the editor). Any map works; Sunshine Peninsula has the fewest pre-built roads.',
-        'The importer doesn\'t apply the terrain, the water and the outside connections yet: the roads follow the map\'s own ground, and only cuts of 4 m or more keep their CS1 depth. The package already holds them (the `terrain` folder) for when it does.',
-        'Save the city now: the import can\'t be undone.',
+        'Start a new game (not the editor). Any map works, since the importer replaces its terrain; Sunshine Peninsula has the fewest pre-built roads to remove.',
       ],
     },
     {
       title: 'Check the package',
       body: [
-        'Open Options → **CS1 → CS2 importer** (tab **Import**). In the **Package** group, pick the package in **Packages on this PC**: it lists the packages under `%LOCALAPPDATA%\\cs1-to-cs2\\`, newest first, and checks the one you pick. Or paste the package\'s folder into **Package folder** and press **Check**.',
-        'The status line says what the package holds, for example "Package: Skibidi.02, 2035 roads to build. All 37 road types are available." If road types are missing, install the Road Builder configs and restart the game. If there are roads already in the area, keep **Clear the area first** on.',
+        'Open Options → **CS1 → CS2 importer** again. In the **Package** group, pick the package in **Packages on this PC** (the ones you used last come first), or use **Browse…**, or paste its folder, its `cs1conv-plan.json` or its zip into **Package folder** and press **Check**.',
+        'The status line says what the package holds, for example "Package: Skibidi.02, 2035 roads to build. All 37 road types are available." and "Map: terrain with its surroundings, sea level 182 m, 5 water sources, 20 outside connections.". Its last line says whether this city\'s terrain is already the package\'s. If road types are missing, install the Road Builder configs and restart the game.',
+      ],
+    },
+    {
+      title: 'Prepare the map',
+      body: [
+        'In the **New city** group, press **Prepare map** and confirm. It removes the map\'s own roads, tracks and buildings, replaces its terrain and surroundings with your city\'s, and sets the CS1 sea level and water sources (a package without water data gives a dry map). **Status** follows the steps ("Preparing the map… applying the terrain", "… setting up the water") and ends with "Map prepared.", the terrain check ("within 0 m of the package at 95 % of 181 check points") and "Next: press "Import into this city".". It takes 10 to 20 seconds.',
+        'It can\'t be undone: use it in a new city. Without a loaded city (main menu, editor) it stops with "Map not prepared: Start a new city first.". A package exported without the terrain keeps the map\'s own terrain ("Terrain skipped: the package has no terrain").',
       ],
     },
     {
       title: 'Import into the city',
       body: [
-        'In the **Import into this city** group, the steps are all on by default: **Clear the area first**, **Zoning**, **Traffic lights, stops, turn bans, crosswalks**, **Priority signs (Traffic mod)**, **Buildings, trees, districts** and **Transit lines**. Turn off what you don\'t want; the roads are always built first.',
-        'Press **Import into this city** and confirm. **Status** shows the progress ("Importing… batch 3 of 6", then each step) and ends with a summary per step, for example "Done in 4.33 s: 2035 of 2035 roads built." and "Transit: 9 of 9 lines, 145 of 145 stops.". It also gives the path of the full report, under `%LOCALAPPDATA%\\cs1-to-cs2\\import-reports\\`.',
-        'A 3 km square takes well under a minute: the roads about 4 seconds, the transit lines the longest. The game stays responsive.',
+        'In the **Import into this city** group, choose the steps: **Clear the area first**, **Zoning**, **Traffic lights, stops, turn bans, crosswalks**, **Priority signs (Traffic mod)**, **Buildings, trees, districts**, **Transit lines** and, last, **Outside connections** are on by default; the roads are always built first. **Lane connections (Traffic mod)** is experimental and off by default. **Keep this map\'s terrain** is off: the import then refuses a city whose terrain isn\'t the package\'s; turn it on to import onto the map\'s own ground anyway (only cuts of 4 m or more keep their depth).',
+        'Press **Import into this city** and confirm. **Status** shows the progress ("Importing… batch 3 of 6", then each step) and ends with a summary per step, for example "Done in 4.33 s: 2035 of 2035 roads built.", "Transit: 9 of 9 lines, 145 of 145 stops." and "Outside connections: 20 of 20 (13 road, 7 train).". A step you turned off reads "skipped: turned off in the Options". The summary also gives the path of the full report, under `%LOCALAPPDATA%\\cs1-to-cs2\\import-reports\\`.',
+        'A 3 km square takes under a minute: the roads about 4 seconds, the transit lines the longest. The game stays responsive, and **Cancel** (group **Status**) stops after the current step; what was built so far stays.',
       ],
     },
     {
       title: 'After the import',
       body: [
-        'Save the city. It still needs water, electricity and services to grow, like any new city; zoned buildings then grow on the converted zones.',
+        'Unpause for a few minutes: CS2 fills the rivers and lakes from the water sources. Then save the city. It still needs water, electricity and services to grow, like any new city; zoned buildings then grow on the converted zones.',
+        'To undo, press **Remove imported** and confirm: it deletes the roads, buildings, trees and props, districts and areas, transit lines and outside connections the imports created, even after saving and loading. Zoning and traffic settings go with the roads; the base map removed by **Prepare map** doesn\'t come back.',
         'Read the web tool\'s **Report** tab (or `report.json`) and the import summary for what needs a hand:',
-        'TM:PE lane connections, lane arrows and U-turn rules are not applied in this version (only the priority signs are); the import report lists them. About 7 % of the zone cells find no CS2 zone block, because CS2 blocks are shallower. Metro and train lines need their stations from the buildings step. Rail yards added for them need their track connected to the line by hand. A few roads with shallow grade separations get joined at a junction by CS2.',
+        'Lane connections and lane arrows are experimental: turn on **Lane connections (Traffic mod)**; most junctions come out as in CS1, some differ. U-turn rules aren\'t applied. About 7 % of the zone cells find no CS2 zone block, because CS2 blocks are shallower. Metro and train lines need their stations from the buildings step; a metro or train line whose track stays inside the square gets no yard: place one yourself (the import report names the line). Where two CS1 roads leave a junction at a very shallow angle, CS2 merges their first metres into one road and splits them a little further on, connected as in CS1. A few overlapping CS1 bits that CS2 can\'t fit (for example a road a few metres from a parallel road) are left out and listed in the report.',
       ],
     },
   ],
@@ -151,14 +157,16 @@ export const DOCS_EN: Docs = {
     { q: 'Some roads are narrower or wider than in CS1. Why?', a: ['Road types are rebuilt with Road Builder, which has fixed lane widths and sidewalks of at most 7 m. A CS1 road with 9 m sidewalks becomes a few metres narrower. Every change is listed under **Road types** and in the report.'] },
     { q: 'The page says it can\'t open my file.', a: ['Open the `.cs1x` written by the exporter, not a `.crp` save. If it says the format version is too new, reload the page to get the latest tool; if it is too old, update the exporter and export again.'] },
     { q: 'A section of my export failed.', a: ['The rest converts normally. Export again; if it keeps failing, the exporter\'s message is in the web tool under Overview → File check.'] },
-    { q: 'The importer doesn\'t list my package.', a: ['**Packages on this PC** lists the folders under `%LOCALAPPDATA%\\cs1-to-cs2\\` that hold a `cs1conv-plan.json`. Unzip the package there, or type its folder in **Package folder**.'] },
-    { q: 'The importer says road types are missing.', a: ['Road Builder roads must be in ModsData\\RoadBuilder **before** CS2 starts. "Road Builder configs aren\'t installed": press **Install Road Builder configs**, then restart CS2. "Installed but not loaded yet": restart CS2. Then press **Check** again. Roads of a missing type are skipped.'] },
-    { q: 'My city has none of its CS1 hills, rivers or sea.', a: ['The importer doesn\'t apply the terrain and the water yet: the roads follow the CS2 map\'s own ground. The package already holds the converted terrain (the `terrain` folder), and the importer will use it in a later version.'] },
-    { q: 'Where are my TM:PE lane connections and lane arrows?', a: ['They are in the package but not applied in this version: only the priority signs are (with the Traffic mod). The import report lists the rest.'] },
+    { q: 'The importer doesn\'t list my package.', a: ['**Packages on this PC** lists the packages you used last, then the folders under `%LOCALAPPDATA%\\cs1-to-cs2\\` that hold a `cs1conv-plan.json`. Press **Browse…** and choose the downloaded zip (the importer unpacks it under `packages\\`) or a `cs1conv-plan.json`, or paste its path into **Package folder**. **Open packages folder** opens that folder in Explorer.'] },
+    { q: 'The importer says road types are missing.', a: ['Road Builder roads must be in ModsData\\RoadBuilder **before** CS2 starts. "Road Builder configs aren\'t installed": press **Install Road Builder configs**, then restart CS2. "Installed but not loaded yet": restart CS2. "Road Builder isn\'t running": enable Road Builder in your playset and restart. Then press **Check** again. Roads of a missing type are skipped.'] },
+    { q: 'My city has none of its CS1 hills, rivers or sea.', a: ['Press **Prepare map** in a new city before importing: it replaces the map\'s terrain and surroundings with your city\'s and sets the sea level and the water sources. Then unpause for a few minutes so CS2 fills the rivers and lakes. A package made without water data gives a dry map.'] },
+    { q: 'Where are my TM:PE lane connections and lane arrows?', a: ['They are experimental: turn on **Lane connections (Traffic mod)** before importing (it needs the Traffic mod). Most junctions come out as in CS1, some differ. U-turn rules aren\'t applied yet; the import report lists them.'] },
+    { q: 'How do I undo an import?', a: ['Press **Remove imported**: it deletes the roads, buildings, trees and props, districts and areas, transit lines and outside connections the imports created in this city, even after saving and loading. Zoning and traffic settings go with the roads. The base map removed by **Prepare map** doesn\'t come back; start a new city for that.'] },
+    { q: 'The import says this city\'s terrain isn\'t the package\'s.', a: ['Start a new city and press **Prepare map** before importing. To build on the map\'s own ground anyway, turn on **Keep this map\'s terrain**: roads then follow that ground, and only cuts of 4 m or more keep their CS1 depth.'] },
     { q: 'Why weren\'t all my buildings placed?', a: ['Zoned (growable) buildings are not placed: CS2 grows its own on the converted zones. Pillars, pipe junctions and poles are rebuilt by CS2. A few CS1 building types have no CS2 equivalent (libraries, taxi stands, cable car stops), and buildings on roads outside the square are left out. The Assets tab shows each type.'] },
     { q: 'Why did a building end up somewhere else?', a: ['CS2 buildings often need more room than their CS1 counterparts. When one doesn\'t fit at its CS1 spot, the importer tries the next-best CS2 buildings, then free land along an imported road nearby (up to 400 m). Very large buildings may go anywhere in the square. In the Assets tab you can change this per type, or leave the building out instead.'] },
-    { q: 'My metro or train line has no vehicles.', a: ['CS2 lines get their vehicles from a depot of their type, and CS1 metro and train lines don\'t need one. When the city has none, the package adds a default depot or yard at the line\'s first stop. Connect a rail yard\'s track to the line by hand: CS2 yards only send trains over connected track.'] },
-    { q: 'Do I need the Traffic mod?', a: ['Only for TM:PE priority signs, lane arrows and lane connections. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.'] },
+    { q: 'My metro or train line has no vehicles.', a: ['CS2 lines get their vehicles from a depot of their type, and CS1 metro and train lines don\'t need one. Rail and subway yards are never placed inside your city: by default the importer puts a compact yard at the edge of the square, where the line\'s track leaves it, and links it. A line whose track stays inside the square gets none; the import report names it, and you place a yard yourself. Under Overview → Options you can choose "I\'ll place it myself" for metro or train. Bus and tram lines get a default depot near their first stop.'] },
+    { q: 'Do I need the Traffic mod?', a: ['Only for TM:PE priority signs and, experimentally, lane connections and lane arrows. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.'] },
     { q: 'What happens to timed traffic lights and Node Controller tweaks?', a: ['CS2 runs its own light phases and builds junctions itself. Timed lights become plain traffic lights; Node Controller settings are listed in the report.'] },
     { q: 'European or North American buildings?', a: ['Choose the zone theme under Overview → Options. It sets which CS2 residential and commercial zones the converted zones use, and which tree variants are preferred.'] },
     { q: 'Does the exporter change my CS1 save?', a: ['No. It only reads the loaded city and writes the `.cs1x` file.'] },
@@ -177,18 +185,19 @@ export const DOCS_EN: Docs = {
     { area: 'IMT', cs1: 'Red paint over a whole lane / pavement or grass island over a whole lane', cs2: 'Bus lane / median in the Road Builder road', status: 'yes', notes: 'Partial fills and grey paint are reported.' },
     { area: 'IMT', cs1: 'Pavement, grass and gravel fills at junctions', cs2: 'CS2 surfaces (pavement, grass, sand)', status: 'yes', notes: 'Placed with the buildings step.' },
     { area: 'IMT', cs1: 'Painted markings at junctions', cs2: '–', status: 'report', notes: 'No CS2 equivalent yet (decals are planned).' },
-    { area: 'Terrain and water', cs1: 'Terrain heightmap (and the land around the square)', cs2: 'CS2 terrain at the same heights, plus the world map around it', status: 'pending', notes: 'In the package (terrain folder); the importer doesn\'t apply it yet, so the roads follow the map\'s own ground.' },
-    { area: 'Terrain and water', cs1: 'Sea level, rivers and lakes (natural water sources)', cs2: 'CS2 sea level and water sources', status: 'pending', notes: 'In the package; not applied by the importer yet. CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled.' },
-    { area: 'Terrain and water', cs1: 'Highways and railways leaving the square', cs2: 'CS2 outside connections', status: 'pending', notes: 'In the package; not applied by the importer yet.' },
+    { area: 'Terrain and water', cs1: 'Terrain heightmap (and the land around the square)', cs2: 'CS2 terrain at the same heights, plus the world map around it', status: 'yes', notes: 'Applied by the importer\'s Prepare map, in a new city, before the import.' },
+    { area: 'Terrain and water', cs1: 'Sea level, rivers and lakes (natural water sources)', cs2: 'CS2 sea level and water sources', status: 'approx', notes: 'Set by Prepare map. CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled. Pumps and drains come with their buildings.' },
+    { area: 'Terrain and water', cs1: 'Highways and railways leaving the square', cs2: 'CS2 outside connections', status: 'yes', notes: 'The importer\'s last step (Outside connections), so traffic and trains can enter and leave the city.' },
     { area: 'Zoning', cs1: 'Residential, commercial, industrial and office zones', cs2: 'CS2 zones (EU or NA theme)', status: 'approx', notes: 'District specialisations become generic zones.' },
     { area: 'Traffic (TM:PE)', cs1: 'Speed limits, bus-only lanes', cs2: 'Road Builder variants with that speed / bus lane', status: 'yes', notes: 'CS2 has one speed per road.' },
     { area: 'Traffic (TM:PE)', cs1: 'Traffic lights, all-stop junctions, turn restrictions from lane arrows, crosswalks', cs2: 'Vanilla CS2 junction settings', status: 'yes', notes: '' },
     { area: 'Traffic (TM:PE)', cs1: 'Priority signs', cs2: 'Traffic mod', status: 'yes', notes: 'Needs the Traffic mod in CS2.' },
-    { area: 'Traffic (TM:PE)', cs1: 'Lane arrows, lane connections, U-turns', cs2: 'Traffic mod', status: 'pending', notes: 'In the package; not applied in this version (listed in the import report).' },
+    { area: 'Traffic (TM:PE)', cs1: 'Lane arrows, lane connections', cs2: 'Traffic mod lane connections', status: 'approx', notes: 'Experimental, off by default: turn on Lane connections (Traffic mod). Most junctions come out as in CS1, some differ.' },
+    { area: 'Traffic (TM:PE)', cs1: 'U-turn rules', cs2: '–', status: 'report', notes: 'Not applied yet; listed in the import report.' },
     { area: 'Traffic (TM:PE)', cs1: 'Timed traffic lights, turn on red, blocked junctions, parking rules', cs2: '–', status: 'report', notes: 'Timed lights become plain traffic lights.' },
     { area: 'Node Controller', cs1: 'Node types, offsets, hidden markings', cs2: '–', status: 'report', notes: 'CS2 builds junction geometry itself.' },
     { area: 'Transit', cs1: 'Bus and tram lines', cs2: 'CS2 lines with colour, name, number and stops', status: 'approx', notes: 'Trolleybus, tourist and intercity buses become bus lines.' },
-    { area: 'Transit', cs1: 'Train, metro, ship and plane lines', cs2: 'CS2 lines at the placed stations', status: 'approx', notes: 'Need their stations from the buildings step; a default depot or yard is added when the city has none.' },
+    { area: 'Transit', cs1: 'Train, metro, ship and plane lines', cs2: 'CS2 lines at the placed stations', status: 'approx', notes: 'Need their stations from the buildings step. Metro and train yards go at the crop edge where the track leaves it (or you place them); never inside the city.' },
     { area: 'Buildings', cs1: 'Service buildings, stations, depots, parks, landmarks', cs2: 'Closest CS2 building (same service, then capacity and size)', status: 'approx', notes: 'Check or change each type in the Assets tab, including what happens when it doesn\'t fit.' },
     { area: 'Buildings', cs1: 'Zoned (growable) buildings', cs2: 'Grown by CS2 on the converted zones', status: 'yes', notes: 'Not placed one by one.' },
     { area: 'Buildings', cs1: 'Libraries, taxi stands, cable car stops', cs2: '–', status: 'no', notes: 'No CS2 equivalent.' },

@@ -33,9 +33,9 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Carte de hauteur (et le terrain autour du carré) | Terrain CS2 aux mêmes hauteurs, plus la carte du monde autour | dans le paquet ; côté CS2 en cours | Dans le paquet (dossier terrain) ; l'importeur ne l'applique pas encore : les routes suivent le sol de la carte. |
-| Niveau de la mer, rivières et lacs (sources d'eau naturelles) | Niveau de la mer et sources d'eau CS2 | dans le paquet ; côté CS2 en cours | Dans le paquet ; pas encore appliqué par l'importeur. CS2 simule à nouveau l'eau ; des sources supplémentaires remplissent les rivières et lacs au-dessus de la mer. |
-| Autoroutes et voies ferrées qui quittent le carré | Connexions extérieures CS2 | dans le paquet ; côté CS2 en cours | Dans le paquet ; pas encore appliquées par l'importeur. |
+| Carte de hauteur (et le terrain autour du carré) | Terrain CS2 aux mêmes hauteurs, plus la carte du monde autour | converti | Appliqué par Prepare map de l'importeur, dans une nouvelle ville, avant l'import. |
+| Niveau de la mer, rivières et lacs (sources d'eau naturelles) | Niveau de la mer et sources d'eau CS2 | converti, approché | Réglés par Prepare map. CS2 simule à nouveau l'eau ; des sources supplémentaires remplissent les rivières et lacs au-dessus de la mer. Pompes et rejets viennent avec leurs bâtiments. |
+| Autoroutes et voies ferrées qui quittent le carré | Connexions extérieures CS2 | converti | Dernière étape de l'importeur (Outside connections), pour que voitures et trains puissent entrer dans la ville et en sortir. |
 
 ## Zonage
 
@@ -50,7 +50,8 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 | Limites de vitesse, voies réservées aux bus | Variantes Road Builder avec cette vitesse / voie de bus | converti | CS2 a une seule vitesse par route. |
 | Feux, arrêts toutes directions, interdictions de tourner issues des flèches, passages piétons | Réglages de carrefour de CS2 | converti |   |
 | Panneaux de priorité | Mod Traffic | converti | Nécessite le mod Traffic dans CS2. |
-| Flèches de voie, connexions de voies, demi-tours | Mod Traffic | dans le paquet ; côté CS2 en cours | Dans le paquet ; pas appliquées dans cette version (listées dans le rapport d'import). |
+| Flèches de voie, connexions de voies | Connexions de voies du mod Traffic | converti, approché | Expérimental, désactivé par défaut : activez Connexions de voies (mod Traffic). La plupart des carrefours sortent comme dans CS1, certains diffèrent. |
+| Demi-tours | – | seulement dans le rapport | Pas encore appliqués ; listés dans le rapport d'import. |
 | Feux programmés, virage au rouge, carrefours encombrés, règles de stationnement | – | seulement dans le rapport | Les feux programmés deviennent des feux ordinaires. |
 
 ## Node Controller
@@ -64,7 +65,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
 | Lignes de bus et de tram | Lignes CS2 avec couleur, nom, numéro et arrêts | converti, approché | Trolleybus, bus touristiques et interurbains deviennent des lignes de bus. |
-| Lignes de train, métro, bateau et avion | Lignes CS2 aux gares placées | converti, approché | Ont besoin de leurs gares, placées avec les bâtiments ; un dépôt par défaut est ajouté quand la ville n'en a pas. |
+| Lignes de train, métro, bateau et avion | Lignes CS2 aux gares placées | converti, approché | Ont besoin de leurs gares, placées avec les bâtiments. Les dépôts de métro et de train vont au bord de la découpe, là où la voie en sort (ou vous les placez) ; jamais dans la ville. |
 
 ## Bâtiments
 

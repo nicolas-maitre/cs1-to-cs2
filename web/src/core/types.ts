@@ -337,18 +337,16 @@ export interface PlanBuildingItem {
   alternatives: string[];
   /** CS1 district id (plan.districts) */
   district?: number;
-  /** a depot added because CS2 lines need one and CS1 had none (buildings/lib/plan.mjs addDefaultDepots) */
+  /** a bus or tram depot added because CS2 lines need one and CS1 had none (buildings/lib/plan.mjs addDefaultDepots) */
   default?: boolean;
   reason?: string;
-  /** rail yard: its track has to be connected to the line by hand */
-  needsTrackLink?: boolean;
   /** what the placer does when the building does not fit at its spot: nearby (≤ 400 m), anywhere in the crop, or skip */
   fallback?: 'nearby' | 'anywhere' | 'skip';
 }
 export interface PlanBuildings {
   generator: { matcher: string; web: string };
-  /** default depots added for transit lines (type, prefab, lines, needsTrackLink, at) */
-  defaultDepots?: { type: string; prefab: string; lines: string[]; needsTrackLink: boolean; at: [number, number] }[];
+  /** default bus and tram depots added for transit lines (type, prefab, lines, at) */
+  defaultDepots?: { type: string; prefab: string; lines: string[]; at: [number, number] }[];
   catalogue: { game: string | null; prefabs: number };
   cs1AngleConvention: { facing: string; agreement: number | null; buildingsWithRoad: number };
   items: PlanBuildingItem[];
@@ -441,7 +439,18 @@ export interface PlanTransitLine {
   truncated: boolean;
   stops: { cs1Node: number; x: number; z: number; y: number; segment: number | null; side: 'left' | 'right' | null; t: number | null; cs1Building: number }[];
 }
-export interface PlanTransit { lines: PlanTransitLine[] }
+/** Where the importer puts a metro / train yard when the city has none (docs/DECISIONS.md #83). */
+export type RailDepotMode = 'edge' | 'manual';
+export const RAIL_DEPOT_TYPES = ['Metro', 'Train'] as const;
+export interface PlanTransit {
+  lines: PlanTransitLine[];
+  /**
+   * Per CS1 line type with lines in the plan (Metro, Train): "edge" = the importer places a compact yard just inside
+   * the crop where that type's track leaves it, and links it; "manual" = the user places one. Rail and subway yards are
+   * never placed inside the city. Bus and tram get default depots in `buildings` instead.
+   */
+  depotMode?: Partial<Record<(typeof RAIL_DEPOT_TYPES)[number], RailDepotMode>>;
+}
 
 export interface PlanLane {
   segment: number; ordinal: number; count: number; offset: number; dir: 'forward' | 'backward' | 'both'; cs1LaneIndex: number;

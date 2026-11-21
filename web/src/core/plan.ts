@@ -31,7 +31,9 @@ import { addDefaultDepots } from '../../../buildings/lib/plan.mjs';
 import { buildObjects, buildSurfaces, SURFACE_MAP } from './m3/objects.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
+  PlanTransit,
 } from './types.ts';
+import { RAIL_DEPOT_TYPES } from './types.ts';
 
 export const GENERATOR = { name: 'cs1conv-web', version: APP_VERSION };
 
@@ -59,6 +61,8 @@ export interface BuildOptions {
   /** M3: per-type placement fallback (Assets tab); others get defaultFallback, or `assetFallback` when given. */
   assetFallbacks?: FallbackOverrides;
   assetFallback?: PlacementFallback;
+  /** Metro / train yards: at the crop edge (default) or placed by the user (plan.transit.depotMode). */
+  depotMode?: PlanTransit['depotMode'];
   /** M3: districts and policies (default on). */
   districts?: boolean;
   /** M3: free-standing trees and rocks (default on; needs a catalogue with CS2 trees). */
@@ -307,16 +311,37 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const nc = buildNodeController(ctx);
   const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, fallbacks: opts.assetFallbacks, fallback: opts.assetFallback, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const districts = buildDistricts(ctx, opts.districts !== false);
-  // CS2 lines get vehicles only from a depot of their type; CS1 metro/train lines need none: add defaults (buildings/lib/plan.mjs)
+  // CS2 lines get vehicles only from a depot of their type. Bus and tram: a default depot in the city
+  // (buildings/lib/plan.mjs). Metro and train: never inside the city (docs/DECISIONS.md #83); the importer puts a yard
+  // at the crop edge where the track leaves it, or the user places one (transit.depotMode).
+  const isRail = (t: string) => (RAIL_DEPOT_TYPES as readonly string[]).includes(t);
   if (buildings.section && transit.section) {
-    const added = addDefaultDepots(buildings.section, transit.section, opts.catalogue ?? undefined) as { type: string; prefab: string; lines: string[]; needsTrackLink: boolean }[];
+    const roadLines = { lines: transit.section.lines.filter(l => !isRail(l.cs1Type)) };
+    const added = addDefaultDepots(buildings.section, roadLines, opts.catalogue ?? undefined) as { type: string; prefab: string; lines: string[] }[];
     for (const d of added) {
       buildings.items.push({
-        level: d.needsTrackLink ? 'warning' : 'info', kind: 'buildings',
-        message: `default ${d.prefab} added for ${d.lines.join(', ')}: CS1 had no ${d.type.toLowerCase()} depot and CS2 lines need one${d.needsTrackLink ? '; connect its track to the line by hand (CS2 yards only dispatch over connected track)' : ''}`,
+        level: 'info', kind: 'buildings',
+        message: `default ${d.prefab} added for ${d.lines.join(', ')}: CS1 had no ${d.type.toLowerCase()} depot and CS2 lines need one`,
       });
     }
-    if (added.length) buildings.summary.details.splice(-1, 0, ctx.t(added.some(d => d.needsTrackLink) ? 'sum.buildings.depotsRail' : 'sum.buildings.depots', { list: added.map(d => d.prefab).join(', ') }));
+    if (added.length) buildings.summary.details.splice(-1, 0, ctx.t('sum.buildings.depots', { list: added.map(d => d.prefab).join(', ') }));
+  }
+  if (transit.section) {
+    const railTypes = RAIL_DEPOT_TYPES.filter(t => transit.section!.lines.some(l => l.cs1Type === t));
+    if (railTypes.length) {
+      transit.section.depotMode = Object.fromEntries(railTypes.map(t => [t, opts.depotMode?.[t] === 'manual' ? 'manual' : 'edge']));
+      for (const t of railTypes) {
+        const names = transit.section.lines.filter(l => l.cs1Type === t).map(l => l.name);
+        const mode = transit.section.depotMode[t];
+        transit.items.push({
+          level: 'info', kind: 'transit',
+          message: mode === 'edge'
+            ? `${t} lines (${names.join(', ')}): the importer places a ${t === 'Metro' ? 'subway' : 'rail'} yard at the crop edge where their track leaves the area; a line whose track stays inside needs one placed by you`
+            : `${t} lines (${names.join(', ')}): place a ${t === 'Metro' ? 'subway' : 'rail'} yard yourself (you chose so)`,
+        });
+        transit.summary.details.push(ctx.t(mode === 'edge' ? 'sum.transit.depotEdge' : 'sum.transit.depotManual', { type: ctx.t(t === 'Metro' ? 'sum.transit.metro' : 'sum.transit.train') }));
+      }
+    }
   }
   const objects = buildObjects(ctx, { enabled: opts.objects !== false, catalogue: opts.catalogue ?? null, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const surfaces = buildSurfaces(ctx, opts.surfaces !== false);

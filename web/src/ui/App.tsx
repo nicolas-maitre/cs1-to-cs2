@@ -166,7 +166,7 @@ export function App() {
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
   const opts: BuildOptions | null = useMemo(() => (loaded ? {
     crop: committed, overrides, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
-    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, assetOverrides, assetFallbacks, lang,
+    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, depotMode: conv.depotMode, assetOverrides, assetFallbacks, lang,
   } : null), [loaded, committed, overrides, conv, assetOverrides, assetFallbacks, lang]);
   const { pkg, busy: building, ms, error: buildError, zip: buildZip } = usePackage(loaded, opts, catalogue);
   const [zipping, setZipping] = useState(false);
@@ -260,14 +260,16 @@ export function App() {
       {loaded && error && (
         <div className="error-bar" role="alert">
           <b>{error.title}.</b> {error.message} {error.hint && <span className="muted">{error.hint}</span>}
-          <button onClick={() => setError(null)} aria-label={t('app.dismiss')}>✕</button>
+          <button onClick={() => setError(null)} title={t('app.dismiss')}><span aria-hidden="true">✕</span><span className="sr-only">{t('app.dismiss')}</span></button>
         </div>
       )}
       {!loaded ? (
         <main id="main" className="landing-wrap"><Landing busy={busy} error={error} onPick={pick} onHelp={s => setHelp(s)} /></main>
       ) : (
         <main id="main" className="work">
-          <section className="left" aria-label={t('app.mapAndCrop')}>
+          <h1 className="sr-only">{t('app.workTitle', { city: loaded.city.manifest.city?.name ?? loaded.fileName })}</h1>
+          <section className="left" aria-labelledby="h-map">
+            <h2 id="h-map" className="sr-only">{t('app.mapAndCrop')}</h2>
             {scene && <MapView ref={map} scene={scene} crop={crop} onCrop={onCrop} showSkipped={showSkipped} showTerrain={showTerrain} showZones={showZones && conv.zoning.enabled} showTransit={showTransit && conv.transit} showBuildings={showBuildings} showDistricts={showDistricts} describe={describe} />}
             <div className="mapbar">
               <fieldset>
@@ -288,7 +290,8 @@ export function App() {
               {cv.beyondMap !== undefined && <span className="warn">{t('app.cropBeyond', { h: cv.beyondMap })}</span>}
             </div>
           </section>
-          <section className="right" aria-label={t('app.package')}>
+          <section className="right" aria-labelledby="h-package">
+            <h2 id="h-package" className="sr-only">{t('app.package')}</h2>
             <div className="sr-only" aria-live="polite">{pkg ? t('app.planUpdated', { segments: pkg.plan.stats.segments, roadTypes: pkg.plan.stats.rbConfigs, skipped: pkg.plan.stats.skipped }) : ''}</div>
             {check && check.failed.length > 0 && (
               <div className="error-card" role="alert">

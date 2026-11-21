@@ -447,7 +447,7 @@ function Legend() {
   const { t } = useI18n();
   const cats = ['road', 'highway', 'train', 'metro', 'pedestrian'] as const;
   return (
-    <div className="legend" aria-label={t('map.legend')}>
+    <div className="legend" role="group" aria-label={t('map.legend')}>
       {cats.map(c => <span key={c}><i style={{ background: CATEGORY_STYLE[c].color }} />{t(`net.${c}`)}</span>)}
       <span><i style={{ background: 'rgba(136,0,0,0.9)' }} />{t('map.imtFill')}</span>
       <span><i style={{ background: '#ffd43b' }} />{t('map.crossing')}</span>

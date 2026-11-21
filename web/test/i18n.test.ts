@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -107,12 +108,33 @@ describe('French documentation', () => {
     expect(fr.MATRIX.map(r => !!r.notes)).toEqual(DOCS_EN.MATRIX.map(r => !!r.notes));
     expect(fr.REQUIREMENTS.map(r => r.items.length)).toEqual(DOCS_EN.REQUIREMENTS.map(r => r.items.length));
     expect(fr.PRIVACY.length).toBe(DOCS_EN.PRIVACY.length);
-    // the importer's option labels (cs2-importer/mod/LocaleEN.cs) are quoted as the game shows them, in both languages
-    const locale = path.resolve(src, '..', '..', 'cs2-importer', 'mod', 'LocaleEN.cs');
-    if (!fs.existsSync(locale)) return;
-    const labels = new Set([...fs.readFileSync(locale, 'utf8').matchAll(/Get(?:OptionLabel|OptionGroup|OptionTab|Settings)LocaleID\([^)]*\)?\), "([^"]+)"/g)].map(m => m[1]));
-    const quoted = (d: typeof DOCS_EN) => d.GUIDE.flatMap(st => st.body.join(' ').match(/\*\*[^*]+\*\*/g) ?? []).map(b => b.slice(2, -2)).filter(b => labels.has(b));
-    expect(quoted(DOCS_EN).length).toBeGreaterThan(8);
-    expect(new Set(quoted(fr))).toEqual(new Set(quoted(DOCS_EN)));
   });
+
+  // The importer's Options page labels (cs2-importer/mod/LocaleEN.cs, LocaleFR.cs) are quoted in the guide as the game
+  // shows them: every option, group and tab, so a new option can't go undocumented. The files are read as committed
+  // (git HEAD, what CI sees), so another worker's uncommitted options don't fail the web suite mid-work; set
+  // CS1CONV_IMPORTER_WORKTREE=1 to check against the working copy instead. A locale the importer doesn't have yet is skipped.
+  for (const [lang, file] of [['en', 'LocaleEN.cs'], ['fr', 'LocaleFR.cs']] as const) {
+    it(`quotes every label of the importer's page (${file})`, () => {
+      const text = importerFile(`cs2-importer/mod/${file}`);
+      if (!text) return;
+      const labels = new Set([...text.matchAll(/Get(?:OptionLabel|OptionGroup|OptionTab|Settings)LocaleID\([^)]*\)?\), "([^"]+)"/g)].map(m => m[1]));
+      expect(labels.size).toBeGreaterThan(10);
+      const quoted = new Set(docsFor(lang).GUIDE.flatMap(st => st.body.join(' ').match(/\*\*[^*]+\*\*/g) ?? []).map(b => b.slice(2, -2)));
+      expect([...labels].filter(l => !quoted.has(l))).toEqual([]);
+    });
+  }
 });
+
+/** A repository file as committed (git HEAD), or the working copy (no git, or CS1CONV_IMPORTER_WORKTREE=1); null if absent. */
+function importerFile(rel: string): string | null {
+  const repo = path.resolve(src, '..', '..');
+  const working = () => { const p = path.join(repo, rel); return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null; };
+  if (process.env.CS1CONV_IMPORTER_WORKTREE === '1') return working();
+  try {
+    return execFileSync('git', ['show', `HEAD:${rel}`], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    // not in git (yet): absent at HEAD means "not committed", so skip; no git at all: use the working copy
+    try { execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, stdio: 'ignore' }); return null; } catch { return working(); }
+  }
+}

@@ -33,9 +33,9 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Terrain heightmap (and the land around the square) | CS2 terrain at the same heights, plus the world map around it | in the package; CS2 side in progress | In the package (terrain folder); the importer doesn't apply it yet, so the roads follow the map's own ground. |
-| Sea level, rivers and lakes (natural water sources) | CS2 sea level and water sources | in the package; CS2 side in progress | In the package; not applied by the importer yet. CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled. |
-| Highways and railways leaving the square | CS2 outside connections | in the package; CS2 side in progress | In the package; not applied by the importer yet. |
+| Terrain heightmap (and the land around the square) | CS2 terrain at the same heights, plus the world map around it | converts | Applied by the importer's Prepare map, in a new city, before the import. |
+| Sea level, rivers and lakes (natural water sources) | CS2 sea level and water sources | converts, approximated | Set by Prepare map. CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled. Pumps and drains come with their buildings. |
+| Highways and railways leaving the square | CS2 outside connections | converts | The importer's last step (Outside connections), so traffic and trains can enter and leave the city. |
 
 ## Zoning
 
@@ -50,7 +50,8 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | Speed limits, bus-only lanes | Road Builder variants with that speed / bus lane | converts | CS2 has one speed per road. |
 | Traffic lights, all-stop junctions, turn restrictions from lane arrows, crosswalks | Vanilla CS2 junction settings | converts |   |
 | Priority signs | Traffic mod | converts | Needs the Traffic mod in CS2. |
-| Lane arrows, lane connections, U-turns | Traffic mod | in the package; CS2 side in progress | In the package; not applied in this version (listed in the import report). |
+| Lane arrows, lane connections | Traffic mod lane connections | converts, approximated | Experimental, off by default: turn on Lane connections (Traffic mod). Most junctions come out as in CS1, some differ. |
+| U-turn rules | – | listed in the report only | Not applied yet; listed in the import report. |
 | Timed traffic lights, turn on red, blocked junctions, parking rules | – | listed in the report only | Timed lights become plain traffic lights. |
 
 ## Node Controller
@@ -64,7 +65,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
 | Bus and tram lines | CS2 lines with colour, name, number and stops | converts, approximated | Trolleybus, tourist and intercity buses become bus lines. |
-| Train, metro, ship and plane lines | CS2 lines at the placed stations | converts, approximated | Need their stations from the buildings step; a default depot or yard is added when the city has none. |
+| Train, metro, ship and plane lines | CS2 lines at the placed stations | converts, approximated | Need their stations from the buildings step. Metro and train yards go at the crop edge where the track leaves it (or you place them); never inside the city. |
 
 ## Buildings
 

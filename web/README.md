@@ -35,6 +35,7 @@ cli/cs1conv.ts
 scripts/           gen-docs.mjs (docs/guide), notices.mjs (third-party notices), slim-catalogue.mjs (bundled CS2 catalogue)
 public/            cs2-catalogue.json (slim CS2 building catalogue), THIRD-PARTY-NOTICES.txt
 test/              vitest; includes parity with the M0 spike generator and with buildings/lib/plan.mjs on the real data, when present
+                   ui.test.tsx: the real UI in jsdom (smoke tests + axe-core accessibility checks), ui/dom.ts stubs canvas and downloads
 ```
 
 ## Use
@@ -92,6 +93,14 @@ The matching module is the buildings worker's `buildings/match/match.mjs`. It's 
 The site bundles a slim catalogue (`public/cs2-catalogue.json`, 101 kB): 263 placeable buildings and 28 CS2 trees and boulders, with only the fields the matchers read. It gives identical matches (tested).
 
 Trees, rocks and IMT junction surfaces (`plan.objects`, `plan.surfaces`) come from `buildings/lib/objects.mjs`, called unchanged, so they match the scripted flow's `cs1conv-objects.json`. The Assets tab can load another catalogue, for example after a game update.
+
+## Tests and accessibility
+
+`npm test` runs everything, the UI included: `test/ui.test.tsx` renders the real app in jsdom (with React Testing Library), opens a synthetic `.cs1x` through the file input and checks the landing page, the map and tabs, keyboard moves of the crop, the What converts list, the downloaded zip's entries and the switch to French. It also runs axe-core on the landing page (EN and FR), every tab and every Help section and fails on any violation.
+
+jsdom has no layout, so a few axe rules can't be decided there (colour contrast, "one level-one heading", "one main landmark", heading order). The test asserts the structural ones directly. For contrast, check in a browser: with `npm run dev`, load `/node_modules/axe-core/axe.min.js` into the page and run `axe.run(document)` on each view (done for 0.5.1: no violations, contrast included).
+
+The guide must quote every label of the importer's Options page (`cs2-importer/mod/LocaleEN.cs` for the English guide, `LocaleFR.cs` for the French one). The test reads them as committed; `CS1CONV_IMPORTER_WORKTREE=1 npm test` checks the working copy, for instance while the importer worker is adding options.
 
 ## UI
 

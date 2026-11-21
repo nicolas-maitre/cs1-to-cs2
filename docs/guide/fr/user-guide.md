@@ -57,45 +57,49 @@ Au clavier : cliquez sur la carte, puis utilisez les flèches pour déplacer le 
 
 Cliquez sur **Télécharger le paquet (.zip)**. La création prend quelques secondes : le terrain, ce sont deux cartes de hauteur de 4096 × 4096.
 
-Décompressez-le dans son propre dossier sous `%LOCALAPPDATA%\cs1-to-cs2\` (collez ce chemin dans la barre d'adresse de l'Explorateur), par exemple `%LOCALAPPDATA%\cs1-to-cs2\ma-ville\`. L'importeur le liste alors dans **Packages on this PC**. Un autre dossier convient aussi ; tapez-le alors dans **Package folder**.
-
-Le dossier contient `cs1conv-plan.json`, `report.json`, les dossiers `roadbuilder` et `terrain` et un `README.txt`.
+Inutile de le décompresser : l'importeur prend le zip et le décompresse lui-même. Il contient `cs1conv-plan.json`, `report.json`, les dossiers `roadbuilder` et `terrain` et un `README.txt`.
 
 ## 7. Installez les mods et les types de route dans CS2
 
-Activez **Road Builder** et le **CS1 → CS2 Importer**. **Traffic** est facultatif : sans lui, les panneaux de priorité sont ignorés.
+Activez **Road Builder** et le **CS1 → CS2 Importer**. **Traffic** est facultatif : il pose les panneaux de priorité (et, à titre expérimental, les connexions de voies). La ligne en bas de la page de l'importeur indique si Road Builder et Traffic sont actifs. Les libellés cités ici sont ceux du jeu en français ; si votre jeu est en anglais, voyez le guide anglais.
 
-Road Builder ne lit ses types de route qu'au lancement du jeu : installez-les donc d'abord. Lancez CS2, ouvrez Options → **CS1 → CS2 importer**, choisissez le paquet (comme à l'étape 9) et cliquez sur **Install Road Builder configs**. Confirmez, attendez "Copied N Road Builder configs", puis **relancez le jeu**. Ou, CS2 fermé, copiez les fichiers du dossier `roadbuilder` du paquet dans `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`.
+Lancez CS2 et ouvrez Options → **CS1 → CS2 importer** (onglet **Import**). Cliquez sur **Parcourir…** et choisissez le zip téléchargé : l'importeur le décompresse sous `%LOCALAPPDATA%\cs1-to-cs2\packages\`, affiche "<zip> décompressé dans <dossier>." et le vérifie. **Ouvrir le dossier des paquets** montre ce dossier dans l'Explorateur.
+
+Road Builder ne lit ses types de route qu'au lancement du jeu : installez-les donc maintenant. Cliquez sur **Installer les configurations Road Builder**, confirmez, attendez "N configurations Road Builder copiées", puis **relancez le jeu**. (Ou, CS2 fermé, copiez les fichiers du dossier `roadbuilder` du paquet dans `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`.)
 
 ## 8. Commencez une nouvelle ville
 
-Lancez une nouvelle partie (pas l'éditeur). Toutes les cartes conviennent ; Sunshine Peninsula a le moins de routes préconstruites.
-
-L'importeur n'applique pas encore le terrain, l'eau et les connexions extérieures : les routes suivent le sol de la carte, et seules les tranchées de 4 m ou plus gardent leur profondeur CS1. Le paquet les contient déjà (dossier `terrain`) pour le jour où il le fera.
-
-Enregistrez la ville maintenant : l'import ne peut pas être annulé.
+Lancez une nouvelle partie (pas l'éditeur). Toutes les cartes conviennent, puisque l'importeur remplace leur terrain ; Sunshine Peninsula a le moins de routes préconstruites à retirer.
 
 ## 9. Vérifiez le paquet
 
-Ouvrez Options → **CS1 → CS2 importer** (onglet **Import**). Dans le groupe **Package**, choisissez le paquet dans **Packages on this PC** : la liste montre les paquets sous `%LOCALAPPDATA%\cs1-to-cs2\`, du plus récent au plus ancien, et vérifie celui que vous choisissez. Ou collez le dossier du paquet dans **Package folder** et cliquez sur **Check**.
+Ouvrez à nouveau Options → **CS1 → CS2 importer**. Dans le groupe **Paquet**, choisissez le paquet dans **Paquets sur ce PC** (les derniers utilisés en premier), ou utilisez **Parcourir…**, ou collez son dossier, son `cs1conv-plan.json` ou son zip dans **Dossier du paquet** et cliquez sur **Vérifier**.
 
-La ligne d'état indique le contenu du paquet, par exemple "Package: Skibidi.02, 2035 roads to build. All 37 road types are available." S'il manque des types de route, installez les configurations Road Builder et relancez le jeu. S'il y a déjà des routes dans la zone, laissez **Clear the area first** activé.
+La ligne d'état indique le contenu du paquet, par exemple "Paquet : Skibidi.02, 2035 routes à construire. Les 37 types de route sont disponibles." et "Carte : terrain avec ses alentours, niveau de la mer 182 m, 5 sources d'eau, 20 connexions extérieures.". Sa dernière ligne dit si le terrain de cette ville est déjà celui du paquet. S'il manque des types de route, installez les configurations Road Builder et relancez le jeu.
 
-## 10. Importez dans la ville
+## 10. Préparez la carte
 
-Dans le groupe **Import into this city**, toutes les étapes sont activées par défaut : **Clear the area first**, **Zoning**, **Traffic lights, stops, turn bans, crosswalks**, **Priority signs (Traffic mod)**, **Buildings, trees, districts** et **Transit lines**. Désactivez ce que vous ne voulez pas ; les routes sont toujours construites en premier.
+Dans le groupe **Nouvelle ville**, cliquez sur **Préparer la carte** et confirmez. Il retire les routes, voies et bâtiments propres à la carte, remplace son terrain et ses environs par ceux de votre ville, et règle le niveau de la mer et les sources d'eau de CS1 (un paquet sans données d'eau donne une carte sèche). **État** suit les étapes ("Préparation de la carte… application du terrain", "… mise en place de l'eau") et se termine par "Carte préparée.", la vérification du terrain ("à 0 m près du paquet sur 95 % des 181 points de contrôle") et "Ensuite : cliquez sur « Importer dans cette ville ».". Comptez 10 à 20 secondes.
 
-Cliquez sur **Import into this city** et confirmez. **Status** montre l'avancement ("Importing… batch 3 of 6", puis chaque étape) et se termine par un résumé par étape, par exemple "Done in 4.33 s: 2035 of 2035 roads built." et "Transit: 9 of 9 lines, 145 of 145 stops.". Il donne aussi le chemin du rapport complet, sous `%LOCALAPPDATA%\cs1-to-cs2\import-reports\`.
+C'est irréversible : utilisez-le dans une nouvelle ville. Sans ville chargée (menu principal, éditeur), il s'arrête avec "Carte non préparée : Commencez d'abord une nouvelle ville.". Un paquet exporté sans le terrain garde le terrain de la carte ("Terrain ignoré : le paquet n'a pas de terrain").
 
-Un carré de 3 km prend bien moins d'une minute : les routes environ 4 secondes, les lignes de transport le plus longtemps. Le jeu reste fluide.
+## 11. Importez dans la ville
 
-## 11. Après l'import
+Dans le groupe **Importer dans cette ville**, choisissez les étapes : **Vider la zone d'abord**, **Zonage**, **Feux, stops, interdictions de tourner, passages piétons**, **Panneaux de priorité (mod Traffic)**, **Bâtiments, arbres, quartiers**, **Lignes de transport** et, en dernier, **Connexions extérieures** sont activées par défaut ; les routes sont toujours construites en premier. **Connexions de voies (mod Traffic)** est expérimental et désactivé par défaut. **Garder le terrain de cette carte** est désactivé : l'import refuse alors une ville dont le terrain n'est pas celui du paquet ; activez-le pour importer quand même sur le sol de la carte (seules les tranchées de 4 m ou plus gardent leur profondeur).
 
-Enregistrez la ville. Elle a encore besoin d'eau, d'électricité et de services pour grandir, comme toute nouvelle ville ; les bâtiments poussent ensuite sur les zones converties.
+Cliquez sur **Importer dans cette ville** et confirmez. **État** montre l'avancement ("Import… lot 3 sur 6", puis chaque étape) et se termine par un résumé par étape, par exemple "Terminé en 4.33 s : 2035 routes construites sur 2035", "Transports : 9 lignes sur 9, 145 arrêts sur 145." et "Connexions extérieures : 20 sur 20 (13 routières, 7 ferroviaires).". Une étape désactivée indique "désactivé dans les options". Le résumé donne aussi le chemin du rapport complet, sous `%LOCALAPPDATA%\cs1-to-cs2\import-reports\`.
+
+Un carré de 3 km prend moins d'une minute : les routes environ 4 secondes, les lignes de transport le plus longtemps. Le jeu reste fluide, et **Annuler** (groupe **État**) s'arrête après l'étape en cours ; ce qui est construit reste.
+
+## 12. Après l'import
+
+Laissez le jeu tourner quelques minutes : CS2 remplit les rivières et les lacs à partir des sources d'eau. Enregistrez ensuite la ville. Elle a encore besoin d'eau, d'électricité et de services pour grandir, comme toute nouvelle ville ; les bâtiments poussent ensuite sur les zones converties.
+
+Pour revenir en arrière, cliquez sur **Retirer l'import** et confirmez : il supprime les routes, bâtiments, arbres et objets, quartiers et zones, lignes de transport et connexions extérieures créés par les imports, même après enregistrement et rechargement. Le zonage et les règles de circulation partent avec les routes ; la carte de base retirée par **Préparer la carte** ne revient pas.
 
 Lisez l'onglet **Rapport** de l'outil web (ou `report.json`) et le résumé de l'import pour ce qui demande une intervention :
 
-les connexions de voies, flèches de voie et demi-tours de TM:PE ne sont pas appliqués dans cette version (seuls les panneaux de priorité le sont) ; le rapport d'import les liste. Environ 7 % des cellules de zone ne trouvent pas de bloc de zone CS2, car les blocs de CS2 sont moins profonds. Les lignes de métro et de train ont besoin de leurs gares, placées par l'étape des bâtiments. Les dépôts ferroviaires ajoutés pour elles doivent être reliés à la ligne à la main. Quelques routes à faible dénivelé sont réunies en carrefour par CS2.
+les connexions de voies et flèches de voie sont expérimentales : activez **Connexions de voies (mod Traffic)** ; la plupart des carrefours sortent comme dans CS1, certains diffèrent. Les demi-tours ne sont pas appliqués. Environ 7 % des cellules de zone ne trouvent pas de bloc de zone CS2, car les blocs de CS2 sont moins profonds. Les lignes de métro et de train ont besoin de leurs gares, placées par l'étape des bâtiments ; une ligne de métro ou de train dont la voie reste dans le carré ne reçoit pas de dépôt : placez-en un vous-même (le rapport d'import nomme la ligne). Quand deux routes CS1 quittent un carrefour avec un angle très faible, CS2 fusionne leurs premiers mètres en une seule route et les sépare un peu plus loin, connectées comme dans CS1. Quelques morceaux de CS1 qui se chevauchent et que CS2 ne peut pas placer (par exemple une route à quelques mètres d'une route parallèle) sont laissés de côté et listés dans le rapport.
 
 ## Confidentialité
 

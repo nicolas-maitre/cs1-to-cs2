@@ -1,7 +1,7 @@
 {
   "name": "cs1conv-web",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "CS1 → CS2 converter: .cs1x preview, crop, road mapping and import package writer (web UI + Node CLI)",
   "engines": {
@@ -24,10 +24,14 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "axe-core": "^4.14.1",
+    "jsdom": "^31.0.1",
     "typescript": "~6.0.3",
     "vite": "^8.3.8",
     "vitest": "^5.1.1"

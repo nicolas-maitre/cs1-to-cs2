@@ -24,19 +24,27 @@ Le reste se convertit normalement. Exportez à nouveau ; si l'échec persiste, l
 
 ## L'importeur ne liste pas mon paquet.
 
-**Packages on this PC** liste les dossiers sous `%LOCALAPPDATA%\cs1-to-cs2\` qui contiennent un `cs1conv-plan.json`. Décompressez le paquet à cet endroit, ou tapez son dossier dans **Package folder**.
+**Paquets sur ce PC** liste les derniers paquets utilisés, puis les dossiers sous `%LOCALAPPDATA%\cs1-to-cs2\` qui contiennent un `cs1conv-plan.json`. Cliquez sur **Parcourir…** et choisissez le zip téléchargé (l'importeur le décompresse sous `packages\`) ou un `cs1conv-plan.json`, ou collez son chemin dans **Dossier du paquet**. **Ouvrir le dossier des paquets** ouvre ce dossier dans l'Explorateur.
 
 ## L'importeur dit que des types de route manquent.
 
-Les routes Road Builder doivent être dans ModsData\RoadBuilder **avant** le lancement de CS2. "Road Builder configs aren't installed" : cliquez sur **Install Road Builder configs**, puis relancez CS2. "Installed but not loaded yet" : relancez CS2. Cliquez ensuite à nouveau sur **Check**. Les routes d'un type manquant sont ignorées.
+Les routes Road Builder doivent être dans ModsData\RoadBuilder **avant** le lancement de CS2. "Configurations Road Builder pas installées" : cliquez sur **Installer les configurations Road Builder**, puis relancez CS2. "Installées mais pas encore chargées" : relancez CS2. "Road Builder n'est pas actif" : activez Road Builder dans votre playset et relancez. Cliquez ensuite à nouveau sur **Vérifier**. Les routes d'un type manquant sont ignorées.
 
 ## Ma ville n'a ni les collines, ni les rivières, ni la mer de CS1.
 
-L'importeur n'applique pas encore le terrain ni l'eau : les routes suivent le sol de la carte CS2. Le paquet contient déjà le terrain converti (dossier `terrain`), que l'importeur utilisera dans une version ultérieure.
+Cliquez sur **Préparer la carte** dans une nouvelle ville avant d'importer : il remplace le terrain et les environs de la carte par ceux de votre ville et règle le niveau de la mer et les sources d'eau. Laissez ensuite le jeu tourner quelques minutes pour que CS2 remplisse les rivières et les lacs. Un paquet créé sans données d'eau donne une carte sèche.
 
 ## Où sont mes connexions de voies et flèches de voie TM:PE ?
 
-Elles sont dans le paquet mais pas appliquées dans cette version : seuls les panneaux de priorité le sont (avec le mod Traffic). Le rapport d'import liste le reste.
+Elles sont expérimentales : activez **Connexions de voies (mod Traffic)** avant d'importer (il faut le mod Traffic). La plupart des carrefours sortent comme dans CS1, certains diffèrent. Les demi-tours ne sont pas encore appliqués ; le rapport d'import les liste.
+
+## Comment annuler un import ?
+
+Cliquez sur **Retirer l'import** : il supprime les routes, bâtiments, arbres et objets, quartiers et zones, lignes de transport et connexions extérieures créés par les imports dans cette ville, même après enregistrement et rechargement. Le zonage et les règles de circulation partent avec les routes. La carte de base retirée par **Préparer la carte** ne revient pas ; commencez une nouvelle ville pour cela.
+
+## L'import dit que le terrain de cette ville n'est pas celui du paquet.
+
+Commencez une nouvelle ville et cliquez sur **Préparer la carte** avant d'importer. Pour construire quand même sur le sol de la carte, activez **Garder le terrain de cette carte** : les routes suivent alors ce sol, et seules les tranchées de 4 m ou plus gardent leur profondeur CS1.
 
 ## Pourquoi tous mes bâtiments n'ont-ils pas été placés ?
 
@@ -48,11 +56,11 @@ Les bâtiments CS2 ont souvent besoin de plus de place que leurs équivalents CS
 
 ## Ma ligne de métro ou de train n'a pas de véhicules.
 
-Les lignes CS2 reçoivent leurs véhicules d'un dépôt de leur type, et les lignes de métro et de train de CS1 n'en ont pas besoin. Quand la ville n'en a pas, le paquet ajoute un dépôt par défaut au premier arrêt de la ligne. Reliez à la main la voie d'un dépôt ferroviaire à la ligne : dans CS2, les dépôts n'envoient des trains que sur des voies reliées.
+Les lignes CS2 reçoivent leurs véhicules d'un dépôt de leur type, et les lignes de métro et de train de CS1 n'en ont pas besoin. Les dépôts ferroviaires ne sont jamais placés dans votre ville : par défaut, l'importeur place un dépôt compact au bord du carré, là où la voie de la ligne en sort, et le relie. Une ligne dont la voie reste dans le carré n'en reçoit pas ; le rapport d'import la nomme, et vous placez un dépôt vous-même. Sous Aperçu → Options, vous pouvez choisir "Je le place moi-même" pour le métro ou le train. Les lignes de bus et de tram reçoivent un dépôt par défaut près de leur premier arrêt.
 
 ## Ai-je besoin du mod Traffic ?
 
-Seulement pour les panneaux de priorité, flèches de voie et connexions de voies de TM:PE. Limites de vitesse, voies de bus, feux, arrêts toutes directions, interdictions de tourner et passages piétons fonctionnent sans lui.
+Seulement pour les panneaux de priorité et, à titre expérimental, les connexions et flèches de voie de TM:PE. Limites de vitesse, voies de bus, feux, arrêts toutes directions, interdictions de tourner et passages piétons fonctionnent sans lui.
 
 ## Que deviennent les feux programmés et les réglages de Node Controller ?
 

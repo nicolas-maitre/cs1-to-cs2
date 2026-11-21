@@ -158,6 +158,16 @@ describe('transit', () => {
     expect(r.items.some(i => /Monorail line: no CS2 equivalent/.test(i.message))).toBe(true);
     expect(r.items.some(i => /fewer than two stops/.test(i.message))).toBe(true);
     expect(r.summary.status).toBe('partial');
+
+    // metro / train yards: never inside the city (decision #83); the importer reads transit.depotMode
+    const pkg = buildPackage(c, { crop: CROP });
+    expect(pkg.plan.transit!.depotMode).toEqual({ Metro: 'edge' });
+    expect(pkg.report.items.some(i => /Metro lines \(Metro 1\): the importer places a subway yard at the crop edge/.test(i.message))).toBe(true);
+    expect(pkg.summary.find(s => s.id === 'transit')!.details.join(' ')).toMatch(/Metro lines: the importer places a yard at the crop edge/);
+    const manual = buildPackage(c, { crop: CROP, depotMode: { Metro: 'manual', Train: 'manual' }, lang: 'fr' });
+    expect(manual.plan.transit!.depotMode).toEqual({ Metro: 'manual' }); // only types with lines in the plan
+    expect(manual.summary.find(s => s.id === 'transit')!.details.join(' ')).toMatch(/Lignes de métro : vous placez leur dépôt vous-même/);
+    expect(buildPackage(cross({ transit: { lines: [c.transit!.lines[0]] } }), { crop: CROP }).plan.transit!.depotMode).toBeUndefined();
   });
 });
 

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { APP_VERSION, docsFor } from '../core/docs.ts';
 import type { MatrixStatus } from '../core/docs.ts';
 import { useI18n } from './i18n.tsx';
@@ -22,7 +22,6 @@ export function Help({ onClose, initial = 'guide' }: { onClose: () => void; init
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   const sections: [Section, string][] = [['guide', t('help.guide')], ['converts', t('help.converts')], ['faq', t('help.faq')], ['about', t('help.about')]];
-  let area = '';
   return (
     <div className="help-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help" role="dialog" aria-modal="true" aria-labelledby="help-title">
@@ -33,9 +32,10 @@ export function Help({ onClose, initial = 'guide' }: { onClose: () => void; init
               <button key={id} className={section === id ? 'on' : ''} aria-pressed={section === id} onClick={() => setSection(id)}>{label}</button>
             ))}
           </nav>
-          <button onClick={onClose} aria-label={t('help.close')}>✕</button>
+          <button onClick={onClose} title={t('help.close')}><span aria-hidden="true">✕</span><span className="sr-only">{t('help.close')}</span></button>
         </div>
-        <div className="help-body">
+        {/* scrolls: focusable so keyboard users can scroll it (axe scrollable-region-focusable) */}
+        <div className="help-body" tabIndex={0} role="region" aria-label={sections.find(([id]) => id === section)?.[1]}>
           {section === 'guide' && (
             <>
               <h3>{t('help.need')}</h3>
@@ -46,21 +46,19 @@ export function Help({ onClose, initial = 'guide' }: { onClose: () => void; init
             </>
           )}
           {section === 'converts' && (
-            <table className="matrix">
-              <thead><tr><th>CS1</th><th>CS2</th><th>{t('help.status')}</th></tr></thead>
-              <tbody>
-                {MATRIX.map((r, i) => {
-                  const head = r.area !== area;
-                  area = r.area;
-                  return (
-                    <Fragment key={i}>
-                      {head && <tr className="area"><th colSpan={3} scope="colgroup">{r.area}</th></tr>}
-                      <tr><td>{r.cs1}</td><td>{r.cs2}{r.notes && <div className="small muted">{r.notes}</div>}</td><td><span className={`status ${STATUS_CLS[r.status]}`}>{STATUS_TEXT[r.status]}</span></td></tr>
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+            // one table per area, named by its caption (like the Markdown version); a spanning header row per group
+            // would be a header without data cells
+            [...new Set(MATRIX.map(r => r.area))].map(a => (
+              <table key={a} className="matrix">
+                <caption>{a}</caption>
+                <thead><tr><th scope="col">CS1</th><th scope="col">CS2</th><th scope="col">{t('help.status')}</th></tr></thead>
+                <tbody>
+                  {MATRIX.filter(r => r.area === a).map((r, i) => (
+                    <tr key={i}><td>{r.cs1}</td><td>{r.cs2}{r.notes && <div className="small muted">{r.notes}</div>}</td><td><span className={`status ${STATUS_CLS[r.status]}`}>{STATUS_TEXT[r.status]}</span></td></tr>
+                  ))}
+                </tbody>
+              </table>
+            ))
           )}
           {section === 'faq' && FAQ.map(f => <details key={f.q}><summary>{f.q}</summary>{f.a.map((p, k) => <p key={k}><Rich text={p} /></p>)}</details>)}
           {section === 'about' && (

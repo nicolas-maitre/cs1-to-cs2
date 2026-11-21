@@ -24,19 +24,27 @@ The rest converts normally. Export again; if it keeps failing, the exporter's me
 
 ## The importer doesn't list my package.
 
-**Packages on this PC** lists the folders under `%LOCALAPPDATA%\cs1-to-cs2\` that hold a `cs1conv-plan.json`. Unzip the package there, or type its folder in **Package folder**.
+**Packages on this PC** lists the packages you used last, then the folders under `%LOCALAPPDATA%\cs1-to-cs2\` that hold a `cs1conv-plan.json`. Press **Browse…** and choose the downloaded zip (the importer unpacks it under `packages\`) or a `cs1conv-plan.json`, or paste its path into **Package folder**. **Open packages folder** opens that folder in Explorer.
 
 ## The importer says road types are missing.
 
-Road Builder roads must be in ModsData\RoadBuilder **before** CS2 starts. "Road Builder configs aren't installed": press **Install Road Builder configs**, then restart CS2. "Installed but not loaded yet": restart CS2. Then press **Check** again. Roads of a missing type are skipped.
+Road Builder roads must be in ModsData\RoadBuilder **before** CS2 starts. "Road Builder configs aren't installed": press **Install Road Builder configs**, then restart CS2. "Installed but not loaded yet": restart CS2. "Road Builder isn't running": enable Road Builder in your playset and restart. Then press **Check** again. Roads of a missing type are skipped.
 
 ## My city has none of its CS1 hills, rivers or sea.
 
-The importer doesn't apply the terrain and the water yet: the roads follow the CS2 map's own ground. The package already holds the converted terrain (the `terrain` folder), and the importer will use it in a later version.
+Press **Prepare map** in a new city before importing: it replaces the map's terrain and surroundings with your city's and sets the sea level and the water sources. Then unpause for a few minutes so CS2 fills the rivers and lakes. A package made without water data gives a dry map.
 
 ## Where are my TM:PE lane connections and lane arrows?
 
-They are in the package but not applied in this version: only the priority signs are (with the Traffic mod). The import report lists the rest.
+They are experimental: turn on **Lane connections (Traffic mod)** before importing (it needs the Traffic mod). Most junctions come out as in CS1, some differ. U-turn rules aren't applied yet; the import report lists them.
+
+## How do I undo an import?
+
+Press **Remove imported**: it deletes the roads, buildings, trees and props, districts and areas, transit lines and outside connections the imports created in this city, even after saving and loading. Zoning and traffic settings go with the roads. The base map removed by **Prepare map** doesn't come back; start a new city for that.
+
+## The import says this city's terrain isn't the package's.
+
+Start a new city and press **Prepare map** before importing. To build on the map's own ground anyway, turn on **Keep this map's terrain**: roads then follow that ground, and only cuts of 4 m or more keep their CS1 depth.
 
 ## Why weren't all my buildings placed?
 
@@ -48,11 +56,11 @@ CS2 buildings often need more room than their CS1 counterparts. When one doesn't
 
 ## My metro or train line has no vehicles.
 
-CS2 lines get their vehicles from a depot of their type, and CS1 metro and train lines don't need one. When the city has none, the package adds a default depot or yard at the line's first stop. Connect a rail yard's track to the line by hand: CS2 yards only send trains over connected track.
+CS2 lines get their vehicles from a depot of their type, and CS1 metro and train lines don't need one. Rail and subway yards are never placed inside your city: by default the importer puts a compact yard at the edge of the square, where the line's track leaves it, and links it. A line whose track stays inside the square gets none; the import report names it, and you place a yard yourself. Under Overview → Options you can choose "I'll place it myself" for metro or train. Bus and tram lines get a default depot near their first stop.
 
 ## Do I need the Traffic mod?
 
-Only for TM:PE priority signs, lane arrows and lane connections. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.
+Only for TM:PE priority signs and, experimentally, lane connections and lane arrows. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.
 
 ## What happens to timed traffic lights and Node Controller tweaks?
 
