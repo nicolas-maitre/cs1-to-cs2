@@ -116,8 +116,9 @@ describe('plan.buildings', () => {
   it('matches buildings/lib/plan.mjs exactly (same items)', () => {
     const c = town();
     const pkg = buildPackage(c, { crop: CROP, buildings: false });
-    const theirs = buildBuildingsPlan({ network: { nodes: c.nodes, segments: c.segments }, buildings: c.buildings!, assets: c.assets! }, CATALOGUE, pkg.plan, { theme: 'North American' });
-    const ours = buildBuildings(ctxOf(c), { enabled: true, catalogue: CATALOGUE, theme: 'NA' }).section!;
+    const ours = buildBuildings(ctxOf(c), { enabled: true, catalogue: CATALOGUE, theme: 'NA', fallbacks: { Hospital: 'skip' } }).section!;
+    const theirs = buildBuildingsPlan({ network: { nodes: c.nodes, segments: c.segments }, buildings: c.buildings!, assets: c.assets! }, CATALOGUE, pkg.plan,
+      { theme: 'North American', fallback: 'nearby', fallbackByType: { Hospital: 'skip' } });
     expect(ours.items.map(({ type: _t, district: _d, ...i }) => i)).toEqual(theirs.items);
     expect(ours.cs1AngleConvention).toEqual(theirs.cs1AngleConvention);
     expect({ ...ours.stats.skipped }).toEqual(theirs.stats.skipped);
@@ -131,6 +132,19 @@ describe('plan.buildings', () => {
     expect(pkg.plan.buildings!.items.filter(i => i.cs1Info === 'Hospital').map(i => i.prefab)).toEqual(['MedicalClinic01', 'MedicalClinic01']);
     expect(pkg.summary.find(s => s.id === 'buildings')!.status).toBe('partial');
     expect(packageFiles(pkg).find(f => f.path === 'README.txt')!.text).toMatch(/Buildings and services/);
+  });
+
+  it('writes a placement fallback per item: anywhere for big lots by default, the choice of the user otherwise', () => {
+    const big: Cs2Catalogue = { ...CATALOGUE, prefabs: CATALOGUE.prefabs.map(p => (p.name === 'Hospital01' ? { ...p, lot: [25, 20] } : p)) };
+    const pkg = buildPackage(town(), { crop: CROP, catalogue: big });
+    const fb = (p: typeof pkg) => Object.fromEntries(p.plan.buildings!.items.map(i => [i.cs1Info, i.fallback]));
+    expect(fb(pkg)).toEqual({ Hospital: 'anywhere', 'Elementary School': 'nearby' });
+    expect(pkg.assetMatches!.find(m => m.cs1 === 'Hospital')).toMatchObject({ fallback: 'anywhere', fallbackAuto: 'anywhere' });
+    const chosen = buildPackage(town(), { crop: CROP, catalogue: big, assetFallbacks: { Hospital: 'skip', 'Elementary School': 'bogus' as never } });
+    expect(fb(chosen)).toEqual({ Hospital: 'skip', 'Elementary School': 'nearby' });
+    expect(chosen.assetMatches!.find(m => m.cs1 === 'Hospital')!.fallbackOverride).toBe('skip');
+    expect(chosen.report.items.some(i => /0 anywhere along the imported roads in the crop, 2 are not placed/.test(i.message))).toBe(true);
+    expect(fb(buildPackage(town(), { crop: CROP, catalogue: big, assetFallback: 'skip' }))).toEqual({ Hospital: 'skip', 'Elementary School': 'skip' });
   });
 });
 
@@ -218,8 +232,91 @@ describe.skipIf(!fs.existsSync(FULL) || !fs.existsSync(SAMPLE))('Skibidi with th
     expect(JSON.stringify(matchAssets(c.assets, slim).results)).toBe(JSON.stringify(matchAssets(c.assets, full).results));
     const crop = { centerX: 3750, centerZ: -1250, size: 3000 };
     const pkg = buildPackage(c, { crop, catalogue: slim });
-    const theirs = buildBuildingsPlan({ network: { nodes: c.nodes, segments: c.segments }, buildings: c.buildings, assets: c.assets }, full, pkg.plan, { theme: 'North American' }); // the package uses the zoning theme (NA)
+    const fallbackByType = Object.fromEntries((pkg.assetMatches ?? []).map(m => [m.cs1, m.fallback]));
+    const theirs = buildBuildingsPlan({ network: { nodes: c.nodes, segments: c.segments }, buildings: c.buildings, assets: c.assets }, full, pkg.plan, { theme: 'North American', fallbackByType }); // the package uses the zoning theme (NA)
     expect(pkg.plan.buildings!.items.map(({ type: _t, district: _d, ...i }) => i)).toEqual(theirs.items);
     expect(pkg.plan.buildings!.items.length).toBeGreaterThan(50);
+  }, 60_000);
+});
+
+describe('objects and surfaces (buildings/lib/objects.mjs)', () => {
+  const VEG: Cs2Catalogue = {
+    game: { version: 'x' },
+    prefabs: [
+      ...CATALOGUE.prefabs,
+      { name: 'OakTree01', kind: 'object', uiGroup: 'Vegetation', height: 12, components: { TreeObject: {} } },
+      { name: 'SpruceTree01', kind: 'object', uiGroup: 'Vegetation', height: 21, components: { TreeObject: {} } },
+      { name: 'Boulder01', kind: 'object', uiGroup: 'PropsNature', height: 2.4 },
+    ],
+  };
+  const fill = (markingId: number, styleType: string, x: number, z: number) =>
+    ({ markingType: 'Node', markingId, styleType, color: [1, 2, 3, 4], polygon: [[x, 0, z], [x + 4, 0, z], [x + 4, 0, z + 4], [x, 0, z + 4]] as [number, number, number][] });
+  const green = () => town({
+    trees: { trees: [[0, 10, 0, 20, 0], [1, 30, 0, -50, 0], [0, 5000, 0, 5000, 0]], infos: ['Tree2variant', 'Conifer'] },
+    props: { props: [[0, 15, 0, 15, 90, 0], [1, 20, 0, 20, 0, 0]], infos: ['Rock 01', 'Bench 01'] },
+    assets: {
+      buildings: ASSETS,
+      trees: [{ name: 'Tree2variant', title: 'Oak', count: 2, height: 11 }, { name: 'Conifer', title: 'Conifer', count: 1, height: 20 }],
+      props: [{ name: 'Rock 01', count: 1, height: 2 }, { name: 'Bench 01', count: 1, height: 1 }],
+    } as never,
+    imtFillers: [fill(1, 'FillerGrass', 0, 0), fill(2, 'FillerSolid', 100, 0), fill(3, 'FillerPavement', 5000, 5000)],
+  });
+
+  it('puts the same rows in the plan as buildObjectsSection / buildSurfacesSection', async () => {
+    const { buildObjectsSection, buildSurfacesSection } = await import('../../buildings/lib/objects.mjs');
+    const c = green();
+    const pkg = buildPackage(c, { crop: CROP, catalogue: VEG });
+    const roadPlan = { crop: pkg.plan.crop, transform: pkg.plan.transform };
+    expect(pkg.plan.objects).toEqual(buildObjectsSection({ trees: c.trees ?? undefined, props: c.props ?? undefined, assets: c.assets ?? {} }, VEG, roadPlan, { theme: 'NA' }));
+    expect(pkg.plan.objects!.prefabs.sort()).toEqual(['Boulder01', 'OakTree01', 'SpruceTree01']);
+    expect(pkg.plan.objects!.stats.items).toBe(3); // 2 trees in the crop + the rock; the bench is not placed
+    expect(pkg.plan.surfaces).toEqual(buildSurfacesSection({ fillers: c.imtFillers }, roadPlan, {}));
+    expect(pkg.plan.surfaces!.items.map(s => [s.cs1Node, s.prefab])).toEqual([[1, 'Grass Surface 01']]);
+    const nodeFillReports = pkg.report.items.filter(i => i.kind === 'imt-node-fill').map(i => i.cs1?.node);
+    expect(nodeFillReports).not.toContain(1); // converted, so not "no CS2 equivalent"
+    expect(pkg.summary.find(s => s.id === 'objects')).toMatchObject({ status: 'partial', summary: '2 trees and 1 rock as CS2 trees and boulders' });
+    expect(pkg.summary.find(s => s.id === 'imt')!.summary).toContain('1 junction fill become CS2 surfaces');
+  });
+
+  it('leaves them out when switched off, without trees in the catalogue, or without a catalogue', () => {
+    const c = green();
+    const off = buildPackage(c, { crop: CROP, catalogue: VEG, objects: false, surfaces: false });
+    expect(off.plan.objects).toBeUndefined();
+    expect(off.plan.surfaces).toBeUndefined();
+    expect(off.report.items.filter(i => i.kind === 'imt-node-fill').map(i => i.cs1?.node)).toContain(1);
+    const noTrees = buildPackage(c, { crop: CROP, catalogue: CATALOGUE });
+    expect(noTrees.plan.objects).toBeUndefined();
+    expect(noTrees.summary.find(s => s.id === 'objects')).toMatchObject({ status: 'not-converted', summary: 'the CS2 catalogue has no trees' });
+    expect(buildPackage(c, { crop: CROP }).summary.find(s => s.id === 'objects')!.status).toBe('not-converted');
+    expect(buildPackage(town(), { crop: CROP, catalogue: VEG }).summary.find(s => s.id === 'objects')!.status).toBe('absent');
+  });
+
+  it('keeps CS2 trees and boulders in the slim catalogue', () => {
+    const slim = slimCatalogue(VEG);
+    expect(slim.prefabs.filter(p => p.kind === 'object').map(p => p.name)).toEqual(['OakTree01', 'SpruceTree01', 'Boulder01']);
+  });
+
+  it('reader: reads trees.json and props.json', () => {
+    const c = readCs1x(zipSync({
+      'manifest.json': strToU8(JSON.stringify({ format: 'cs1x', formatVersion: 1, sections: { network: 'ok', trees: 'ok', props: 'ok' } })),
+      'network.json': strToU8('{"nodes":[],"segments":[]}'),
+      'trees.json': strToU8(JSON.stringify({ format: 'x', trees: [[0, 1, 2, 3, 0]], infos: ['Conifer'] })),
+      'props.json': strToU8(JSON.stringify({ format: 'x', props: [[0, 1, 2, 3, 90, 0]], infos: ['Rock 01'] })),
+    }));
+    expect(c.trees!.infos).toEqual(['Conifer']);
+    expect(c.props!.props[0][4]).toBe(90);
+  });
+});
+
+describe.skipIf(!fs.existsSync(FULL) || !fs.existsSync(SAMPLE))('Skibidi trees with the real CS2 catalogue', () => {
+  it('slim catalogue gives the same objects section as the full one', async () => {
+    const { buildObjectsSection } = await import('../../buildings/lib/objects.mjs');
+    const full = JSON.parse(fs.readFileSync(FULL, 'utf8'));
+    const c = await readCityFile(new Uint8Array(fs.readFileSync(SAMPLE)), { hash: false });
+    if (!c.trees) return;
+    const crop = { centerX: 3750, centerZ: -1250, size: 3000 };
+    const pkg = buildPackage(c, { crop, catalogue: slimCatalogue(full), buildings: false });
+    expect(pkg.plan.objects).toEqual(buildObjectsSection({ trees: c.trees ?? undefined, props: c.props ?? undefined, assets: c.assets ?? {} }, full, pkg.plan, { theme: 'NA' }));
+    expect(pkg.plan.objects!.stats.items).toBeGreaterThan(1000);
   }, 60_000);
 });

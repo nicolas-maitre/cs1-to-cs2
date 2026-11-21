@@ -166,3 +166,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - Vehicles come from depots placed by the buildings step.
     - Skibidi: 145/145 stops, 9/9 lines with CS1 names and colours, and 29–34 buses running within 4.5 minutes. The metro line has no trains because the city has no subway yard.
 62. **`mapprep clear` also deletes the base map's own buildings** (Claude). Sunshine Peninsula's ruin landmarks had pulled the new terrain up into pillars. Big lakes get an extra 80 m water source at their deepest point so they fill in minutes. CacaoCity: 105/150 wet points after 5 minutes, up from 42.
+63. **The package is self-contained** (Claude). The web core ports the terrain converter, water and outside-connection code, so a user needs only the web app and the CS2 mod, no Node scripts.
+    - Heightmaps are computed only when the package is written (about 1.3 s).
+    - Plain r16 is deflated inside the zip (64 MB → about 21 MB).
+    - Trees, rocks and IMT surfaces are in the plan itself.
+64. **Every building in a package carries a placement `fallback`** (Claude): `anywhere` for CS2 lots over 400 cells, `nearby` otherwise, and the user can change it per type in the Assets tab. Trees that land on a CS2 road are moved off it instead of dropped.

@@ -365,7 +365,12 @@ The web tool, or its CLI (`node web/cli/cs1conv.ts plan …`), writes these from
   roadbuilder/<id>-cs1conv.json     # generated Road Builder configs (see spikes/m0-roadbuilder-configs)
   report.json                       # everything that was dropped or approximated, for the user
   README.txt                        # for the user: what each file is, where it goes, what converts (CRLF)
+  terrain/heightmap.r16             # CS2 playable-area heightmap (see "Terrain files" below)
+  terrain/worldmap.r16              # CS2 world map around it
+  terrain/terrain.json              # heightmap metadata
 ```
+
+The package is self-contained: everything the CS2 importer mod needs (roads, terrain, water, outside connections, zoning, traffic, transit, buildings, districts) is in the plan or next to it. No Node script has to run on the user's machine.
 
 Road Builder reads its configs once, when CS2 starts. So the `roadbuilder/*.json` files must be copied into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\` **before** CS2 starts. The CLI does that (`--install-rb`); the web UI offers them as a download, with install instructions in the zip's README.
 
@@ -396,7 +401,8 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
                   "elevationStart": 0, "elevationEnd": 0, "kind": "ground", "reversed": true, "cs1Info": "Train Track" } ],
   "stats": { "segments": 1234, "skipped": 56, "nodes": 1100, "outsideCrop": 4000, "crossingCropEdge": 40, "unmapped": 16,
              "rbConfigs": 22, "byPrefabType": { "RoadBuilderPrefab": 1100, "TrackPrefab": 134 } },
-  "zoning": { … }, "water": { … }, "transit": { … }, "traffic": { … }, "buildings": { … }, "districts": { … }
+  "zoning": { … }, "water": { … }, "transit": { … }, "traffic": { … }, "buildings": { … }, "districts": { … },
+  "objects": { … }, "surfaces": { … }, "terrain": { … }, "outsideConnections": { … }
 }
 ```
 
@@ -443,6 +449,60 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
 - **`seaLevel`:** CS1 sea level in absolute metres; the same datum as CS2 heights once the terrain step has applied the CS1 heightmap.
 - **`sources`:** CS1 *natural* water sources in the crop (CS2 coordinates; `y` is the output height). `targetHeight` is the water surface height the source aims for, `outputRate` CS1's internal rate. Pump, drain and cleaner sources belong to water buildings and are left out.
 - **`wetFraction` / `maxDepth`:** how much of the crop was under water in the CS1 snapshot, for the terrain step to sanity-check its result. `null` / 0 without a depth grid.
+
+### Terrain files (`terrain/`) and `terrain`
+
+The web tool and the CLI write these when the `.cs1x` has a terrain. They are byte-identical to `terrain/convert.mjs` for the same crop and transform (`--no-png`); a web test compares them on the Skibidi export.
+
+| File | Content |
+| --- | --- |
+| `terrain/heightmap.r16` | 4096 × 4096 little-endian uint16, row 0 = minimum z (south), column 0 = minimum x (west), pixel centres at `−size/2 + (i + 0.5) × 3.5` m over the 14 336 m playable area, centred on the CS2 origin (= the crop centre). 32 MB, deflated in the zip (about a third). |
+| `terrain/worldmap.r16` | Same layout over the 57 344 m world map around it (the CS1 map, edge-clamped outside it). Optional: `--no-world`. |
+| `terrain/terrain.json` | `terrain/convert.mjs`'s `terrain-cs2.json`: `heightScale`, `heightOffset`, `heightMode`, `encoding`, `crop`, `transform`, `source`, `stats`, `world { file, size, stats }`. `file` and `world.file` are relative to `terrain/`. |
+
+**Coordinates are absolute.** The terrain files cover the CS2 map fixed on the origin, and `terrain`, `water.apply`, `water.checkpoints` and `outsideConnections` are in plan/CS2 coordinates, used as they are. The importer's `offsetX`/`offsetZ` is only a test placement on a flat spot of a base map without converted terrain. Whenever the package's terrain is applied, roads (and everything else) are imported with offset 0, as `tools/e2e` does.
+
+Height in metres = `raw / 65535 × heightScale + heightOffset`. The default mapping is absolute (`heightScale` 1024, `heightOffset` 0): a CS2 height equals the CS1 height, so plan `y` values, the sea level and water heights need no conversion. Pass `(heightScale, heightOffset)` to CS2's `TerrainSystem` as they are (`terrain/apply.mjs` does).
+
+The plan points at them:
+
+```json
+"terrain": { "dir": "terrain", "meta": "terrain/terrain.json", "heightScale": 1024, "heightOffset": 0, "heightMode": "absolute",
+             "seaLevelDry": 98, "min": 118.173, "max": 653.517, "world": true }
+```
+
+`seaLevelDry` = `floor(min) − 20`: the sea level `terrain/apply.mjs` uses ("auto") when the city has no water data, so the map is dry. With water data, use `water.apply.seaLevel`.
+
+### `water.apply` and `water.checkpoints`
+
+Added to the M2 `water` section when the `.cs1x` has `water.json`:
+
+```json
+"water": { "seaLevel": 181.98, "wetFraction": 0, "maxDepth": 0, "sources": [ … ],
+           "apply": { "seaLevel": 181.984009, "sources": [ { "x": 1200.5, "z": -40.2, "height": 12.3, "radius": 20, "polluted": 0,
+                                                           "cs1": { "id": 1, "type": "natural", "targetHeight": 268.08, "inputRate": 65535, "outputRate": 65535 } } ] },
+           "checkpoints": { "wet": [ { "x": 0, "z": 0, "cs1Depth": 3.2 } ], "dry": [ … ], "totals": { "wet": 103264, "dry": 556776 } } }
+```
+
+- **`apply`** is exactly what `terrain/mapprep.mjs water` sends to MapPrep `water.set`. Set the sea level, clear the base map's sources, add these, then reset the water to the sea level.
+  - Order (terrain worker): `water.set { seaLevel, clear: true, sources }` in phase `tool` (the `cs1` field is ignored), then `water.reset { mode: "sea" }`.
+  - Without `apply`, `terrain/apply.mjs --sea-level auto` sets `terrain.seaLevelDry` and resets the water to it.
+  - `sources` = `convertWater()`: CS1 natural sources inside the playable area (50 m margin); `height` is the water height above the source's ground.
+  - Plus `regionSources()`: CS1 rivers and lakes above the sea that would otherwise stay dry. These are inflow sources at the playable edge and lake sources for enclosed water without a source; `cs1.kind` says which.
+  - Coordinates are plan coordinates, like the nodes.
+- **`checkpoints`:** up to 100 wet and 100 dry points of the CS1 depth grid inside the playable area (`depthCheckpoints()`), for an optional wet/dry check after the water has settled (`terrain/mapprep.mjs water-check`).
+
+### `outsideConnections`
+
+```json
+"outsideConnections": { "connections": [ { "node": 4711, "x": -1500, "z": 220.4, "type": "road", "info": "Highway", "cs1Segments": [123], "outward": [-1, 0] } ],
+                        "skipped": [], "counts": { "crossing": 155, "typed": 20, "connections": 20, "road": 13, "train": 7 } }
+```
+
+- Where a highway (CS1 class `Highway`) or a train track leaves the crop, the imported end node becomes a CS2 outside connection.
+- `x`, `z` is that plan node; `outward` points away from the crop; `type` is `road` or `train`.
+- Same as `terrain/lib/connections.mjs` `deriveConnections()` (without `allRoads`); MapPrep `oc.create` takes `{x, z, type}`.
+- **Order:** run `oc.create` after the road import, in phase `tool`. It looks for the imported node within 3 m of `x`, `z`; `node` is the plan node id, so the importer can also resolve the CS2 node from its node map, as it does for `traffic`.
 
 ### `transit` (M2)
 
@@ -493,7 +553,7 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   "cs1AngleConvention": { "facing": "-sin,cos", "agreement": 1, "buildingsWithRoad": 108 },
   "items": [ { "id": 422, "cs1Info": "Hospital", "type": "BuildingPrefab", "prefab": "Hospital01", "score": 0.93, "family": "hospital",
                "x": 1012.4, "z": -340.2, "front": [1020.1, -330.0], "facing": [0.6, 0.8], "lot": [23, 10], "cs1Lot": [4, 4],
-               "accessSegment": 1234, "alternatives": ["Hospital02"], "district": 3 } ],
+               "accessSegment": 1234, "alternatives": ["Hospital02"], "fallback": "nearby", "district": 3 } ],
   "stats": { "items": 108, "withRoad": 108, "withoutRoad": 0, "growablesInCrop": 7226,
              "skipped": { "outsideCrop": 4023, "subBuilding": 0, "growable": 7226, "skip": 372, "noEquivalent": 8, "roadNotImported": 4 } }
 }
@@ -517,7 +577,13 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   - `alternatives` are the next-best prefabs, tried in order when the first doesn't fit; empty when the user chose the prefab.
   - `district` is a `plan.districts.items[].cs1Id`.
   - `type` is always `BuildingPrefab`.
-- **Same shape as the buildings worker's standalone file:** the items match `buildings/lib/plan.mjs` `buildBuildingsPlan()` field for field (plus `type` and `district`); a web test checks this on the real Skibidi export. Its standalone `cs1conv-buildings.json` stays valid for its placer.
+  - `fallback` says what the placer does when the building doesn't fit at its CS1 spot, after slides and alternatives (`buildings/README.md` §5):
+    - `nearby`: free land along an imported road within the run's `nearbyRadius` (150 m), then `wideRadius` (400 m);
+    - `anywhere`: the same, then any free connectable spot along an imported road in the crop, closest to the CS1 spot first;
+    - `skip`: no free-land search.
+
+    The web tool writes it on every item. It defaults to `anywhere` for CS2 lots over 400 cells (more than 20 × 20: universities, power plants, incinerators, prisons, cargo terminals) and `nearby` otherwise. The user can change it per type in the Assets tab, or with the CLI's `--fallback` (all types) and `--fallback-by-type <map.json>`.
+- **Same shape as the buildings worker's standalone file:** the items match `buildings/lib/plan.mjs` `buildBuildingsPlan()` field for field (plus `type` and `district`; `fallback` as given in `fallbackByType`); a web test checks this on the real Skibidi export. Its standalone `cs1conv-buildings.json` stays valid for its placer.
 
 ### `districts` (M3)
 
@@ -547,6 +613,31 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   The names come from the CS2 policy list. `cityPolicies` maps the CS1 city-wide policies the same way. The importer applies each policy where CS2 allows it (district or city).
 - **Not converted, reported:** zone specialisations (Leisure, Tourist, Organic, Hightech, SelfSufficient, specialised industry), other policies, and park areas (parks, industry areas, campuses, airports).
 
+### `objects` and `surfaces` (M3)
+
+Both sections are built by `buildings/lib/objects.mjs` (`buildObjectsSection`, `buildSurfacesSection`), the same code the scripted flow uses for `cs1conv-objects.json` (`buildings/README.md` §6). The web tool calls it unchanged, so the rows are the same in both. The importer reads them from the plan, or from `cs1conv-objects.json` next to it.
+
+```json
+"objects": {
+  "generator": { "vegetation": "1.0.0" },
+  "prefabs": ["EuropeanSpruce01", "SpruceTree01", "GreenBushWild01"],
+  "items": [[0, -69.31, 422.1, 198.5, 0.34], [1, 416.38, -913.13, 125.6, 0.545]],
+  "stats": { "items": 12260, "skipped": { "outsideCrop": 180637, "noEquivalent": 0 },
+             "byType": { "Conifer": { "cs2": "SpruceTree01", "decision": "place", "reason": "same species (spruce), height 21.2 vs 21 m", "count": 5724 } } }
+},
+"surfaces": {
+  "items": [ { "cs1Node": 1147, "styleType": "FillerGravel", "type": "SurfacePrefab", "prefab": "Sand Surface 01",
+               "polygon": [[509.75, 1430.97], [515.58, 1432.4], …] } ],
+  "notConverted": { "FillerSolid rgba(136,136,136,224)": 31 },
+  "stats": { "items": 44 }
+}
+```
+
+- **`objects.items`:** `[prefabIndex, x, z, angleDegrees, age]` per free-standing CS1 tree or rock in the crop, in plan coordinates. `age` is CS2 `ObjectDefinition.m_Age` (0.3–0.55 = adult), deterministic per tree. Trees are matched by `buildings/match/vegetation.mjs`: same species when CS2 has it, else same kind and closest height, preferring the zoning theme (`EU_` / `NA_`). CS1 `Rock 0N` → CS2 `Boulder0N`; other props are counted in `byType` and `skipped.noEquivalent`, not placed.
+- **Catalogue:** matching trees needs the CS2 trees and boulders in the catalogue. The web tool's bundled slim catalogue has them. Without a catalogue, or with one that lists only buildings, `objects` is left out and the summary says why.
+- **`surfaces.items`:** IMT fills at junctions (`markingType: "Node"`) whose style has a CS2 surface: `FillerPavement` → `Pavement Surface 01`, `FillerGrass` → `Grass Surface 01`, `FillerGravel` → `Sand Surface 01`. `polygon` is the fill outline in plan coordinates. A fill is in the crop when its centroid is. Painted fills have no CS2 surface: they are counted in `notConverted` and reported (`imt-node-fill`).
+- Each section is present only when it has items. The CLI's `--no-objects` and `--no-surfaces` leave them out.
+
 ### `report.json` (package)
 
 ```json
@@ -559,6 +650,7 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   - IMT: `imt-override`, `imt-node-fill`, `imt-partial-fill`, `imt-paint`;
   - crop and source: `outside-crop`, `crossing-crop-edge`, `crop`, `source`;
   - M2: `zoning`, `water`, `transit`, `traffic`, `node-controller`;
-  - M3: `buildings`, `districts`.
+  - M3: `buildings`, `districts`, `objects`, `surfaces`;
+  - terrain and water: `outside-connections`.
 - **`count`:** how many CS1 objects an aggregated item stands for.
 - **`cs1`:** sample ids (`segment`, `segments`, `node`, `nodes`, `netInfo`, `filler`, `line`).

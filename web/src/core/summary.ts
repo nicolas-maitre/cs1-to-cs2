@@ -2,6 +2,7 @@
 // Also the .cs1x section check shown after opening a file.
 
 import type { BuiltPackage } from './plan.ts';
+import { terrainSummary } from './plan.ts';
 import type { Cs1City } from './types.ts';
 
 export type ConvStatus = 'converted' | 'partial' | 'report-only' | 'not-converted' | 'absent';
@@ -30,6 +31,8 @@ export const KNOWN_SECTIONS: { id: string; label: string; milestone: 'M1' | 'M2'
   { id: 'buildings', label: 'Buildings', milestone: 'M3' },
   { id: 'assets', label: 'Asset catalogue', milestone: 'M3' },
   { id: 'districts', label: 'Districts and park areas', milestone: 'M3' },
+  { id: 'trees', label: 'Trees', milestone: 'M3' },
+  { id: 'props', label: 'Props', milestone: 'M3' },
 ];
 
 export interface SectionCheck { id: string; label: string; status: string; messages: string[] }
@@ -77,10 +80,15 @@ export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategor
     details: ['Train, metro and tram tracks map to the matching CS2 double, two-way or one-way track.', 'Pedestrian paths become CS2 pavement paths; bike paths become CS2 bike paths.', 'Monorail has no CS2 equivalent and is skipped.'],
   });
   const nodeFills = count('imt-node-fill'), partial = count('imt-partial-fill'), paint = count('imt-paint'), ov = count('imt-override');
+  const surf = pkg.plan.surfaces?.stats.items ?? 0;
   out.push({
-    id: 'imt', label: 'IMT markings', status: city.imtFillers.length ? (ov ? 'partial' : 'report-only') : 'absent',
-    summary: city.imtFillers.length ? `${plural(ov, 'segment')} get bus lanes or medians from IMT fills; ${plural(nodeFills + partial + paint, 'fill')} are reported only` : 'no IMT data',
-    details: ['A red fill over a whole lane becomes a bus lane; a pavement or grass fill over a whole lane becomes a median.', 'Fills at junctions, partial fills and grey paint have no CS2 equivalent and are listed in the report.'],
+    id: 'imt', label: 'IMT markings', status: city.imtFillers.length ? (ov || surf ? 'partial' : 'report-only') : 'absent',
+    summary: city.imtFillers.length ? `${plural(ov, 'segment')} get bus lanes or medians from IMT fills; ${surf ? `${plural(surf, 'junction fill')} become CS2 surfaces; ` : ''}${plural(nodeFills + partial + paint, 'fill')} are reported only` : 'no IMT data',
+    details: [
+      'A red fill over a whole lane becomes a bus lane; a pavement or grass fill over a whole lane becomes a median.',
+      'Pavement, grass and gravel fills at junctions become CS2 surfaces (pavement, grass, sand).',
+      'Painted junction fills, partial fills and grey paint have no CS2 equivalent and are listed in the report.',
+    ],
   });
   const skippedBuilding = items.filter(i => i.kind === 'not-placeable' && /building/i.test(i.message)).reduce((t, i) => t + (i.count ?? 0), 0);
   const skippedOther = items.filter(i => i.kind === 'not-placeable' && !/building/i.test(i.message)).reduce((t, i) => t + (i.count ?? 0), 0);
@@ -91,8 +99,12 @@ export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategor
   });
   out.push({
     id: 'terrain', label: 'Terrain', status: city.terrain ? 'converted' : 'absent',
-    summary: city.terrain ? `heightmap ${city.terrain.resolution}² (${city.terrain.min?.toFixed(0) ?? '?'}–${city.terrain.max?.toFixed(0) ?? '?'} m), applied by the terrain step` : 'no terrain in this file: roads follow the CS2 map\'s ground',
-    details: city.terrain ? ['The crop of the CS1 heightmap replaces the CS2 map\'s terrain, so roads sit on the original ground.'] : [],
+    summary: city.terrain ? terrainSummary(pkg.plan) : 'no terrain in this file: roads follow the CS2 map\'s ground',
+    details: city.terrain ? [
+      'The crop of the CS1 heightmap (and the land around it, for the world map) replaces the CS2 map\'s terrain, at the same heights, so roads sit on the original ground.',
+      pkg.plan.water?.apply ? `The sea level is set to CS1's ${pkg.plan.water.apply.seaLevel?.toFixed(1)} m and ${pkg.plan.water.apply.sources.length} water source(s) refill rivers and lakes.` : 'Without water data the map is made dry (sea level below the lowest ground).',
+      ...(pkg.plan.outsideConnections ? [`${pkg.plan.outsideConnections.counts.connections} outside connection(s) where highways and railways leave the square.`] : []),
+    ] : [],
   });
   out.push(...(pkg.extraSummary ?? []));
   const bst = city.manifest.sections?.buildings;
@@ -103,7 +115,7 @@ export function conversionSummary(city: Cs1City, pkg: BuiltPackage): ConvCategor
   });
   // A section whose export failed is not "absent": say so.
   const secStatus = city.manifest.sections ?? {};
-  const sectionOf: Record<string, string> = { roads: 'network', tracks: 'network', imt: 'imt', terrain: 'terrain', zoning: 'zones', water: 'water', traffic: 'tmpe', nodecontroller: 'nodecontroller', transit: 'transit', buildings: 'buildings', districts: 'districts' };
+  const sectionOf: Record<string, string> = { roads: 'network', tracks: 'network', imt: 'imt', terrain: 'terrain', zoning: 'zones', water: 'water', traffic: 'tmpe', nodecontroller: 'nodecontroller', transit: 'transit', buildings: 'buildings', districts: 'districts', objects: 'trees' };
   for (const c of out) {
     const sec = sectionOf[c.id];
     if (sec && secStatus[sec] === 'failed' && c.status === 'absent') {

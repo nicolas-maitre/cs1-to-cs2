@@ -5,10 +5,11 @@ import { ReadError, readCityFile } from '../core/cs1x.ts';
 import type { MappingOverride } from '../core/mapping.ts';
 import { DEFAULT_ZONING } from '../core/m2/zoning.ts';
 import type { ZoningOptions } from '../core/m2/zoning.ts';
-import type { AssetOverrides, Cs2Catalogue } from '../core/m3/buildings.ts';
+import type { AssetOverrides, Cs2Catalogue, FallbackOverrides } from '../core/m3/buildings.ts';
 import { slimCatalogue } from '../core/m3/catalogue.ts';
 import { AssetsTable } from './AssetsTable.tsx';
 import { Help } from './Help.tsx';
+import { TerrainPreview } from './TerrainPreview.tsx';
 import { autoCrop, mappingStats, packageFiles } from '../core/plan.ts';
 import type { BuildOptions, BuiltPackage } from '../core/plan.ts';
 import { rbOnlyReadme } from '../core/readme.ts';
@@ -33,9 +34,9 @@ const STORE = 'cs1conv.ui.v1';
 
 interface Loaded extends Source { fileName: string; size: number }
 
-const DEFAULT_CONV: ConvOptions = { zoning: DEFAULT_ZONING, traffic: true, transit: true, water: true, buildings: true, districts: true };
+const DEFAULT_CONV: ConvOptions = { zoning: DEFAULT_ZONING, traffic: true, transit: true, water: true, buildings: true, districts: true, objects: true, surfaces: true };
 
-function loadPrefs(): { overrides?: Record<string, MappingOverride>; crops?: Record<string, Crop>; conv?: ConvOptions; assetOverrides?: AssetOverrides } {
+function loadPrefs(): { overrides?: Record<string, MappingOverride>; crops?: Record<string, Crop>; conv?: ConvOptions; assetOverrides?: AssetOverrides; assetFallbacks?: FallbackOverrides } {
   try { return JSON.parse(localStorage.getItem(STORE) ?? '{}'); } catch { return {}; }
 }
 function savePrefs(p: ReturnType<typeof loadPrefs>) {
@@ -69,6 +70,7 @@ export function App() {
   const [showBuildings, setShowBuildings] = useState(false);
   const [showDistricts, setShowDistricts] = useState(true);
   const [assetOverrides, setAssetOverrides] = useState<AssetOverrides>(() => loadPrefs().assetOverrides ?? {});
+  const [assetFallbacks, setAssetFallbacks] = useState<FallbackOverrides>(() => loadPrefs().assetFallbacks ?? {});
   const [catalogue, setCatalogue] = useState<Cs2Catalogue | null>(null);
   const [catalogueSource, setCatalogueSource] = useState<string | null>(null);
   const catalogueInput = useRef<HTMLInputElement>(null);
@@ -155,16 +157,17 @@ export function App() {
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
   const opts: BuildOptions | null = useMemo(() => (loaded ? {
     crop: committed, overrides, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
-    buildings: conv.buildings, districts: conv.districts, assetOverrides,
-  } : null), [loaded, committed, overrides, conv, assetOverrides]);
-  const { pkg, busy: building, ms, error: buildError } = usePackage(loaded, opts, catalogue);
+    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, assetOverrides, assetFallbacks,
+  } : null), [loaded, committed, overrides, conv, assetOverrides, assetFallbacks]);
+  const { pkg, busy: building, ms, error: buildError, zip: buildZip } = usePackage(loaded, opts, catalogue);
+  const [zipping, setZipping] = useState(false);
   const stats = useMemo(() => (pkg ? mappingStats(pkg.mapping) : null), [pkg]);
 
   useEffect(() => {
     if (!loaded || loaded.synthetic) return;
     const prefs = loadPrefs();
-    savePrefs({ ...prefs, overrides, conv, assetOverrides, crops: { ...prefs.crops, [loaded.city.sha256 ?? loaded.fileName]: committed } });
-  }, [loaded, overrides, committed, conv, assetOverrides]);
+    savePrefs({ ...prefs, overrides, conv, assetOverrides, assetFallbacks, crops: { ...prefs.crops, [loaded.city.sha256 ?? loaded.fileName]: committed } });
+  }, [loaded, overrides, committed, conv, assetOverrides, assetFallbacks]);
 
   const onCrop = useCallback((c: Crop, done: boolean) => {
     const cc = clampCrop(c, loaded?.city.manifest.mapSize);
@@ -187,18 +190,26 @@ export function App() {
 
   const baseName = (loaded?.city.manifest.city?.saveName ?? loaded?.fileName ?? 'city').replace(/[^\w.-]+/g, '_');
   const rbZipName = `${baseName}-roadbuilder.zip`;
-  const download = (what: 'package' | 'rb') => {
-    if (!pkg) return;
-    const files = what === 'package'
-      ? packageFiles(pkg).map(f => [f.path, strToU8(f.text)] as const)
-      : [...packageFiles(pkg).filter(f => f.path.startsWith('roadbuilder/')).map(f => [f.path.slice('roadbuilder/'.length), strToU8(f.text)] as const), ['README.txt', strToU8(rbOnlyReadme(pkg))] as const];
-    const zip = zipSync(Object.fromEntries(files));
+  const save = (zip: Uint8Array, name: string) => {
     const url = URL.createObjectURL(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = what === 'rb' ? rbZipName : `${baseName}-cs1conv-package.zip`;
+    a.download = name;
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  };
+  const download = async (what: 'package' | 'rb') => {
+    if (!pkg) return;
+    if (what === 'rb') {
+      const files = [...packageFiles(pkg).filter(f => f.path.startsWith('roadbuilder/')).map(f => [f.path.slice('roadbuilder/'.length), strToU8(f.text)] as const), ['README.txt', strToU8(rbOnlyReadme(pkg))] as const];
+      save(zipSync(Object.fromEntries(files)), rbZipName);
+      return;
+    }
+    // The full package (with the 4096² terrain) is built and zipped in the worker: a few seconds for a large crop.
+    setZipping(true);
+    try { save(await buildZip(), `${baseName}-cs1conv-package.zip`); }
+    catch (e) { setError({ title: 'Could not build the package', message: e instanceof Error ? e.message : String(e) }); }
+    finally { setZipping(false); }
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -287,8 +298,9 @@ export function App() {
                   </div>
                 </div>
                 <div className="downloads">
-                  <button className="primary" disabled={!!pkg.errors.length || !pkg.plan.segments.length} onClick={() => download('package')}>Download package (.zip)</button>
-                  <button disabled={!pkg.rbConfigs.length} onClick={() => download('rb')}>Road Builder configs only</button>
+                  <button className="primary" disabled={!!pkg.errors.length || !pkg.plan.segments.length || zipping} aria-busy={zipping} onClick={() => void download('package')}>{zipping ? <><span className="spinner small" aria-hidden="true" /> Building the package…</> : 'Download package (.zip)'}</button>
+                  <button disabled={!pkg.rbConfigs.length} onClick={() => void download('rb')}>Road Builder configs only</button>
+                  {zipping && <span className="muted small" role="status">Adding the terrain (two 4096² heightmaps) and compressing…</span>}
                   {pkg.errors.map(e => <span key={e} className="warn" role="alert">{e}</span>)}
                   {!pkg.plan.segments.length && !pkg.errors.length && <span className="warn">The crop holds no roads. Move it over the city or press Auto.</span>}
                 </div>
@@ -303,6 +315,8 @@ export function App() {
                     <div className="overview">
                       <h3>What converts</h3>
                       <ConversionPanel summary={pkg.summary} />
+                      <h3>Terrain of the crop</h3>
+                      <TerrainPreview city={loaded.city} crop={committed} seaLevel={pkg.plan.water?.apply?.seaLevel ?? pkg.plan.water?.seaLevel ?? null} />
                       <h3>Options</h3>
                       <ConversionOptions value={conv} onChange={setConv} city={loaded.city} />
                       <h3>Install</h3>
@@ -315,7 +329,9 @@ export function App() {
                   {tab === 'rb' && <RbList pkg={pkg} />}
                   {tab === 'assets' && <AssetsTable matches={pkg.assetMatches ?? []} overrides={assetOverrides} catalogue={catalogue} catalogueSource={catalogueSource} hasBuildings={!!loaded.city.buildings && !!loaded.city.assets}
                     onLoadCatalogue={() => catalogueInput.current?.click()}
-                    onOverride={(cs1, v) => setAssetOverrides(prev => { const n = { ...prev }; if (v) n[cs1] = v; else delete n[cs1]; return n; })} />}
+                    onOverride={(cs1, v) => setAssetOverrides(prev => { const n = { ...prev }; if (v) n[cs1] = v; else delete n[cs1]; return n; })}
+                    fallbacks={assetFallbacks}
+                    onFallback={(cs1, v) => setAssetFallbacks(prev => { const n = { ...prev }; if (v) n[cs1] = v; else delete n[cs1]; return n; })} />}
                   {tab === 'report' && <ReportPanel report={pkg.report} />}
                 </div>
               </>

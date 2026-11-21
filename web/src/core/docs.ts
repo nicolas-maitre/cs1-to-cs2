@@ -2,7 +2,7 @@
 // scripts/gen-docs.mjs (a test checks the files are up to date). Text uses `backticks` for code and
 // **double stars** for bold; nothing else.
 
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 
 export interface DocStep { title: string; body: string[] }
 export interface Faq { q: string; a: string[] }
@@ -75,14 +75,14 @@ export const GUIDE: DocStep[] = [
     body: [
       '**Overview** shows what converts per category, the options (zone theme, which parts to convert) and the install steps.',
       '**Mapping** lists every road type with its CS2 equivalent; you can pick another one. **Road types** shows the generated Road Builder roads and any width change.',
-      '**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type.',
+      '**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn\'t fit at its spot: look for free land nearby (up to 400 m), anywhere in the square, or leave it out. Very large buildings (universities, power plants, cargo terminals) look anywhere by default.',
       '**Report** lists everything that is approximated or dropped.',
     ],
   },
   {
     title: 'Download and install the package',
     body: [
-      'Press **Download package (.zip)** and unzip it. It contains `cs1conv-plan.json`, `report.json`, the `roadbuilder` folder and a `README.txt`.',
+      'Press **Download package (.zip)** and unzip it. It contains `cs1conv-plan.json`, `report.json`, the `roadbuilder` and `terrain` folders and a `README.txt`. Building it takes a few seconds (the terrain is two 4096 × 4096 heightmaps).',
       'With CS2 closed, copy the files from `roadbuilder` into `%USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\ModsData\\RoadBuilder\\`. Road Builder only reads its roads when the game starts. (The importer mod can also do this for you, then asks you to restart.)',
     ],
   },
@@ -104,10 +104,12 @@ export const FAQ: Faq[] = [
   { q: 'A section of my export failed.', a: ['The rest converts normally. Export again; if it keeps failing, the exporter\'s message is in the web tool under Overview → File check.'] },
   { q: 'CS2 says a road type is missing.', a: ['Road Builder roads must be copied to ModsData\\RoadBuilder **before** CS2 starts. Copy them (or press Install in the importer), then restart CS2.'] },
   { q: 'Why weren\'t all my buildings placed?', a: ['Zoned (growable) buildings are not placed: CS2 grows its own on the converted zones. Pillars, pipe junctions and poles are rebuilt by CS2. A few CS1 building types have no CS2 equivalent (libraries, taxi stands, cable car stops), and buildings on roads outside the square are left out. The Assets tab shows each type.'] },
+  { q: 'Why did a building end up somewhere else?', a: ['CS2 buildings often need more room than their CS1 counterparts. When one doesn\'t fit at its CS1 spot, the importer tries the next-best CS2 buildings, then free land along an imported road nearby (up to 400 m). Very large buildings may go anywhere in the square. In the Assets tab you can change this per type, or leave the building out instead.'] },
   { q: 'Do I need the Traffic mod?', a: ['Only for TM:PE priority signs, lane arrows and lane connections. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.'] },
   { q: 'What happens to timed traffic lights and Node Controller tweaks?', a: ['CS2 runs its own light phases and builds junctions itself. Timed lights become plain traffic lights; Node Controller settings are listed in the report.'] },
   { q: 'European or North American buildings?', a: ['Choose the zone theme under Overview → Options. It sets which CS2 residential and commercial zones the converted zones use.'] },
   { q: 'Does the exporter change my CS1 save?', a: ['No. It only reads the loaded city and writes the `.cs1x` file.'] },
+  { q: 'Why is the package so large?', a: ['Most of it is the terrain: two 4096 × 4096 heightmaps, the size CS2 uses, 64 MB unpacked and about 22 MB in the zip. Everything the CS2 mod needs is in the package, so nothing else has to run on your computer.'] },
   { q: 'Is my big city too large for the web tool?', a: ['The map and the package builder are made for large cities: a 60 000-segment test city stays smooth, and the package is built in the background.'] },
 ];
 
@@ -119,9 +121,11 @@ export const MATRIX: MatrixRow[] = [
   { area: 'Rail and paths', cs1: 'Pedestrian and bike paths', cs2: 'Pavement paths, bike paths', status: 'yes', notes: '' },
   { area: 'Rail and paths', cs1: 'Monorail, cable car', cs2: '–', status: 'no', notes: 'CS2 has neither.' },
   { area: 'IMT', cs1: 'Red paint over a whole lane / pavement or grass island over a whole lane', cs2: 'Bus lane / median in the Road Builder road', status: 'yes', notes: 'Partial fills and grey paint are reported.' },
-  { area: 'IMT', cs1: 'Markings at junctions', cs2: '–', status: 'report', notes: 'No CS2 equivalent yet (decals are planned).' },
-  { area: 'Terrain and water', cs1: 'Terrain heightmap', cs2: 'CS2 terrain (same heights)', status: 'yes', notes: 'Applied by the terrain step before the roads.' },
-  { area: 'Terrain and water', cs1: 'Sea level, rivers and lakes (natural water sources)', cs2: 'CS2 sea level and water sources', status: 'approx', notes: 'CS2 re-simulates the water; pumps and drains come with buildings.' },
+  { area: 'IMT', cs1: 'Pavement, grass and gravel fills at junctions', cs2: 'CS2 surfaces (pavement, grass, sand)', status: 'pending', notes: '' },
+  { area: 'IMT', cs1: 'Painted markings at junctions', cs2: '–', status: 'report', notes: 'No CS2 equivalent yet (decals are planned).' },
+  { area: 'Terrain and water', cs1: 'Terrain heightmap (and the land around the square)', cs2: 'CS2 terrain at the same heights, plus the world map around it', status: 'yes', notes: 'In the package (terrain folder); applied before the roads.' },
+  { area: 'Terrain and water', cs1: 'Sea level, rivers and lakes (natural water sources)', cs2: 'CS2 sea level and water sources', status: 'approx', notes: 'CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled. Pumps and drains come with buildings.' },
+  { area: 'Terrain and water', cs1: 'Highways and railways leaving the square', cs2: 'CS2 outside connections', status: 'yes', notes: 'So traffic and trains can enter and leave the city.' },
   { area: 'Zoning', cs1: 'Residential, commercial, industrial and office zones', cs2: 'CS2 zones (EU or NA theme)', status: 'pending', notes: 'District specialisations become generic zones.' },
   { area: 'Traffic (TM:PE)', cs1: 'Speed limits, bus-only lanes', cs2: 'Road Builder variants with that speed / bus lane', status: 'yes', notes: 'CS2 has one speed per road.' },
   { area: 'Traffic (TM:PE)', cs1: 'Traffic lights, all-stop junctions, turn restrictions from lane arrows, crosswalks', cs2: 'Vanilla CS2 junction settings', status: 'pending', notes: '' },
@@ -136,7 +140,8 @@ export const MATRIX: MatrixRow[] = [
   { area: 'Districts', cs1: 'District names and outlines; policies', cs2: 'CS2 districts and policies', status: 'pending', notes: 'Policies with a CS2 equivalent (heavy traffic ban, recycling, …); zone specialisations are reported.' },
   { area: 'Districts', cs1: 'Parks, industry areas, campuses, airports', cs2: '–', status: 'report', notes: 'Their buildings are placed as single buildings.' },
   { area: 'Other', cs1: 'Pipes, power lines', cs2: 'Built by CS2 along roads', status: 'no', notes: 'CS2 lays water and electricity with the roads.' },
-  { area: 'Other', cs1: 'Free-standing props and trees', cs2: '–', status: 'no', notes: 'Exported; conversion is planned.' },
+  { area: 'Other', cs1: 'Free-standing trees and rocks', cs2: 'CS2 trees (same species, or same kind and closest height) and boulders', status: 'pending', notes: 'Trees on roads or inside building lots are left out.' },
+  { area: 'Other', cs1: 'Other free-standing props (benches, lamps, decorations)', cs2: '–', status: 'no', notes: 'No sensible CS2 equivalent; counted in the report.' },
 ];
 
 // ---------------------------------------------------------------- markdown rendering (docs/guide)

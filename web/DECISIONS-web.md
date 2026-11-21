@@ -270,3 +270,61 @@ Taken by Claude while the user was away. Review them.
 - When the CS2 game updates, refresh the bundled catalogue: `node buildings/run.mjs catalogue`, then `npm run slim-catalogue`.
 - A CS1 policy name is mapped only when it matches exactly. Names I couldn't check against a real export (no district in Skibidi) may simply go to the report.
 - Free-standing props and trees are exported but not converted.
+
+## Self-contained package: terrain, water, outside connections (2026-11-21, overnight)
+
+Taken by Claude while the user was away. Review them.
+
+43. **The terrain converter, water and outside-connection code are ported, not reimplemented.**
+    - `src/core/terrain/{heightmap,water,connections}.ts` are line-by-line TypeScript ports of `terrain/lib/heightmap.mjs`, `water.mjs` and `connections.mjs`: same arithmetic in the same order, the same float32 CS1 heights, the same defaults.
+    - Tests compare the output with the terrain worker's own code:
+      - **Synthetic terrain:** `terrain/convert.mjs` is run as a child process. Its `heightmap.r16` and `worldmap.r16` are byte-identical to ours, and the metadata is equal.
+      - **Skibidi:** the same checks, plus `water.set` sources, depth checkpoints and outside connections compared with `convertWater` + `regionSources`, `depthCheckpoints` and `deriveConnections`.
+    - The terrain worker keeps owning the algorithms. If they change, the tests show the divergence.
+
+44. **Package layout:**
+    - Files: `terrain/heightmap.r16`, `terrain/worldmap.r16` and `terrain/terrain.json` (= `terrain-cs2.json`, without `createdAt` and the PNG fields; `source.file` names the save and the .cs1x hash).
+    - Plan: `terrain` (a pointer, with `seaLevelDry` = apply.mjs's "auto" sea level), `water.apply` (the exact `water.set` args), `water.checkpoints` and `outsideConnections`.
+    - Proposed to workers 3 and 4 by message (no change requested at the time of writing), and documented in schema §2.
+    - The PNG is not included: the mod uses the r16, and the PNG is only for the map editor's manual import.
+
+45. **The heightmaps are computed only when the package is written.** That's `completePackage()`, called by the CLI and the download, never on a crop change. Two 4096² passes take about 1.3 s.
+    - The cheap parts are computed in `buildPackage`: water sources, region sources, checkpoints (one pass over 1081²) and connections.
+    - The UI zips in the Web Worker: Skibidi takes 3.6 s for 21.8 MB. While it ran, there were no long tasks and the main thread never went more than 30 ms without answering.
+
+46. **The zip stores plain r16, deflated at level 6** (64 MB → about 21 MB). Splitting the high and low bytes would give 12.5 MB, but the mod would then need an un-split step; we keep the agreed byte-identical r16 files.
+
+47. **UI:**
+    - A "Terrain of the crop" preview in Overview: a hillshade of the square, north up, with CS1 water in blue (depth grid, else below the sea level), and the ground range and sea level as text.
+    - The Terrain line of "What converts" now says the heightmap is in the package and gives the sea level (CS1's, or the dry level).
+    - The download button shows progress while the worker builds the zip.
+
+48. **Layout fix found while checking:** `.work` was a flex item with `flex: 1 1 0%` in a container that has only a `min-height`, so a tall right panel (with the new preview) stretched the map to 2,494 px. Now it's `flex: none` with an explicit height, and the grid row is `minmax(0, 1fr)`.
+
+49. **Version 0.4.0.** The docs gain a terrain/world-map row, an outside-connections row, and an FAQ entry on the package size.
+
+## Trees, rocks and IMT junction surfaces
+
+Asked by the buildings worker (through the exporter session) so the CS2 mod's Import button can place them from a web package.
+
+50. **`plan.objects` and `plan.surfaces` come from `buildings/lib/objects.mjs`, called unchanged** (`buildObjectsSection`, `buildSurfacesSection`), the same way the web tool already uses `match.mjs`. The rows are then identical to the scripted flow's `cs1conv-objects.json`, and the mod has one format to read. The adapter `src/core/m3/objects.ts` only adds report lines and the "What converts" entry. Tests compare the plan with direct calls, on a fixture and on Skibidi.
+
+51. **In the plan, not in a separate `cs1conv-objects.json`.** Cacao's 3 km crop adds 12,260 tree rows: about 0.4 MB of compact JSON, small next to the terrain. One file is simpler for the mod and for the user.
+
+52. **The bundled slim catalogue now also carries the CS2 trees and boulders** (28 objects, 98 → 101 kB): name, kind, uiGroup, height and a TreeObject marker, all that `vegetation.mjs` reads. Building matching is unchanged, because `match.mjs` only looks at placeable buildings. A test checks that the slim catalogue gives the same objects section as the full one on Skibidi. A catalogue that lists only buildings (an old slim one loaded in the Assets tab) leaves `objects` out, and "What converts" says the catalogue has no trees.
+
+53. **Sections only when they have items.** `objects` needs a catalogue; without one, "What converts" says the trees wait for it. A converted junction fill is no longer reported as "no CS2 equivalent"; the IMT line of "What converts" counts the surfaces. Options: "Trees and rocks" and "IMT junction surfaces" in the UI, `--no-objects` / `--no-surfaces` in the CLI.
+
+54. **The reader exposes `trees` and `props`** (trees.json / props.json, schema §1) under the names `objects.mjs` expects.
+
+## Placement fallback per building type
+
+Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.items[].fallback` = `nearby` | `anywhere` | `skip`.
+
+55. **The web tool writes `fallback` on every item**, not only when the user chose one. The plan then says what will happen, and the mod's own run default no longer matters for web packages. `buildings/lib/plan.mjs` gives the same items when called with the same `fallbackByType` (tested on the fixture and on Skibidi).
+
+56. **Default: `anywhere` for CS2 lots over 400 cells, else `nearby`.** The suggestion was "lot bigger than 6 × 6". On the real cities, that sent 84 of 108 Skibidi buildings, 33 of 43 Cacao and 172 of 204 Rennmont "anywhere": a clinic is 11 × 6 and a police station 12 × 7. Moving those across the crop is worse than a 400 m search. With more than 400 cells (bigger than 20 × 20, about 160 m square), the default picks exactly the huge ones: University (40 × 28), incinerator, prison, coal, gas and solar plants, cargo train terminal (10, 7 and 15 buildings in those three crops). Harbours and airports are bigger still. Big parks (CityPark11 is 12 × 12) stay `nearby`; the user can change them.
+
+57. **UI:** a second select per placed type in the Assets tab, "If it doesn't fit at its spot: Auto (…) / look nearby (≤ 400 m) / anywhere in the crop / don't place it". Choices are saved with the other preferences, and "Reset choices" clears them too. **CLI:** `--fallback nearby|anywhere|skip` for all types, `--fallback-by-type <map.json>` per type. Unknown values fall back to the default.
+
+58. **Trees:** the objects op now moves a tree off a CS2 road (its `roadsideMove`) instead of dropping it. That's an importer option, so the plan doesn't change; only the "What converts" text says so.

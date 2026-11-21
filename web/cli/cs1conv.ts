@@ -16,11 +16,11 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readCityFile } from '../src/core/cs1x.ts';
 import { validateCrop } from '../src/core/crop.ts';
-import { autoCrop, buildPackage, mappingStats, packageFiles } from '../src/core/plan.ts';
+import { autoCrop, buildPackage, completePackage, mappingStats, packageFiles } from '../src/core/plan.ts';
 import type { MappingOverride } from '../src/core/mapping.ts';
 import { DEFAULT_ZONING } from '../src/core/m2/zoning.ts';
 import type { ZoningOptions } from '../src/core/m2/zoning.ts';
-import type { Cs2Catalogue } from '../src/core/m3/buildings.ts';
+import type { Cs2Catalogue, PlacementFallback } from '../src/core/m3/buildings.ts';
 import type { Crop, Cs1City } from '../src/core/types.ts';
 
 const RB_SUFFIX = '-cs1conv.json';
@@ -31,7 +31,8 @@ function usage(msg?: string): never {
   node web/cli/cs1conv.ts inspect <file.cs1x|dump.json> [--json]
   node web/cli/cs1conv.ts plan <file> (--crop <cx>,<cz>,<size> | --auto-crop <size>) --out <dir> [--overrides <map.json>] [--install-rb] [--keep-other-rb]
        [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low] [--no-zoning] [--no-traffic] [--no-transit] [--no-water]
-       [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--no-buildings] [--no-districts]
+       [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>]
+       [--no-buildings] [--no-districts] [--no-objects] [--no-surfaces] [--no-terrain] [--no-world]
   node web/cli/cs1conv.ts install-rb <package dir> [--keep-other-rb]`);
   process.exit(2);
 }
@@ -43,7 +44,7 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts'];
+      const boolFlags = ['json', 'install-rb', 'keep-other-rb', 'help', 'no-zoning', 'no-traffic', 'no-transit', 'no-water', 'no-buildings', 'no-districts', 'no-objects', 'no-surfaces', 'no-terrain', 'no-world'];
       if (boolFlags.includes(name)) flags[name] = true;
       else { const v = argv[++i]; if (v == null) usage(`--${name} needs a value`); flags[name] = v; }
     } else pos.push(a);
@@ -164,12 +165,16 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
   if (!['High', 'Medium', 'Mixed'].includes(resHigh)) usage('--residential-high must be High, Medium or Mixed');
   const office = typeof flags.office === 'string' ? flags.office : DEFAULT_ZONING.office;
   if (!['High', 'Low'].includes(office)) usage('--office must be High or Low');
+  const fallback = typeof flags.fallback === 'string' ? flags.fallback : undefined;
+  if (fallback && !['nearby', 'anywhere', 'skip'].includes(fallback)) usage('--fallback must be nearby, anywhere or skip');
   const pkg = buildPackage(city, {
     crop, overrides,
     zoning: { enabled: !flags['no-zoning'], theme, residentialHigh: resHigh as ZoningOptions['residentialHigh'], office: office as ZoningOptions['office'] },
     traffic: !flags['no-traffic'], transit: !flags['no-transit'], water: !flags['no-water'],
-    buildings: !flags['no-buildings'], districts: !flags['no-districts'], catalogue: loadCatalogue(flags),
+    buildings: !flags['no-buildings'], districts: !flags['no-districts'], objects: !flags['no-objects'], surfaces: !flags['no-surfaces'], catalogue: loadCatalogue(flags),
     assetOverrides: typeof flags['asset-overrides'] === 'string' ? JSON.parse(fs.readFileSync(flags['asset-overrides'], 'utf8')) : undefined,
+    assetFallback: fallback as PlacementFallback | undefined,
+    assetFallbacks: typeof flags['fallback-by-type'] === 'string' ? JSON.parse(fs.readFileSync(flags['fallback-by-type'], 'utf8')) : undefined,
   });
   if (pkg.errors.length) usage(pkg.errors.join('; '));
 
@@ -177,10 +182,13 @@ async function cmdPlan(file: string, flags: Record<string, string | true>) {
   fs.mkdirSync(out, { recursive: true });
   const rbDir = path.join(out, 'roadbuilder');
   if (fs.existsSync(rbDir)) for (const f of fs.readdirSync(rbDir)) if (f.endsWith(RB_SUFFIX)) fs.rmSync(path.join(rbDir, f));
-  for (const f of packageFiles(pkg)) {
+  const t0 = performance.now();
+  const binaries = completePackage(city, pkg, { terrain: !flags['no-terrain'], world: !flags['no-world'] });
+  if (binaries.length) console.log(`terrain: ${binaries.map(b => `${b.path} (${(b.data.length / 1048576).toFixed(1)} MB)`).join(', ')} in ${Math.round(performance.now() - t0)} ms`);
+  for (const f of [...packageFiles(pkg).map(f => ({ path: f.path, data: f.text as string | Uint8Array })), ...binaries]) {
     const p = path.join(out, f.path);
     fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, f.text);
+    fs.writeFileSync(p, f.data);
   }
   const s = pkg.plan.stats;
   const ms = mappingStats(pkg.mapping);

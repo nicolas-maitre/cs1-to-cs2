@@ -4,7 +4,7 @@
 
 import { unzipSync, strFromU8 } from 'fflate';
 import { sha256Hex } from './hash.ts';
-import type { AssetsSection, BuildingsSection, Cs1City, Cs1Node, Cs1ReportItem, Cs1Segment, DistrictsSection, ImtFiller, Manifest, NetInfo, NodeControllerSection, Terrain, TmpeSection, TransitSection, WaterSection, ZonesSection } from './types.ts';
+import type { AssetsSection, BuildingsSection, Cs1City, Cs1Node, Cs1ReportItem, Cs1Segment, DistrictsSection, ImtFiller, Manifest, NetInfo, NodeControllerSection, PropsSection, Terrain, TmpeSection, TransitSection, TreesSection, WaterSection, ZonesSection } from './types.ts';
 
 const VARIANT_FIELDS: Record<string, string> = {
   elevated: 'm_elevatedInfo', bridge: 'm_bridgeInfo', slope: 'm_slopeInfo', tunnel: 'm_tunnelInfo',
@@ -132,11 +132,13 @@ export function readCs1x(bytes: Uint8Array): Cs1City {
     districts.districtGrid = u8(districts.grid.districtFile ?? 'districts.u8');
     if (districts.parks.length) districts.parkGrid = u8(districts.grid.parkFile ?? 'parks.u8');
   }
+  const props = section('props', 'props.json', (j: PropsSection) => (Array.isArray(j.props) && Array.isArray(j.infos) ? j : null), null as PropsSection | null);
+  const trees = section('trees', 'trees.json', (j: TreesSection) => (Array.isArray(j.trees) && Array.isArray(j.infos) ? j : null), null as TreesSection | null);
   for (const [k, v] of Object.entries(tmpe?.parts ?? {})) if (v !== 'ok') report.push({ level: 'warning', section: 'tmpe', message: `TM:PE part ${k}: ${v}` });
   completeVariants(netInfos);
   return {
     source: 'cs1x', manifest, nodes: network.nodes ?? [], segments: network.segments ?? [],
-    netInfos, imtFillers, terrain, zones, water, transit, tmpe, nodeController, buildings, assets, districts, report, sha256: null,
+    netInfos, imtFillers, terrain, zones, water, transit, tmpe, nodeController, buildings, assets, districts, props, trees, report, sha256: null,
   };
 }
 

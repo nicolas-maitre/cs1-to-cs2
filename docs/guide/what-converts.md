@@ -26,14 +26,16 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
 | Red paint over a whole lane / pavement or grass island over a whole lane | Bus lane / median in the Road Builder road | converts | Partial fills and grey paint are reported. |
-| Markings at junctions | – | listed in the report only | No CS2 equivalent yet (decals are planned). |
+| Pavement, grass and gravel fills at junctions | CS2 surfaces (pavement, grass, sand) | in the package; CS2 side in progress |   |
+| Painted markings at junctions | – | listed in the report only | No CS2 equivalent yet (decals are planned). |
 
 ## Terrain and water
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Terrain heightmap | CS2 terrain (same heights) | converts | Applied by the terrain step before the roads. |
-| Sea level, rivers and lakes (natural water sources) | CS2 sea level and water sources | converts, approximated | CS2 re-simulates the water; pumps and drains come with buildings. |
+| Terrain heightmap (and the land around the square) | CS2 terrain at the same heights, plus the world map around it | converts | In the package (terrain folder); applied before the roads. |
+| Sea level, rivers and lakes (natural water sources) | CS2 sea level and water sources | converts, approximated | CS2 re-simulates the water; extra sources keep rivers and lakes above the sea filled. Pumps and drains come with buildings. |
+| Highways and railways leaving the square | CS2 outside connections | converts | So traffic and trains can enter and leave the city. |
 
 ## Zoning
 
@@ -83,4 +85,5 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
 | Pipes, power lines | Built by CS2 along roads | not converted | CS2 lays water and electricity with the roads. |
-| Free-standing props and trees | – | not converted | Exported; conversion is planned. |
+| Free-standing trees and rocks | CS2 trees (same species, or same kind and closest height) and boulders | in the package; CS2 side in progress | Trees on roads or inside building lots are left out. |
+| Other free-standing props (benches, lamps, decorations) | – | not converted | No sensible CS2 equivalent; counted in the report. |

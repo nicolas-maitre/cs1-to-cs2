@@ -41,17 +41,42 @@ export interface AssetMatch {
   alternatives: { prefab: string; score: number }[];
   /** what the user picked for this type, if anything */
   override?: string;
+  /** what the placer does when the building does not fit at its CS1 spot (plan item `fallback`) */
+  fallback: PlacementFallback;
+  /** the fallback without the user's choice (defaultFallback) */
+  fallbackAuto: PlacementFallback;
+  /** the user's fallback for this type, if any */
+  fallbackOverride?: PlacementFallback;
 }
 
 /** Per CS1 building type: a CS2 prefab name, or "skip". */
 export type AssetOverrides = Record<string, string>;
+
+/**
+ * When a building does not fit at its CS1 spot (after slides and alternatives), the CS2 placer (buildings/, Cs2Buildings):
+ * - nearby: looks for free land along an imported road within 150 m, then within 400 m;
+ * - anywhere: the same, then any free spot along an imported road in the crop, closest first;
+ * - skip: gives up.
+ */
+export type PlacementFallback = 'nearby' | 'anywhere' | 'skip';
+export const PLACEMENT_FALLBACKS: PlacementFallback[] = ['nearby', 'anywhere', 'skip'];
+/** Per CS1 building type: the user's fallback. */
+export type FallbackOverrides = Record<string, PlacementFallback>;
+
+/**
+ * CS2 lots over this many cells (more than 20 × 20 cells, about 160 m square) rarely find free land near home: universities,
+ * power plants, incinerators, prisons, cargo terminals, harbours, airports. Most CS2 service lots are bigger than 6 × 6
+ * (a clinic is 11 × 6), so a side-length rule would send most buildings "anywhere".
+ */
+export const BIG_LOT_AREA = 400;
+export const defaultFallback = (lot: number[] | null | undefined): PlacementFallback => (lot && lot[0] * lot[1] > BIG_LOT_AREA ? 'anywhere' : 'nearby');
 
 const THEME_NAME: Record<string, string> = { EU: 'European', NA: 'North American' };
 
 const cleanTitle = (a: Cs1Asset) => (a.title && !/^BUILDING_TITLE\[/.test(a.title) ? a.title : a.name.replace(/^\d+\./, '').replace(/_Data$/, ''));
 
 /** Matches every CS1 building type, then applies the user's overrides. */
-export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opts: { theme?: string; overrides?: AssetOverrides } = {}): AssetMatch[] {
+export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opts: { theme?: string; overrides?: AssetOverrides; fallbacks?: FallbackOverrides; fallback?: PlacementFallback } = {}): AssetMatch[] {
   const m = matchAssets({ buildings: assets }, catalogue, { theme: THEME_NAME[opts.theme ?? ''] ?? opts.theme, alternatives: 6 });
   const byName = new Map(catalogue.prefabs.map(p => [p.name, p]));
   const assetByName = new Map(assets.map(a => [a.name, a]));
@@ -63,6 +88,7 @@ export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opt
       decision, prefab: ((r.prefab ?? r.cs2) as string | null) ?? null, lot: ((r.lot ?? r.cs2Lot) as number[] | null) ?? null,
       score: decision === 'place' ? (r.score as number) : null, reason: r.reason as string, family: (r.family as string | null) ?? null,
       alternatives: ((r.alternatives as { prefab?: string; cs2?: string; score: number }[] | undefined) ?? []).map(x => ({ prefab: (x.prefab ?? x.cs2)!, score: x.score })),
+      fallback: 'nearby', fallbackAuto: 'nearby',
     };
     const o = opts.overrides?.[out.cs1];
     if (o === 'skip') Object.assign(out, { decision: 'skip', prefab: null, lot: null, score: null, reason: 'skipped by you', override: o });
@@ -70,6 +96,10 @@ export function matchAssetTypes(assets: Cs1Asset[], catalogue: Cs2Catalogue, opt
       const p = byName.get(o);
       if (p) Object.assign(out, { decision: 'place', prefab: p.name, lot: p.lot ?? null, score: null, reason: 'chosen by you', override: o });
     }
+    out.fallbackAuto = opts.fallback ?? defaultFallback(out.lot);
+    const f = opts.fallbacks?.[out.cs1];
+    out.fallback = f && PLACEMENT_FALLBACKS.includes(f) ? f : out.fallbackAuto;
+    if (f && PLACEMENT_FALLBACKS.includes(f)) out.fallbackOverride = f;
     return out;
   });
 }
@@ -87,6 +117,10 @@ export interface BuildingsOptions {
   catalogue: Cs2Catalogue | null;
   overrides?: AssetOverrides;
   theme?: string;
+  /** per-type placement fallback chosen by the user */
+  fallbacks?: FallbackOverrides;
+  /** fallback for every type without its own (default: defaultFallback by lot size) */
+  fallback?: PlacementFallback;
 }
 
 export interface BuildingsResult extends SectionResult<PlanBuildings> { matches: AssetMatch[] }
@@ -107,7 +141,7 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
     ]);
   }
 
-  const matches = matchAssetTypes(assets.buildings, o.catalogue, { theme: o.theme, overrides: o.overrides });
+  const matches = matchAssetTypes(assets.buildings, o.catalogue, { theme: o.theme, overrides: o.overrides, fallbacks: o.fallbacks, fallback: o.fallback });
   const byName = new Map(matches.map(m => [m.cs1, m]));
   const skipped = { outsideCrop: 0, subBuilding: 0, growable: 0, skip: 0, noEquivalent: 0, roadNotImported: 0 };
   const out: PlanBuildingItem[] = [];
@@ -129,6 +163,7 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
       accessSegment: b.accessSegment || 0, front: null, facing: null,
       // tried in order by the placer when the best one does not fit; none when the user chose the prefab
       alternatives: m.override ? [] : m.alternatives.map(a => a.prefab),
+      fallback: m.fallback,
       ...(b.district ? { district: b.district } : {}),
     };
     const seg = b.accessSegment ? ctx.segments.get(b.accessSegment) : undefined;
@@ -165,6 +200,9 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
     items.push({ level: d === 'noEquivalent' ? 'warning' : 'info', kind: 'buildings', message: `${m?.title ?? info}: ${plural(n, 'building')} not placed – ${m?.reason ?? 'not in assets.json'}`, count: n, cs1: { asset: info } });
   }
   if (skipped.roadNotImported) items.push({ level: 'warning', kind: 'buildings', message: `${plural(skipped.roadNotImported, 'building')} not placed because their access road is not in the plan (crop edge or a skipped road type): ${[...noRoad].slice(0, 8).map(([k, v]) => `${byName.get(k)?.title ?? k} ${v}`).join(', ')}`, count: skipped.roadNotImported });
+  const byFallback = { nearby: 0, anywhere: 0, skip: 0 };
+  for (const it of out) byFallback[it.fallback ?? 'nearby']++;
+  if (byFallback.anywhere || byFallback.skip) items.push({ level: 'info', kind: 'buildings', message: `If a building does not fit at its CS1 spot: ${byFallback.nearby} look for free land within 400 m, ${byFallback.anywhere} anywhere along the imported roads in the crop, ${byFallback.skip} are not placed` });
   if (chosen.length) items.push({ level: 'info', kind: 'buildings', message: `${plural(chosen.length, 'building type')} mapped by you: ${chosen.map(m => `${m.title} → ${m.override}`).join(', ')}` });
 
   const noEq = matches.filter(m => m.decision === 'noEquivalent' && m.countInCrop).reduce((t, m) => t + m.countInCrop, 0);
@@ -184,6 +222,7 @@ export function buildBuildings(ctx: PlanContext, o: BuildingsOptions): Buildings
       details: [
         'Service buildings, stations, parks and landmarks get the closest CS2 building: same kind of service, then capacity and lot size. Check and change each type in the Assets tab.',
         'Growable (zoned) buildings are not placed: CS2 grows its own on the converted zones.',
+        `A building that does not fit at its CS1 spot tries its alternatives, then free land along an imported road within 400 m${byFallback.anywhere ? `; ${plural(byFallback.anywhere, 'large building')} (harbours, airports, big parks) may go anywhere in the crop` : ''}. Change this per type in the Assets tab.`,
         ...(noEq ? [`${plural(noEq, 'building')} have no CS2 equivalent (e.g. libraries).`] : []),
         ...(skipped.roadNotImported ? [`${plural(skipped.roadNotImported, 'building')} stand on roads that are not in the plan.`] : []),
         'Pillars, pipe junctions, poles and sub-buildings are rebuilt by CS2 itself.',

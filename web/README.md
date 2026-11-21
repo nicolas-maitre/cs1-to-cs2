@@ -3,7 +3,7 @@
 Reads a `.cs1x` export of a Cities: Skylines city (or the M0 network dump). You pick a crop square, and the tool:
 - maps every CS1 NetInfo to a CS2 prefab or a generated Road Builder road;
 - matches CS1 buildings to CS2 buildings;
-- converts zoning, TM:PE rules, transit lines, water and districts;
+- converts zoning, TM:PE rules, transit lines, water, districts, trees and rocks, and IMT junction surfaces;
 - writes the import package (`schema/README.md` §2).
 
 The same TypeScript core runs in the browser and as a Node CLI. Everything runs client-side: nothing is uploaded. The user guide lives in [`docs/guide/`](../docs/guide/user-guide.md) and in the app's Help page, both generated from `src/core/docs.ts`.
@@ -17,7 +17,11 @@ src/core/          pure TS, no DOM (Node ≥ 24 runs it directly through type st
   crop.ts            crop square, CS2 limits, auto crop
   plan.ts            buildPackage(): plan + roadbuilder/*.json + report.json + README.txt
   m2/                zoning, water, transit, traffic (TM:PE), nodecontroller → plan sections
-  m3/                buildings (adapter over buildings/match/match.mjs), districts, slim CS2 catalogue
+  m3/                buildings (adapter over buildings/match/match.mjs), districts, slim CS2 catalogue,
+                     objects (trees, rocks and IMT junction surfaces from buildings/lib/objects.mjs)
+  terrain/           port of terrain/convert.mjs + lib/water.mjs + lib/connections.mjs: heightmap 4096², world map,
+                     water.set sources, outside connections (byte-identical to the Node scripts, tested)
+  zip.ts             the downloadable package zip (deflated terrain), built in the Web Worker
   summary.ts         what converts per category; .cs1x section check
   docs.ts            user guide, FAQ, conversion matrix, privacy text (app Help + docs/guide)
   readme.ts          the package README.txt
@@ -52,7 +56,8 @@ CLI (from the repo root):
 node web/cli/cs1conv.ts inspect <file.cs1x> [--json]
 node web/cli/cs1conv.ts plan <file.cs1x> --crop <cx>,<cz>,<size> --out <dir> [--overrides map.json] [--install-rb] [--keep-other-rb]
 node web/cli/cs1conv.ts plan <file.cs1x> --auto-crop 3000 --out <dir> [--theme NA|EU] [--residential-high High|Medium|Mixed] [--office High|Low]
-     [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--no-zoning] [--no-traffic] [--no-transit] [--no-water] [--no-buildings] [--no-districts]
+     [--catalogue <cs2-catalogue.json>] [--asset-overrides <map.json>] [--fallback nearby|anywhere|skip] [--fallback-by-type <map.json>] [--no-zoning] [--no-traffic] [--no-transit] [--no-water] [--no-buildings] [--no-districts]
+     [--no-objects] [--no-surfaces] [--no-terrain] [--no-world]
 node web/cli/cs1conv.ts install-rb <package dir>
 ```
 
@@ -60,7 +65,18 @@ node web/cli/cs1conv.ts install-rb <package dir>
 - **`--install-rb`** copies the package's `roadbuilder/*-cs1conv.json` into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`. It removes other `*-cs1conv.json` files there unless `--keep-other-rb` is given, and never touches any other file.
 - **`--overrides`** (road types) is a JSON object keyed by ground NetInfo name. Values are `{"mode":"vanilla","type":"RoadPrefab","name":"Large Road"}`, `{"mode":"rb"}`, `{"mode":"skip"}` or `{"mode":"auto"}`.
 - **`--asset-overrides`** (buildings) is a JSON object keyed by CS1 building type name, with a CS2 building prefab name or `"skip"` as value.
+- **`--fallback`** sets what the importer does for every building type that doesn't fit at its CS1 spot: `nearby` (free land within 400 m), `anywhere` (anywhere along the imported roads in the crop) or `skip`. Without it, lots over 400 CS2 cells get `anywhere` and the rest `nearby`. **`--fallback-by-type`** is a JSON object keyed by CS1 building type name with one of those values.
 - **`--catalogue`:** the CS2 building catalogue. It defaults to `%LOCALAPPDATA%\cs1-to-cs2\samples\cs2-catalogue.json` when that exists (`node buildings/run.mjs catalogue` writes it). Without a catalogue, buildings aren't matched and the plan has no `buildings` section.
+
+## Package
+
+The package is self-contained for the CS2 importer mod. Besides the plan, the report, the README and the Road Builder configs, it has:
+- `terrain/heightmap.r16`, `terrain/worldmap.r16` and `terrain/terrain.json`, byte-identical to `terrain/convert.mjs`;
+- in the plan: `terrain` (a pointer to the terrain files), `water.apply` (the args for `water.set`), `water.checkpoints` and `outsideConnections`.
+
+The formats are in `schema/README.md` §2.
+
+The two heightmaps are 32 MB each. They take about 1.3 s to compute and deflate to about 22 MB in the zip. Building and zipping run in the Web Worker (Skibidi: 3.6 s, with the UI responsive throughout), and only when you download; dragging the crop never computes them. `--no-terrain` and `--no-world` leave them out of a CLI package.
 
 ## Buildings
 
@@ -68,7 +84,9 @@ The matching module is the buildings worker's `buildings/match/match.mjs`. It's 
 - the per-type overrides from the Assets tab;
 - the plan's `buildings` section, built by the same rules as `buildings/lib/plan.mjs`. A test compares the two on the real Skibidi export.
 
-The site bundles a slim catalogue (`public/cs2-catalogue.json`, 263 placeable buildings, 98 kB): only the fields the matcher reads, and it gives identical matches (tested). The Assets tab can load another catalogue, for example after a game update.
+The site bundles a slim catalogue (`public/cs2-catalogue.json`, 101 kB): 263 placeable buildings and 28 CS2 trees and boulders, with only the fields the matchers read. It gives identical matches (tested).
+
+Trees, rocks and IMT junction surfaces (`plan.objects`, `plan.surfaces`) come from `buildings/lib/objects.mjs`, called unchanged, so they match the scripted flow's `cs1conv-objects.json`. The Assets tab can load another catalogue, for example after a game update.
 
 ## UI
 
@@ -85,7 +103,7 @@ The site bundles a slim catalogue (`public/cs2-catalogue.json`, 263 placeable bu
     - Overview: what converts per category, options, install steps, file check.
     - Mapping: per-NetInfo overrides.
     - Road types: the generated RB configs.
-    - Assets: per CS1 building type, its count, the CS2 building, score, reason, and an override.
+    - Assets: per CS1 building type, its count, the CS2 building, score, reason, an override, and what happens if it doesn't fit at its spot.
     - Report.
 - **Help:** user guide, what converts, FAQ, and about & privacy (version, mods, third-party notices).
 
@@ -98,5 +116,6 @@ All are made from `%LOCALAPPDATA%\cs1-to-cs2\samples\skibidi.cs1x` with `--auto-
 | `skibidi-plan\` | M1, roads only |
 | `skibidi-plan-m2\` | adds zoning, TM:PE, transit, water |
 | `skibidi-plan-m3\` | adds `buildings`: 108 placed as 25 CS2 types, 7,226 growables left to zoning. Skibidi has no districts. |
+| `skibidi-package\` | self-contained: adds `terrain/` (heightmap, world map), `water.apply`, `water.checkpoints` and `outsideConnections` (20 connections) |
 
 Decisions are in [DECISIONS-web.md](DECISIONS-web.md).

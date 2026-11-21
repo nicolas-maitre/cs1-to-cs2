@@ -49,13 +49,13 @@ Keyboard: click the map, then use the arrow keys to move the square, + and − t
 
 **Mapping** lists every road type with its CS2 equivalent; you can pick another one. **Road types** shows the generated Road Builder roads and any width change.
 
-**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type.
+**Assets** lists the CS1 buildings with the CS2 building chosen for each type, the match score and why; pick another one or skip a type. For each type you can also say what happens if it doesn't fit at its spot: look for free land nearby (up to 400 m), anywhere in the square, or leave it out. Very large buildings (universities, power plants, cargo terminals) look anywhere by default.
 
 **Report** lists everything that is approximated or dropped.
 
 ## 6. Download and install the package
 
-Press **Download package (.zip)** and unzip it. It contains `cs1conv-plan.json`, `report.json`, the `roadbuilder` folder and a `README.txt`.
+Press **Download package (.zip)** and unzip it. It contains `cs1conv-plan.json`, `report.json`, the `roadbuilder` and `terrain` folders and a `README.txt`. Building it takes a few seconds (the terrain is two 4096 × 4096 heightmaps).
 
 With CS2 closed, copy the files from `roadbuilder` into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\RoadBuilder\`. Road Builder only reads its roads when the game starts. (The importer mod can also do this for you, then asks you to restart.)
 

@@ -20,5 +20,5 @@ if (isMain) {
   const slim = slimCatalogue(full);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(slim) + '\n');
-  console.log(`${src} (${full.prefabs.length} prefabs) → ${out} (${slim.prefabs.length} placeable buildings, ${(fs.statSync(out).size / 1024).toFixed(0)} kB)`);
+  console.log(`${src} (${full.prefabs.length} prefabs) → ${out} (${slim.prefabs.filter(p => p.kind === 'building').length} placeable buildings, ${slim.prefabs.filter(p => p.kind === 'object').length} trees and boulders, ${(fs.statSync(out).size / 1024).toFixed(0)} kB)`);
 }

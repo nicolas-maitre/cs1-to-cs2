@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react';
-import type { AssetMatch, AssetOverrides, Cs2Catalogue } from '../core/m3/buildings.ts';
+import type { AssetMatch, AssetOverrides, Cs2Catalogue, FallbackOverrides, PlacementFallback } from '../core/m3/buildings.ts';
 
 interface Props {
   matches: AssetMatch[];
   overrides: AssetOverrides;
   onOverride: (cs1: string, value: string | null) => void;
+  fallbacks: FallbackOverrides;
+  onFallback: (cs1: string, value: PlacementFallback | null) => void;
   catalogue: Cs2Catalogue | null;
   catalogueSource: string | null;
   onLoadCatalogue: () => void;
   hasBuildings: boolean;
 }
+
+const FALLBACK_TEXT: Record<PlacementFallback, string> = { nearby: 'look nearby (≤ 400 m)', anywhere: 'anywhere in the crop', skip: "don't place it" };
 
 const DECISION: Record<string, { label: string; cls: string }> = {
   place: { label: 'placed', cls: 'ok' },
@@ -20,7 +24,7 @@ const DECISION: Record<string, { label: string; cls: string }> = {
 
 type Filter = 'placed' | 'problems' | 'all';
 
-export function AssetsTable({ matches, overrides, onOverride, catalogue, catalogueSource, onLoadCatalogue, hasBuildings }: Props) {
+export function AssetsTable({ matches, overrides, onOverride, fallbacks, onFallback, catalogue, catalogueSource, onLoadCatalogue, hasBuildings }: Props) {
   const [filter, setFilter] = useState<Filter>('placed');
   const [inCrop, setInCrop] = useState(true);
   const prefabs = useMemo(() => (catalogue?.prefabs ?? []).filter(p => p.kind === 'building' && p.placeable).map(p => p.name).sort(), [catalogue]);
@@ -50,7 +54,7 @@ export function AssetsTable({ matches, overrides, onOverride, catalogue, catalog
       <div className="panel-bar chips" role="group" aria-label="Filter building types">
         {(['placed', 'problems', 'all'] as Filter[]).map(f => <button key={f} className={filter === f ? 'on' : ''} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === 'placed' ? 'Placed' : f === 'problems' ? 'Needs a look' : 'All types'}</button>)}
         <label className="check"><input type="checkbox" checked={inCrop} onChange={e => setInCrop(e.target.checked)} /> in the crop only</label>
-        {Object.keys(overrides).length > 0 && <button onClick={() => Object.keys(overrides).forEach(k => onOverride(k, null))}>Reset {Object.keys(overrides).length} choice(s)</button>}
+        {Object.keys(overrides).length + Object.keys(fallbacks).length > 0 && <button onClick={() => { Object.keys(overrides).forEach(k => onOverride(k, null)); Object.keys(fallbacks).forEach(k => onFallback(k, null)); }}>Reset {Object.keys(overrides).length + Object.keys(fallbacks).length} choice(s)</button>}
       </div>
       {!rows.length && <p className="muted">No building types match this filter.</p>}
       <table className="mapping assets">
@@ -75,6 +79,16 @@ export function AssetsTable({ matches, overrides, onOverride, catalogue, catalog
                       <optgroup label="All CS2 buildings">{prefabs.map(p => <option key={p} value={p}>{p}</option>)}</optgroup>
                       <option value="skip">Don't place</option>
                     </select>
+                  )}
+                  {m.decision === 'place' && (
+                    <label className="fallback small">If it doesn't fit at its spot:{' '}
+                      <select aria-label={`If ${m.title} doesn't fit at its spot`} value={fallbacks[m.cs1] ?? ''} onChange={e => onFallback(m.cs1, (e.target.value || null) as PlacementFallback | null)}>
+                        <option value="">Auto: {FALLBACK_TEXT[m.fallbackAuto]}</option>
+                        <option value="nearby">{FALLBACK_TEXT.nearby}</option>
+                        <option value="anywhere">{FALLBACK_TEXT.anywhere}</option>
+                        <option value="skip">{FALLBACK_TEXT.skip}</option>
+                      </select>
+                    </label>
                   )}
                   <div className="small muted">{m.reason}</div>
                 </td>

@@ -260,7 +260,7 @@ describe('package with M2 sections', () => {
     expect(pkg.plan).toMatchObject({ format: 'cs1conv-plan', formatVersion: 1, requires: ['RoadBuilder', 'Traffic'] });
     expect(pkg.plan.zoning!.prefabs).toEqual(['EU Residential Low']);
     expect(pkg.plan.traffic!.segmentEnds).toEqual([{ segment: 1, node: 1, priority: 'yield' }]);
-    expect(pkg.summary.map(s => s.id)).toEqual(['roads', 'tracks', 'imt', 'skipped', 'terrain', 'zoning', 'water', 'transit', 'traffic', 'nodecontroller', 'buildings', 'districts']);
+    expect(pkg.summary.map(s => s.id)).toEqual(['roads', 'tracks', 'imt', 'skipped', 'terrain', 'zoning', 'water', 'transit', 'traffic', 'nodecontroller', 'buildings', 'districts', 'objects']);
     const readme = packageFiles(pkg).find(f => f.path === 'README.txt')!.text;
     expect(readme).toMatch(/Road Builder, Traffic/);
     expect(readme).toMatch(/ModsData\\RoadBuilder/);
@@ -328,5 +328,14 @@ describe('plan JSON', () => {
     expect(JSON.parse(s)).toEqual(o);
     expect(s).toContain('"c": [\n   [1,2,3],');
     expect(s).toContain('"d": ["x, y","z","a\\"b",""]');
+  });
+});
+
+describe('empty sections', () => {
+  it('says "the city has no …" instead of "not converted" when a section is present but empty', () => {
+    const c = cross({ transit: { lines: [] }, zones: { cellSize: 8, columns: 4, zoneCodes: { 0: 'Unzoned' }, blocks: [{ id: 1, position: [0, 0, 0], angle: 0, rows: 1, segment: 1, zones: '00--' }] } });
+    const ctx = ctxOf(c);
+    expect(buildTransit(ctx).summary).toMatchObject({ status: 'absent', summary: 'the city has no transport lines' });
+    expect(buildZoning(ctx, DEFAULT_ZONING).summary).toMatchObject({ status: 'absent', summary: 'the city has no zoned areas' });
   });
 });

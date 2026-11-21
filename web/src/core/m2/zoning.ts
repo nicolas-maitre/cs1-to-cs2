@@ -49,6 +49,7 @@ export function buildZoning(ctx: PlanContext, o: ZoningOptions): SectionResult<P
   const items: PackageReportItem[] = [];
   const label = 'Zoning';
   if (!z) return { items, summary: { id: 'zoning', label, status: 'absent', summary: 'no zoning in this export', details: [] } };
+  if (!z.blocks.some(b => /[^-0]/.test(b.zones))) return { items, summary: { id: 'zoning', label, status: 'absent', summary: 'the city has no zoned areas', details: [] } };
   if (!o.enabled) return { items, summary: { id: 'zoning', label, status: 'not-converted', summary: 'switched off in the options', details: [] } };
   const cols = z.columns || 4;
   const prefabs: string[] = [];

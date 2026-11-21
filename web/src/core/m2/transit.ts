@@ -42,6 +42,7 @@ export function buildTransit(ctx: PlanContext, enabled = true): SectionResult<Pl
   const items: PackageReportItem[] = [];
   const label = 'Transit lines';
   if (!t) return { items, summary: { id: 'transit', label, status: 'absent', summary: 'no transit lines in this export', details: [] } };
+  if (!t.lines.length) return { items, summary: { id: 'transit', label, status: 'absent', summary: 'the city has no transport lines', details: [] } };
   if (!enabled) return { items, summary: { id: 'transit', label, status: 'not-converted', summary: 'switched off in the options', details: [] } };
   const lines: PlanTransitLine[] = [];
   const noEquivalent = new Map<string, number>();

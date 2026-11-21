@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ZoningOptions } from '../core/m2/zoning.ts';
 import type { Cs1City } from '../core/types.ts';
 
-export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean }
+export interface ConvOptions { zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean }
 
 /** M2 options: which extra sections to convert and how zones map. */
 export function ConversionOptions({ value, onChange, city }: { value: ConvOptions; onChange: (v: ConvOptions) => void; city: Cs1City }) {
@@ -37,6 +37,8 @@ export function ConversionOptions({ value, onChange, city }: { value: ConvOption
       <label className="check"><input type="checkbox" checked={value.water} disabled={!city.water} onChange={e => onChange({ ...value, water: e.target.checked })} /> Water: sea level and sources</label>
       <label className="check"><input type="checkbox" checked={value.buildings} disabled={!city.buildings} onChange={e => onChange({ ...value, buildings: e.target.checked })} /> Buildings: services, parks, landmarks (see the Assets tab)</label>
       <label className="check"><input type="checkbox" checked={value.districts} disabled={!city.districts} onChange={e => onChange({ ...value, districts: e.target.checked })} /> Districts and policies</label>
+      <label className="check"><input type="checkbox" checked={value.objects} disabled={!city.trees && !city.props} onChange={e => onChange({ ...value, objects: e.target.checked })} /> Trees and rocks</label>
+      <label className="check"><input type="checkbox" checked={value.surfaces} disabled={!city.imtFillers.some(f => f.markingType === 'Node')} onChange={e => onChange({ ...value, surfaces: e.target.checked })} /> IMT junction surfaces</label>
     </div>
   );
 }

@@ -195,6 +195,9 @@ export interface Cs1Asset {
   footprint?: number[]; size?: number[]; height?: number; placementMode?: string; subBuildings?: number;
   tags?: string[]; aiFields?: Fields;
 }
+/** props.json / trees.json (schema §1): free-standing instances, rows [infoIndex, x, y, z, angle, fixedHeight] / [infoIndex, x, y, z, fixedHeight]. */
+export interface PropsSection { props: number[][]; infos: string[] }
+export interface TreesSection { trees: number[][]; infos: string[] }
 export interface AssetsSection { buildings: Cs1Asset[]; props?: Cs1Asset[]; trees?: Cs1Asset[]; networks?: Cs1Asset[] }
 
 export interface Cs1District { id: number; name: string; nameLocation?: Vec3; cells?: number; area?: number; policies?: string[] }
@@ -226,6 +229,8 @@ export interface Cs1City {
   buildings?: BuildingsSection | null;
   assets?: AssetsSection | null;
   districts?: DistrictsSection | null;
+  props?: PropsSection | null;
+  trees?: TreesSection | null;
   /** The exporter's own report plus anything the reader noticed. */
   report: Cs1ReportItem[];
   /** sha256 of the source file bytes (hex), when computed. */
@@ -299,9 +304,13 @@ export interface Plan {
   zoning?: PlanZoning;
   buildings?: PlanBuildings;
   districts?: PlanDistricts;
+  objects?: PlanObjects;
+  surfaces?: PlanSurfaces;
   water?: PlanWater;
   transit?: PlanTransit;
   traffic?: PlanTraffic;
+  terrain?: PlanTerrainRef;
+  outsideConnections?: PlanOutsideConnections;
 }
 
 /** Placed buildings (M3): service buildings, parks, landmarks … matched to CS2 prefabs. Growables are left to zoning. */
@@ -327,6 +336,8 @@ export interface PlanBuildingItem {
   alternatives: string[];
   /** CS1 district id (plan.districts) */
   district?: number;
+  /** what the placer does when the building does not fit at its spot: nearby (≤ 400 m), anywhere in the crop, or skip */
+  fallback?: 'nearby' | 'anywhere' | 'skip';
 }
 export interface PlanBuildings {
   generator: { matcher: string; web: string };
@@ -344,6 +355,27 @@ export interface PlanDistricts {
   items: { cs1Id: number; name: string; outlines: [number, number][][]; policies: string[]; cs1Policies: string[]; area: number }[];
   /** CS2 policies for the whole city (from CS1 city-wide policies). */
   cityPolicies: string[];
+}
+
+/** Free-standing trees and rocks (buildings/lib/objects.mjs buildObjectsSection, mapped by match/vegetation.mjs). */
+export interface PlanObjects {
+  generator: { vegetation: string };
+  prefabs: string[];
+  /** [prefabIndex, x, z, angleDegrees, age]; age = CS2 ObjectDefinition.m_Age (0.3–0.55 = adult) */
+  items: [number, number, number, number, number][];
+  stats: {
+    items: number;
+    skipped: { outsideCrop: number; noEquivalent: number };
+    byType: Record<string, { cs2: string | null; decision: string; reason: string; count: number }>;
+  };
+}
+
+/** IMT junction fills with a CS2 surface (buildings/lib/objects.mjs buildSurfacesSection). */
+export interface PlanSurfaces {
+  items: { cs1Node: number; styleType: string; type: 'SurfacePrefab'; prefab: string; polygon: [number, number][] }[];
+  /** "styleType rgba(…)" → count of fills without a CS2 surface (paint) */
+  notConverted: Record<string, number>;
+  stats: { items: number };
 }
 
 /** Zoned cells: centre of every zoned CS1 cell (CS2 coordinates) → index into prefabs (CS2 zone prefab names). */
@@ -364,6 +396,24 @@ export interface PlanWater {
   maxDepth: number;
   /** Natural CS1 water sources in the crop (CS2 coordinates). */
   sources: { cs1Index: number; x: number; z: number; y: number; targetHeight: number | null; outputRate: number | null }[];
+  /** Exactly what terrain/mapprep.mjs "water" sends to MapPrep water.set: sea level + CS2 sources (natural + inflow/lake). */
+  apply?: { seaLevel: number | null; sources: { x: number; z: number; height: number; radius: number; polluted: number; cs1: Record<string, unknown> }[] };
+  /** CS1 depth-grid checkpoints (100 wet + 100 dry) for a wet/dry check after the water settles. */
+  checkpoints?: { wet: { x: number; z: number; cs1Depth: number }[]; dry: { x: number; z: number; cs1Depth: number }[]; totals: { wet: number; dry: number } };
+}
+
+/** Pointer to the package's terrain files (terrain/terrain.json), filled when the package is written. */
+export interface PlanTerrainRef {
+  dir: string; meta: string; heightScale: number; heightOffset: number; heightMode: string;
+  /** apply.mjs "auto" sea level for a city without water: floor(min) − 20 */
+  seaLevelDry: number; min: number; max: number; world: boolean;
+}
+
+/** Outside connections where the imported network leaves the crop (terrain/lib/connections.mjs). */
+export interface PlanOutsideConnections {
+  connections: { node: number; x: number; z: number; type: 'road' | 'train'; info: string; cs1Segments: number[]; outward: [number, number] }[];
+  skipped: { cs1Segment: number; node: number; info: string; reason: string }[];
+  counts: { crossing: number; typed: number; connections: number; road: number; train: number };
 }
 
 export interface PlanTransitLine {
@@ -432,7 +482,10 @@ export type PackageReportKind =
   | 'traffic'
   | 'node-controller'
   | 'buildings'
-  | 'districts';
+  | 'districts'
+  | 'outside-connections'
+  | 'objects'
+  | 'surfaces';
 
 export interface PackageReportItem {
   level: 'info' | 'warning';

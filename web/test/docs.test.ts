@@ -6,13 +6,16 @@ import { GENERATOR } from '../src/core/plan.ts';
 import { bundledPackages, noticesText } from '../scripts/notices.mjs';
 
 const web = path.resolve(import.meta.dirname, '..');
+// git with core.autocrlf=true (the Windows default, also on CI) checks text files out with CRLF: compare content, not line endings
+const lf = (s: string) => s.replace(/\r\n/g, '\n');
+const read = (...p: string[]) => lf(fs.readFileSync(path.join(...p), 'utf8'));
 const guide = path.resolve(web, '..', 'docs', 'guide');
 
 describe('documentation', () => {
   it('docs/guide is generated from src/core/docs.ts and up to date (run `npm run docs`)', () => {
-    expect(fs.readFileSync(path.join(guide, 'user-guide.md'), 'utf8')).toBe(guideMarkdown());
-    expect(fs.readFileSync(path.join(guide, 'faq.md'), 'utf8')).toBe(faqMarkdown());
-    expect(fs.readFileSync(path.join(guide, 'what-converts.md'), 'utf8')).toBe(matrixMarkdown());
+    expect(read(guide, 'user-guide.md')).toBe(guideMarkdown());
+    expect(read(guide, 'faq.md')).toBe(faqMarkdown());
+    expect(read(guide, 'what-converts.md')).toBe(matrixMarkdown());
   });
 
   it('has the content the app shows', () => {
@@ -31,6 +34,6 @@ describe('documentation', () => {
     const pkgs = bundledPackages(web);
     expect(pkgs.map(p => p.name)).toEqual(expect.arrayContaining(['fflate', 'react', 'react-dom']));
     for (const p of pkgs) expect(p.text.length, p.name).toBeGreaterThan(100);
-    expect(fs.readFileSync(path.join(web, 'public', 'THIRD-PARTY-NOTICES.txt'), 'utf8')).toBe(noticesText(pkgs) + '\n');
+    expect(read(web, 'public', 'THIRD-PARTY-NOTICES.txt')).toBe(lf(noticesText(pkgs) + '\n'));
   });
 });

@@ -17,10 +17,15 @@ import { buildTraffic, trafficLaneVariants } from './m2/traffic.ts';
 import { buildTransit } from './m2/transit.ts';
 import { buildWater } from './m2/water.ts';
 import { DEFAULT_ZONING, buildZoning } from './m2/zoning.ts';
+import { deriveConnections } from './terrain/connections.ts';
+import { cs1Heights } from './terrain/heightmap.ts';
+import { terrainFiles } from './terrain/package.ts';
+import { convertWater, depthCheckpoints, regionSources } from './terrain/water.ts';
 import type { ZoningOptions } from './m2/zoning.ts';
 import { buildBuildings } from './m3/buildings.ts';
-import type { AssetMatch, AssetOverrides, Cs2Catalogue } from './m3/buildings.ts';
+import type { AssetMatch, AssetOverrides, Cs2Catalogue, FallbackOverrides, PlacementFallback } from './m3/buildings.ts';
 import { buildDistricts } from './m3/districts.ts';
+import { buildObjects, buildSurfaces, SURFACE_MAP } from './m3/objects.ts';
 import type {
   Bezier, Crop, Cs1City, Cs1Node, Cs1Segment, NetInfo, PackageReport, PackageReportItem, Plan, PlanNode, PlanPrefab, PlanSegment, SegmentKind,
 } from './types.ts';
@@ -46,8 +51,17 @@ export interface BuildOptions {
   catalogue?: Cs2Catalogue | null;
   /** M3: per CS1 building type, a CS2 prefab name or "skip". */
   assetOverrides?: AssetOverrides;
+  /** M3: per-type placement fallback (Assets tab); others get defaultFallback, or `assetFallback` when given. */
+  assetFallbacks?: FallbackOverrides;
+  assetFallback?: PlacementFallback;
   /** M3: districts and policies (default on). */
   districts?: boolean;
+  /** M3: free-standing trees and rocks (default on; needs a catalogue with CS2 trees). */
+  objects?: boolean;
+  /** M3: IMT junction fills (pavement, grass, gravel) as CS2 surfaces (default on). */
+  surfaces?: boolean;
+  /** Outside connections where highways and train tracks leave the crop (default on). */
+  outsideConnections?: boolean;
 }
 
 export interface MappingRow {
@@ -283,9 +297,11 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const transit = buildTransit(ctx, opts.transit !== false);
   const traffic = buildTraffic(ctx, opts.traffic !== false);
   const nc = buildNodeController(ctx);
-  const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
+  const buildings = buildBuildings(ctx, { enabled: opts.buildings !== false, catalogue: opts.catalogue ?? null, overrides: opts.assetOverrides, fallbacks: opts.assetFallbacks, fallback: opts.assetFallback, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const districts = buildDistricts(ctx, opts.districts !== false);
-  for (const r of [zoning, water, transit, traffic, nc, buildings, districts]) items.push(...r.items);
+  const objects = buildObjects(ctx, { enabled: opts.objects !== false, catalogue: opts.catalogue ?? null, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
+  const surfaces = buildSurfaces(ctx, opts.surfaces !== false);
+  for (const r of [zoning, water, transit, traffic, nc, buildings, districts, objects, surfaces]) items.push(...r.items);
   for (const [k, n] of speedGroups) {
     const [base, kmh] = k.split('|');
     items.push({ level: 'info', kind: 'speed-limit', message: `${base}: ${n} segment(s) with a TM:PE speed limit of ${kmh} km/h use a Road Builder variant with that speed`, count: n, cs1: { netInfo: base } });
@@ -321,6 +337,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     if (f.markingType === 'Node') {
       const n = nodes.get(f.markingId);
       if (!n || !inCrop(crop, n.position[0], n.position[2])) return;
+      if (surfaces.section && f.styleType && SURFACE_MAP[f.styleType]) return; // a CS2 surface (plan.surfaces)
       items.push({ level: 'info', kind: 'imt-node-fill', message: `IMT node fill ${f.styleType} ${color} on node ${f.markingId} (${kind}): no CS2 equivalent, not converted`, cs1: { node: f.markingId, filler: id } });
     } else if (f.markingType === 'Segment' && segIds.has(f.markingId)) {
       if (kind === 'paint') items.push({ level: 'info', kind: 'imt-paint', message: `IMT segment paint ${f.styleType} ${color} on segment ${f.markingId}: paint only, not converted`, cs1: { segment: f.markingId, filler: id } });
@@ -353,10 +370,31 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     ...(zoning.section ? { zoning: zoning.section } : {}),
     ...(buildings.section ? { buildings: buildings.section } : {}),
     ...(districts.section ? { districts: districts.section } : {}),
+    ...(objects.section ? { objects: objects.section } : {}),
+    ...(surfaces.section ? { surfaces: surfaces.section } : {}),
     ...(water.section ? { water: water.section } : {}),
     ...(transit.section ? { transit: transit.section } : {}),
     ...(traffic.section ? { traffic: traffic.section } : {}),
   };
+  // Water as the scripted flow applies it (mapprep water.set), outside connections (mapprep connections).
+  if (plan.water && city.water) {
+    const w = convertWater(city.water, plan);
+    const d = city.water.depth, g = city.water.depthGrid;
+    if (d && g && city.terrain && city.terrain.resolution === d.resolution && w.seaLevel != null) {
+      const rs = regionSources(d, g, cs1Heights(city.terrain), plan, w.seaLevel, w.sources);
+      w.sources.push(...rs.sources);
+      if (rs.sources.length) items.push({ level: 'info', kind: 'water', message: `${rs.sources.length} extra water source(s) keep CS1 rivers and lakes above sea level filled (${rs.regions.map(r => r.kind).join(', ')})`, count: rs.sources.length });
+    }
+    plan.water.apply = { seaLevel: w.seaLevel, sources: w.sources };
+    if (d && g) plan.water.checkpoints = depthCheckpoints(d, g, plan);
+  }
+  if (opts.outsideConnections !== false && plan.segments.length) {
+    const oc = deriveConnections(city, plan);
+    if (oc.connections.length || oc.skipped.length) {
+      plan.outsideConnections = oc;
+      items.push({ level: 'info', kind: 'outside-connections', message: `${oc.counts.connections} outside connection(s) where the network leaves the crop (${oc.counts.road} road, ${oc.counts.train} train)${oc.skipped.length ? `; ${oc.skipped.length} skipped (end node not imported)` : ''}`, count: oc.counts.connections });
+    }
+  }
   const order: Record<string, number> = { warning: 0, info: 1 };
   items.sort((x, y) => order[x.level] - order[y.level]);
   const pkg: BuiltPackage = {
@@ -367,7 +405,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     mapping: [...rows.values()].sort((a, b) => Number(a.target.mode === 'skip') - Number(b.target.mode === 'skip') || b.segmentsInCrop - a.segmentsInCrop || b.segments - a.segments),
     errors: cv.errors,
     summary: [],
-    extraSummary: [zoning.summary, water.summary, transit.summary, traffic.summary, nc.summary, buildings.summary, districts.summary],
+    extraSummary: [zoning.summary, water.summary, transit.summary, traffic.summary, nc.summary, buildings.summary, districts.summary, objects.summary],
     assetMatches: buildings.matches,
   };
   pkg.summary = conversionSummary(city, pkg);
@@ -404,7 +442,30 @@ export function compactJson(v: unknown): string {
   return JSON.stringify(v, null, 1).replace(FLAT_ARRAY, (_m, inner: string) => `[${inner.match(new RegExp(SCALAR, 'g'))!.join(',')}]`);
 }
 
-/** Files of the package, relative paths → text (UTF-8, no BOM). */
+/**
+ * Writes the expensive parts of the package: the terrain files (4096² heightmap + world map + terrain.json) and the
+ * plan.terrain pointer. Call it once before writing / zipping a package (CLI, download), not on every crop change.
+ * Returns the extra files; pkg.plan.terrain and the terrain summary are updated in place.
+ */
+export function completePackage(city: Cs1City, pkg: BuiltPackage, opts: { terrain?: boolean; world?: boolean } = {}): { path: string; data: Uint8Array }[] {
+  if (opts.terrain === false || !city.terrain) return [];
+  const t = terrainFiles(city, pkg.plan, { world: opts.world });
+  if (!t) return [];
+  pkg.plan.terrain = t.terrain;
+  const s = pkg.summary.find(c => c.id === 'terrain');
+  if (s) s.summary = terrainSummary(pkg.plan);
+  return t.files;
+}
+
+/** One line for the "What converts" list: heightmap and the sea level the mod will set. */
+export function terrainSummary(plan: Plan): string {
+  const sea = plan.water?.apply?.seaLevel ?? plan.water?.seaLevel;
+  const t = plan.terrain;
+  const range = t ? `, ${Math.round(t.min)}–${Math.round(t.max)} m` : '';
+  return `CS2 heightmap 4096² in the package (terrain/)${range}; sea level ${sea != null ? `${sea.toFixed(1)} m (CS1)` : t ? `${t.seaLevelDry} m (dry map)` : 'from CS1'}`;
+}
+
+/** Files of the package, relative paths → text (UTF-8, no BOM). Binary terrain files come from completePackage(). */
 export function packageFiles(pkg: BuiltPackage): { path: string; text: string }[] {
   return [
     { path: 'cs1conv-plan.json', text: compactJson(pkg.plan) + '\n' },

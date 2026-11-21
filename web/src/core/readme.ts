@@ -25,6 +25,7 @@ export function packageReadme(pkg: BuiltPackage, summary: ConvCategory[] = []): 
     '  cs1conv-plan.json   The city plan, already in CS2 coordinates. The CS2 importer reads it.',
     '  report.json         Everything that was dropped or approximated, item by item.',
     `  roadbuilder\\        ${rb} generated Road Builder road types (*-cs1conv.json).`,
+    ...(p.terrain ? ['  terrain\\            The CS1 terrain for CS2: heightmap.r16 (playable area), worldmap.r16 (the land around it), terrain.json.'] : []),
     '  README.txt          This file.',
     '',
     'HOW TO USE',

@@ -30,6 +30,10 @@ Road Builder roads must be copied to ModsData\RoadBuilder **before** CS2 starts.
 
 Zoned (growable) buildings are not placed: CS2 grows its own on the converted zones. Pillars, pipe junctions and poles are rebuilt by CS2. A few CS1 building types have no CS2 equivalent (libraries, taxi stands, cable car stops), and buildings on roads outside the square are left out. The Assets tab shows each type.
 
+## Why did a building end up somewhere else?
+
+CS2 buildings often need more room than their CS1 counterparts. When one doesn't fit at its CS1 spot, the importer tries the next-best CS2 buildings, then free land along an imported road nearby (up to 400 m). Very large buildings may go anywhere in the square. In the Assets tab you can change this per type, or leave the building out instead.
+
 ## Do I need the Traffic mod?
 
 Only for TM:PE priority signs, lane arrows and lane connections. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.
@@ -45,6 +49,10 @@ Choose the zone theme under Overview → Options. It sets which CS2 residential 
 ## Does the exporter change my CS1 save?
 
 No. It only reads the loaded city and writes the `.cs1x` file.
+
+## Why is the package so large?
+
+Most of it is the terrain: two 4096 × 4096 heightmaps, the size CS2 uses, 64 MB unpacked and about 22 MB in the zip. Everything the CS2 mod needs is in the package, so nothing else has to run on your computer.
 
 ## Is my big city too large for the web tool?
 

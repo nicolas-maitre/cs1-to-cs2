@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { packageZip } from '../core/zip.ts';
 import { buildPackage } from '../core/plan.ts';
 import type { BuildOptions, BuiltPackage } from '../core/plan.ts';
 import type { Cs1City } from '../core/types.ts';
@@ -20,6 +21,7 @@ export function usePackage(src: Source | null, opts: BuildOptions | null, catalo
   const ready = useRef<Promise<boolean> | null>(null);
   const seq = useRef(0);
   const sentCatalogue = useRef<Cs2Catalogue | null | undefined>(undefined);
+  const zipSeq = useRef(1_000_000); // ids for zip requests, apart from build ids
 
   useEffect(() => {
     setPkg(null);
@@ -71,5 +73,27 @@ export function usePackage(src: Source | null, opts: BuildOptions | null, catalo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, key, catalogue]);
 
-  return { pkg, busy, ms, error };
+  /** Builds the full package zip (with terrain) in the worker; main thread if there is no worker. */
+  const zip = useCallback((): Promise<Uint8Array> => {
+    if (!src || !opts) return Promise.reject(new Error('no city loaded'));
+    const id = ++zipSeq.current;
+    return (ready.current ?? Promise.resolve(false)).then(ok => {
+      const w = worker.current;
+      if (!ok || !w) return packageZip(src.city, { ...opts, catalogue }).zip;
+      return new Promise<Uint8Array>((resolve, reject) => {
+        const onMsg = (e: MessageEvent) => {
+          const d = e.data;
+          if (d.id !== id || !(d.type === 'zipped' || (d.type === 'error' && d.zip))) return;
+          w.removeEventListener('message', onMsg);
+          if (d.type === 'zipped') resolve(d.zip); else reject(new Error(d.message));
+        };
+        w.addEventListener('message', onMsg);
+        if (sentCatalogue.current !== catalogue) { w.postMessage({ type: 'catalogue', catalogue } satisfies WorkerRequest); sentCatalogue.current = catalogue; }
+        w.postMessage({ type: 'zip', id, opts } satisfies WorkerRequest);
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, key, catalogue]);
+
+  return { pkg, busy, ms, error, zip };
 }
