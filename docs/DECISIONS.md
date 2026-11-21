@@ -326,3 +326,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      | Ground follows the road (default for every ground-level road) | The terrain is shaped to the road's CS1 profile. |
      | Road follows the ground | The road sits on the natural terrain, and the terrain is left alone. |
      | CS1 height with walls | The road keeps its CS1 height and the terrain is left alone, so CS2 builds retaining walls or quays. |
+113. **Default height mode by zoneability** (user, 2026-11-21; refines #112).
+     - **Zoneable CS1 road types** (the CS1 road AI enables zoning) default to `conform`: the ground meets the road's height.
+     - **Non-zoneable road types** (highways, ramps, roads without zoning) default to `walls`: CS1 height, terrain untouched, so CS2 builds walls, embankments or pillars and a ramp stays a straight slope.
+     - The per-type override in the mapping table still applies.
