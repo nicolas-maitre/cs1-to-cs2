@@ -44,7 +44,7 @@ Press **Prepare map** in a new city before importing: it replaces the map's terr
 
 ## Where are my TM:PE lane connections and lane arrows?
 
-**Lane connections (Traffic mod)** recreates them, with the U-turn rules, at junctions; it is on by default and needs the Traffic mod. Where a road just continues into another without a junction, CS2 keeps its own lane continuation, and lane splits there can't be reproduced. The import summary says how many CS1 lane references were matched.
+**Lane connections (Traffic mod)** recreates them, with the U-turn rules, at junctions; it is on by default and needs the Traffic mod. Where a road just continues into another without a junction, CS2 keeps its own lane continuation, and lane splits there can't be reproduced. The import summary says how many CS1 lane references were matched. They survive saving and reloading the city: the import's last step, the **lane connections check**, rewrites any junction whose roads a later step changed (for example a bus stop bay), and its line in the summary says how many.
 
 ## How do I undo an import?
 

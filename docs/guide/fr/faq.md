@@ -44,7 +44,7 @@ Cliquez sur **Préparer la carte** dans une nouvelle ville avant d'importer : il
 
 ## Où sont mes connexions de voies et flèches de voie TM:PE ?
 
-**Connexions de voies (mod Traffic)** les recrée aux carrefours, avec les règles de demi-tour ; il est activé par défaut et nécessite le mod Traffic. Là où une route se prolonge dans une autre sans carrefour, CS2 garde sa propre continuité de voies, et les divisions de voies n'y sont pas reproductibles. Le résumé de l'import indique combien de références de voies CS1 ont été retrouvées.
+**Connexions de voies (mod Traffic)** les recrée aux carrefours, avec les règles de demi-tour ; il est activé par défaut et nécessite le mod Traffic. Là où une route se prolonge dans une autre sans carrefour, CS2 garde sa propre continuité de voies, et les divisions de voies n'y sont pas reproductibles. Le résumé de l'import indique combien de références de voies CS1 ont été retrouvées. Elles survivent à la sauvegarde et au rechargement de la ville : la dernière étape de l'import, la **vérification des connexions de voies**, réécrit les carrefours dont une étape suivante a modifié les routes (par exemple une baie d'arrêt de bus), et sa ligne dans le résumé en donne le nombre.
 
 ## Comment annuler un import ?
 
