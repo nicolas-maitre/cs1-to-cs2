@@ -43,10 +43,25 @@ namespace Cs2Buildings
             return true;
         }
 
-        /// <summary>The CS1 position in a "place it yourself" reason, rounded to metres.</summary>
+        /// <summary>A position rounded to metres: "(x, z)".</summary>
         public static string Position(double x, double z)
         {
             return "(" + Math.Round(x).ToString(System.Globalization.CultureInfo.InvariantCulture) + ", " + Math.Round(z).ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
+        }
+
+        /// <summary>
+        /// Where to place a building yourself, in the web report's words: "CS1 (x, z) = CS2 (x, z)". A plan item's x/z is
+        /// in plan coordinates (CS1 + transform dx/dz); the CS2 position adds the import offset.
+        /// </summary>
+        public static string Where(double planX, double planZ, double dx, double dz, double offsetX, double offsetZ)
+        {
+            return "CS1 " + Position(planX - dx, planZ - dz) + " = CS2 " + Position(planX + offsetX, planZ + offsetZ);
+        }
+
+        /// <summary>One report line for a building that wasn't placed: "Hospital: place it yourself at CS1 (…) = CS2 (…) (why)".</summary>
+        public static string PlaceYourself(string name, string where, string why)
+        {
+            return (string.IsNullOrEmpty(name) ? "Building" : name) + ": place it yourself at " + where + (string.IsNullOrEmpty(why) ? "" : " (" + why + ")");
         }
     }
 }

@@ -7,6 +7,7 @@
 //   list      {type=regex, name=regex}         [phase main]  prefabs by class name (areas, policies, …)
 //   objects   {plan, offsetX, offsetZ, batchSize=2000} [phase tool, pump tool]  trees / props of plan.objects
 //   areas     {plan, section=districts|surfaces, offsetX, offsetZ} [phase tool, pump tool]  districts (name, policies) or surfaces
+//   prefab    {names: "A,B"}                  [phase main]  a building prefab's sub-nets, sub-objects and placement flags (read only)
 //
 // Statics never survive between calls (the bridge loads a fresh copy of the DLL every time).
 using System;

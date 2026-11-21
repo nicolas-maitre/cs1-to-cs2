@@ -12,7 +12,8 @@
 // 7. check      Options → package folder, "Clear the area" on, press Check; then "Prepare map" (terrain, water) and 20 s to settle
 // 8. import     press "Import into this city", wait for the mod to finish
 // 9. verify     lane directions (op "lanedirs" vs the export's CS1 lanes: tools/release/lanedirs-compare.mjs), simulate
-//               (--simulate s), public-transport vehicles by kind (transit exec library, read-only), screenshots, the mod's
+//               (--simulate s), public-transport vehicles by kind (transit exec library, read-only), utilities supply
+//               (tools/qa, read-only), screenshots, the mod's
 //               import report, save as cs1conv-acceptance-<date>, quit, release the lock
 //
 // Pressing the Options buttons from a script: the Cs2Importer exec library's op "mod" sets the Options values and calls
@@ -25,6 +26,7 @@ import { execFileSync } from 'node:child_process';
 import { connect, start, stop, status } from '../gamectl/lib/index.js';
 import { REPO, LOCAL_DIR, waitAndTakeLock, releaseLock, planShots } from '../../cs2-importer/lib/driver.mjs';
 import { checkVersions } from './build.mjs';
+import { buildQa, measureUtilities, summariseUtilities } from '../qa/lib/utilities.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : d; };
@@ -196,6 +198,21 @@ try {
       return { total: r.publicTransportVehicles, byKind, byPrefab: by, depots: r.depots, routes: r.routes };
     });
   }
+  // Utilities (docs/DECISIONS.md #109, tools/qa): electricity / water / sewage supply after the simulation, read-only.
+  // Informational: its ok=false doesn't fail the acceptance (CS2's economy needs time); the lines go into summary.json.
+  // An error in the check itself (the QA library doesn't build, the op throws) is recorded, not thrown, so the run
+  // still takes its screenshots and saves.
+  await step('utilities', async () => {
+    try {
+      buildQa();
+      const r = await measureUtilities(b, { minutes: 0, listLimit: 20 });
+      const s = summariseUtilities(r);
+      S.utilities = { ok: s.ok, share: s.share, problems: s.problems, lines: s.lines };
+    } catch (e) {
+      S.utilities = { ok: false, error: String(e.message ?? e).slice(0, 1000) };
+    }
+    return S.utilities;
+  });
   await step('shots', async () => {
     const plan = JSON.parse(fs.readFileSync(path.join(S.package, 'cs1conv-plan.json'), 'utf8'));
     return planShots(b, plan, { dir: runDir, tag: 'acceptance', log });

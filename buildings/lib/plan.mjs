@@ -42,6 +42,7 @@ const round = (v, n = 2) => Math.round(v * 10 ** n) / 10 ** n + 0; // + 0 turns 
  * @param {object} catalogue – cs2-catalogue.json
  * @param {object} roadPlan  – cs1conv-plan.json (crop, transform, segments)
  * @param {{theme?: string, minScore?: number, fallback?: 'nearby'|'anywhere'|'skip', fallbackByType?: Object<string, 'nearby'|'anywhere'|'skip'>}} [opts]
+ *   fallback defaults to 'skip' (DECISIONS.md #106: never moved to free land unless chosen)
  */
 export function buildBuildingsPlan(cs1, catalogue, roadPlan, opts = {}) {
   if (!cs1.buildings || !cs1.assets || !cs1.network) throw new Error('the .cs1x needs ok buildings, assets and network sections (exporter 1.2+)');
@@ -77,10 +78,9 @@ export function buildBuildingsPlan(cs1, catalogue, roadPlan, opts = {}) {
       accessSegment: b.accessSegment || 0, front: null, facing: null,
       alternatives: (m.alternatives ?? []).map((a) => a.cs2), // tried in order when the best one doesn't fit
     };
-    // What the placer does when no slide or alternative fits: 'nearby' (free land within the run's radius) or 'skip'.
-    // Only written when the caller chose one, so the default output stays unchanged.
-    const fb = opts.fallbackByType?.[b.info] ?? opts.fallback;
-    if (fb) item.fallback = fb;
+    // What the placer does when no slide or smaller alternative fits: 'skip' by default (place it yourself; user decision,
+    // DECISIONS.md #106, the same as web 0.6.1), or 'nearby' / 'anywhere' (free land) when the caller opts in for the type.
+    item.fallback = opts.fallbackByType?.[b.info] ?? opts.fallback ?? 'skip';
     const seg = b.accessSegment ? segs.get(b.accessSegment) : null;
     if (seg) {
       if (!planned.has(seg.id)) { skipped.roadNotImported++; continue; }

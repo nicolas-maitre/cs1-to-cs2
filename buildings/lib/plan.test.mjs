@@ -56,9 +56,9 @@ test('refuses an export without the M3 sections', () => {
   assert.throws(() => buildBuildingsPlan({ network: cs1.network, buildings: null, assets: null }, catalogue, roadPlan), /exporter 1.2/);
 });
 
-test('fallback is written only when chosen, per type or for all', () => {
-  assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan).items[0].fallback, undefined);
-  assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan, { fallback: 'skip' }).items[0].fallback, 'skip');
+test('fallback is "skip" by default (DECISIONS.md #106); nearby / anywhere only when chosen, per type or for all', () => {
+  assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan).items[0].fallback, 'skip');
+  assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan, { fallback: 'anywhere' }).items[0].fallback, 'anywhere');
   assert.equal(buildBuildingsPlan(cs1, catalogue, roadPlan, { fallback: 'skip', fallbackByType: { Hospital: 'nearby' } }).items[0].fallback, 'nearby');
 });
 

@@ -48,6 +48,7 @@ namespace Cs2Buildings
             public float MaxDistance;        // > 0: no fallback spot farther than this from the CS1 spot
             public bool RequireRoad;         // only spots whose lot faces a road a building can connect to (no highway)
             public bool Station;             // plan family "station": stays at its CS1 spot (no slide, no fallback move)
+            public double Dx, Dz, Ox, Oz;    // plan transform (CS1 → plan) and import offset (plan → CS2), for "place it yourself"
             public float Distance = -1;     // metres between the placed lot centre and the CS1 lot centre (every placed item)
             public string FallbackPass;      // "nearby" | "wide" | "anywhere" when a fallback pass placed it
             public float Moved = -1;         // metres from the CS1 position when the nearby fallback placed it
@@ -111,6 +112,7 @@ namespace Cs2Buildings
             int moved = 0;
 
             var items = LoadItems(P.Required(a, "plan"), limit);
+            foreach (var x in items) { x.Ox = ox; x.Oz = oz; }
             // Stations first: they must take their CS1 spot (their tracks continue the imported track), while other
             // buildings can slide or move. A wide CS2 police station had taken the Large Trainstation's spot.
             float stationMaxSlide = (float)P.Num(a, "stationMaxSlide", PlacementRules.DefaultStationMaxSlide);
@@ -335,11 +337,11 @@ namespace Cs2Buildings
                 }
                 if (done) it.Distance = math.distance(it.Position.xz, centre);
                 if (!done && it.Station) Fail(it, failures, "stationCollision", "station kept at its CS1 spot, where the lot overlaps " + Article(lastHit) + " (tried " + prefabs.Count
-                    + " prefab(s), slides up to ±" + stationMaxSlide + " m); not moved, because a moved station would not continue the imported track: place it yourself at its CS1 position " + Cs1Pos(it));
+                    + " prefab(s), slides up to ±" + stationMaxSlide + " m); not moved, because a moved station would not continue the imported track: place it yourself at " + Cs1Pos(it));
                 else if (!done && passes.Count == 0) Fail(it, failures, "collision", "not placed: at its CS1 spot the lot overlaps " + Article(lastHit) + " (tried " + prefabs.Count
-                    + " prefab(s), slides up to ±" + maxSlide + " m); not moved to free land: place it yourself at its CS1 position " + Cs1Pos(it));
+                    + " prefab(s), slides up to ±" + maxSlide + " m); not moved to free land: place it yourself at " + Cs1Pos(it));
                 else if (!done) Fail(it, failures, "collision", "lot overlaps " + Article(lastHit) + " (tried " + prefabs.Count + " prefab(s), slides up to ±" + maxSlide + " m"
-                    + ", free land " + (fallback == "anywhere" ? "anywhere in the crop" : "within " + passes[passes.Count - 1].Value + " m") + "): place it yourself at its CS1 position " + Cs1Pos(it));
+                    + ", free land " + (fallback == "anywhere" ? "anywhere in the crop" : "within " + passes[passes.Count - 1].Value + " m") + "): place it yourself at " + Cs1Pos(it));
             }
 
             // Create the definitions in batches, a few frames apart.
@@ -406,11 +408,24 @@ namespace Cs2Buildings
             }
 
             var list = new List<object>();
+            // Not placed: one "Hospital: place it yourself at CS1 (x, z) = CS2 (x, z) (why)" line each, in the web report's words.
+            var placeYourself = new List<object>();
+            foreach (var it in items)
+            {
+                if (it.Status == "placed" || it.Status == "alreadyPlaced") continue;
+                var why = it.Reason ?? it.Status;
+                int cut = why.IndexOf(" (tried", StringComparison.Ordinal);
+                if (cut > 0) why = why.Substring(0, cut);
+                if (why.StartsWith("not placed: ", StringComparison.Ordinal)) why = why.Substring("not placed: ".Length);
+                if (why.Contains("place it yourself")) why = it.Status; // a reason without "(tried …)": keep the line short
+                placeYourself.Add(PlacementRules.PlaceYourself(it.Cs1Info ?? it.Prefab, Cs1Pos(it), why));
+            }
             foreach (var it in items)
                 list.Add(new Dictionary<string, object>
                 {
                     { "id", it.Id }, { "prefab", it.Prefab }, { "cs1Info", it.Cs1Info }, { "status", it.Status }, { "reason", it.Reason },
-                    { "cs1", new List<object> { R((float)it.X), R((float)it.Z) } }, // the CS1 position (plan frame), e.g. for "place it yourself"
+                    { "cs1", new List<object> { R((float)(it.X - it.Dx)), R((float)(it.Z - it.Dz)) } }, // CS1 position, for "place it yourself"
+                    { "cs2Spot", new List<object> { R((float)(it.X + it.Ox)), R((float)(it.Z + it.Oz)) } }, // the same spot in the CS2 city
                     { "x", R(it.Position.x) }, { "y", R(it.Position.y) }, { "z", R(it.Position.z) },
                     { "yaw", R(math.degrees(math.atan2(it.Forward.x, it.Forward.y))) },
                     { "lot", new List<object> { it.Lot.x, it.Lot.y } }, { "snapDistance", R(it.SnapDistance) },
@@ -419,7 +434,7 @@ namespace Cs2Buildings
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "placeYourself", placeYourself }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
                 { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "subNetCourses", subNetCourses }, { "buildingsWithSubNets", withSubNets }, { "subNetsMissing", subNetsMissing }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
                 { "offset", new List<object> { ox, oz } }, { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", list },
@@ -447,7 +462,7 @@ namespace Cs2Buildings
             failures[kind] = n + 1;
         }
 
-        static string Cs1Pos(Item it) { return PlacementRules.Position(it.X, it.Z); }
+        static string Cs1Pos(Item it) { return PlacementRules.Where(it.X, it.Z, it.Dx, it.Dz, it.Ox, it.Oz); }
 
         static string Article(string what) { return what == null ? "something" : (what.StartsWith("another") ? "" : "a ") + what; }
 
@@ -544,6 +559,8 @@ namespace Cs2Buildings
             var root = MiniJson.Parse(File.ReadAllText(path, Encoding.UTF8)) as Dictionary<string, object>;
             if (root == null) throw new InvalidDataException("plan is not a JSON object");
             var section = root.ContainsKey("buildings") ? root["buildings"] as Dictionary<string, object> : root;
+            var tr = root.ContainsKey("transform") ? root["transform"] as Dictionary<string, object> : null;
+            double dx = tr != null ? P.Num(tr, "dx", 0) : 0, dz = tr != null ? P.Num(tr, "dz", 0) : 0;
             var arr = section != null && section.ContainsKey("items") ? section["items"] as List<object> : null;
             if (arr == null) throw new InvalidDataException("no buildings.items in " + path);
             var items = new List<Item>();
@@ -561,6 +578,7 @@ namespace Cs2Buildings
                     RequireRoad = P.Bool(d, "requireRoad", false),
                     MaxDistance = (float)P.Num(d, "maxDistance", 0),
                     Station = P.Str(d, "family", null) == "station",
+                    Dx = dx, Dz = dz,
                     Cs1Info = P.Str(d, "cs1Info", null),
                     X = P.Num(d, "x", 0), Z = P.Num(d, "z", 0), Score = P.Num(d, "score", 0),
                     Front = Pair(d, "front"), Facing = Pair(d, "facing"),
@@ -783,15 +801,17 @@ namespace Cs2Buildings
         /// The building prefab's sub-nets (Game.Prefabs.SubNet: depot / station tracks, internal paths and roads) as
         /// Permanent course definitions owned by the building definition created in the same frame, as
         /// ZoneSpawnSystem/BuildingConstructionSystem.CreateSubNet do: local curve → world, elevation = local height,
-        /// IsFirst/IsLast | DisableMerge, OwnerDefinition = (building prefab, position, rotation). Upgrade-only sub-nets
-        /// (m_Upgrades set) are skipped: the placed building has no upgrades. Returns the number of courses.
+        /// IsFirst/IsLast | DisableMerge, OwnerDefinition = (building prefab, position, rotation). Every element is built:
+        /// m_Upgrades is not "upgrade only" but the composition flags the edge gets (station platform pieces, stairs),
+        /// passed on as an Upgraded component like vanilla ZoneSpawnSystem.CreateSubNet (buildings decision #39).
+        /// Returns the number of courses.
         /// </summary>
         static int ExpectedSubNets(EntityManager em, Entity prefab)
         {
             if (!em.HasBuffer<Game.Prefabs.SubNet>(prefab)) return 0;
             var buf = em.GetBuffer<Game.Prefabs.SubNet>(prefab, true);
             int n = 0;
-            for (int i = 0; i < buf.Length; i++) if (buf[i].m_Prefab != Entity.Null && buf[i].m_Upgrades.Equals(default(CompositionFlags))) n++;
+            for (int i = 0; i < buf.Length; i++) if (buf[i].m_Prefab != Entity.Null) n++;
             return n;
         }
 
@@ -804,7 +824,7 @@ namespace Cs2Buildings
             int n = 0;
             foreach (var sn in subNets)
             {
-                if (sn.m_Prefab == Entity.Null || !sn.m_Upgrades.Equals(default(CompositionFlags))) continue;
+                if (sn.m_Prefab == Entity.Null) continue;
                 var local = sn.m_Curve;
                 var curve = ObjectUtils.LocalToWorld(pos, rot, local);
                 var start = new CoursePos
@@ -824,6 +844,7 @@ namespace Cs2Buildings
                 em.AddComponentData(e, new CreationDefinition { m_Prefab = sn.m_Prefab, m_RandomSeed = rnd.NextInt(), m_Flags = CreationFlags.Permanent });
                 em.AddComponentData(e, new OwnerDefinition { m_Prefab = buildingPrefab, m_Position = pos, m_Rotation = rot });
                 em.AddComponentData(e, new NetCourse { m_Curve = curve, m_StartPosition = start, m_EndPosition = end, m_Length = MathUtils.Length(curve), m_FixedIndex = -1 });
+                if (!sn.m_Upgrades.Equals(default(CompositionFlags))) em.AddComponentData(e, new Upgraded { m_Flags = sn.m_Upgrades });
                 em.AddComponent<Updated>(e);
                 em.AddComponent<Deleted>(e);
                 n++;

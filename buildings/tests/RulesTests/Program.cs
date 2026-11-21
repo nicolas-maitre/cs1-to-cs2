@@ -72,5 +72,16 @@ namespace RulesTests
         {
             Eq("(-2421, 439)", PlacementRules.Position(-2421.27, 439.4), "rounded");
         }
+
+        // The web report's wording: CS1 = plan − transform, CS2 = plan + import offset.
+        public static void TestPlaceYourselfText()
+        {
+            var where = PlacementRules.Where(-551.3, -274.2, -1870, 165, 0, 0);
+            Eq("CS1 (1319, -439) = CS2 (-551, -274)", where, "where");
+            Eq("CS1 (0, 0) = CS2 (2100, -3900)", PlacementRules.Where(100, 100, 100, 100, 2000, -4000), "with an offset");
+            Eq("Hospital: place it yourself at " + where + " (at its CS1 spot the lot overlaps a road)",
+                PlacementRules.PlaceYourself("Hospital", where, "at its CS1 spot the lot overlaps a road"), "line");
+            Eq("Building: place it yourself at " + where, PlacementRules.PlaceYourself(null, where, null), "no name, no reason");
+        }
     }
 }
