@@ -77,7 +77,7 @@ namespace Cs2ImporterMod
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyTrafficMod)), "Priority signs (Traffic mod)" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyTrafficMod)), "After the roads, sets the TM:PE priority signs through the Traffic mod. Skipped when the Traffic mod isn't installed." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyLaneConnections)), "Lane connections (Traffic mod)" },
-                { s.GetOptionDescLocaleID(nameof(Setting.ApplyLaneConnections)), "Experimental, off by default. After the priority signs, recreates the TM:PE lane connections and lane arrows through the Traffic mod; in tests most junctions came out as in CS1, some differ. Skipped when the Traffic mod isn't installed." },
+                { s.GetOptionDescLocaleID(nameof(Setting.ApplyLaneConnections)), "After the priority signs, recreates the TM:PE lane connections, lane arrows and U-turn rules through the Traffic mod, exactly at junctions. Where a road just continues into another, CS2 keeps its own lane continuation. Skipped when the Traffic mod isn't installed." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyBuildings)), "Buildings, trees, districts" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyBuildings)), "After the roads and zones, places the CS1 service buildings, parks and landmarks, the trees and props, and the districts with their policies." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyTransit)), "Transit lines" },

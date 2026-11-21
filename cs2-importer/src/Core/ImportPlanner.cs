@@ -30,6 +30,13 @@ namespace Cs2Importer.Core
         public NodeJob Start, End;
         public double MiddleElevation;
         public double ChordLength;
+        /// <summary>
+        /// Build the course end → start (DECISIONS-importer.md #55). In a left-hand CS1 city every lane keeps its place but
+        /// drives the other way; building a road the other way round mirrors and reverses it in the plan frame, which is
+        /// exactly that for one-way and asymmetric roads and changes nothing for symmetric two-way ones. The plan frame
+        /// (Start/End, lane references, sides) stays as it is for every other step.
+        /// </summary>
+        public bool BuildReversed;
     }
 
     public sealed class ImportOptions
@@ -58,6 +65,8 @@ namespace Cs2Importer.Core
         /// <summary>"exact" heights: a node whose CS1 height differs from its composition elevation by more than this keeps
         /// the composition elevation as its position too (a clamped trench). See DECISIONS-importer.md M2.</summary>
         public double ExactLimit = 4.5;
+        /// <summary>Build every course end → start when the plan says the CS1 city drove on the left (#55).</summary>
+        public bool ReverseLeftHand = true;
         /// <summary>
         /// Crossings without a shared node: CS2 joins two courses that cross with too little vertical room (the whole-city
         /// run). Where the planned CS2 clearance is below min(MinClearance, CS1's clearance there), the lower road's
@@ -119,7 +128,7 @@ namespace Cs2Importer.Core
                     job.Warnings.Add(new Issue("warning", "parallel-segments", "segments " + other + " and " + s.Id + " join the same two nodes") { Segment = s.Id });
                 else pairs[key] = s.Id;
 
-                var seg = new SegmentJob { Index = job.Segments.Count, Source = s, Start = NodeFor(job, a), End = NodeFor(job, b), ChordLength = chord };
+                var seg = new SegmentJob { Index = job.Segments.Count, Source = s, Start = NodeFor(job, a), End = NodeFor(job, b), ChordLength = chord, BuildReversed = opt.ReverseLeftHand && plan.LeftHandTraffic == true };
                 seg.Start.Uses++;
                 seg.End.Uses++;
                 job.Segments.Add(seg);
@@ -298,6 +307,13 @@ namespace Cs2Importer.Core
         }
 
         static double Lerp(double a, double b, double t) { return a + (b - a) * t; }
+
+        /// <summary>The curve in build order: Curve() start → end, or reversed for a BuildReversed segment.</summary>
+        public static V3[] BuildCurve(SegmentJob s, V3 start, V3 end)
+        {
+            var c = Curve(s, start, end);
+            return s.BuildReversed ? new[] { c[3], c[2], c[1], c[0] } : c;
+        }
 
         /// <summary>Counts per kind, for the report.</summary>
         public static Dictionary<string, object> CountByKind(IEnumerable<Issue> issues)

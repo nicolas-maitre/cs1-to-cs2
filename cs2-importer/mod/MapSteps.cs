@@ -32,6 +32,17 @@ namespace Cs2ImporterMod
             var clear = Drive(MapPrep.Run(new Dictionary<string, object> { { "op", "clear" }, { "frames", 10.0 }, { "all", true } }));
             while (clear.MoveNext()) yield return null;
             result["clear"] = Pick(clear.Result, "edgesDeleted", "nodesDeleted", "buildingsDeleted", "keptOwnedEdges", "keptOtherEdges");
+            // the CS1 city's side of the road (exporter 1.2.1+: plan.source.leftHandTraffic), set while the map has no roads:
+            // CompositionSelectSystem and the other net systems read CityConfigurationSystem.leftHandTraffic every update,
+            // and the city saves it
+            var lht = PlanLeftHand(plan);
+            if (lht.HasValue)
+            {
+                var cfg = Unity.Entities.World.DefaultGameObjectInjectionWorld.GetOrCreateSystemManaged<Game.City.CityConfigurationSystem>();
+                bool was = cfg.leftHandTraffic;
+                cfg.leftHandTraffic = lht.Value;
+                result["traffic"] = new Dictionary<string, object> { { "leftHand", lht.Value }, { "changed", was != lht.Value } };
+            }
             for (int i = 0; i < 60; i++) yield return null; // the deletions settle (terrain worker: wait 60 frames)
 
             // 2. terrain + world map + sea level
@@ -94,6 +105,20 @@ namespace Cs2ImporterMod
             for (int i = 0; i < 600 && !cancelled(); i++) yield return null; // a cancel only cuts the wait short
             if (water != null && P.Has(water, "checkpoints")) result["water_check"] = WaterCheck(plan);
             yield return result;
+        }
+
+        /// <summary>plan.source.leftHandTraffic (null for exports before exporter 1.2.1).</summary>
+        public static bool? PlanLeftHand(Dictionary<string, object> plan)
+        {
+            var src = P.Obj(plan, "source");
+            object v;
+            return src != null && src.TryGetValue("leftHandTraffic", out v) && v is bool ? (bool?)(bool)v : null;
+        }
+
+        public static bool CityLeftHand()
+        {
+            try { return Unity.Entities.World.DefaultGameObjectInjectionWorld.GetOrCreateSystemManaged<Game.City.CityConfigurationSystem>().leftHandTraffic; }
+            catch { return false; }
         }
 
         /// <summary>Median gap (m) under which a city counts as prepared with this package's terrain.</summary>

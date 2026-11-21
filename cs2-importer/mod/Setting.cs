@@ -107,7 +107,7 @@ namespace Cs2ImporterMod
 
         /// <summary>After the priority signs: TM:PE lane connections through the Traffic mod (DECISIONS-importer.md #52).</summary>
         [SettingsUISection(Section, ImportGroup)]
-        public bool ApplyLaneConnections { get; set; } = false;
+        public bool ApplyLaneConnections { get; set; } = true;
 
         /// <summary>After the roads and zones: buildings, trees/props, districts and surfaces (buildings/ worker's steps).</summary>
         [SettingsUISection(Section, ImportGroup)]
@@ -186,7 +186,8 @@ namespace Cs2ImporterMod
             ClearArea = true;
             TerrainIsConverted = false;
             ApplyZoning = ApplyTrafficSettings = ApplyTrafficMod = ApplyBuildings = ApplyTransit = ApplyConnections = true;
-            ApplyLaneConnections = KeepMapTerrain = false;
+            ApplyLaneConnections = true;
+            KeepMapTerrain = false;
             RecentPackages = "";
             OffsetX = OffsetZ = 0;
             StatusText = "";

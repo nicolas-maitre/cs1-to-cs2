@@ -45,14 +45,14 @@ Known limits:
   <Thumbnail Value="Properties/Thumbnail.png" />
   <Tag Value="Code Mod" />
   <Tag Value="Tools" />
-  <ModVersion Value="0.3.0" />
+  <ModVersion Value="0.3.1" />
   <GameVersion Value="1.*" />
   <!-- Road Builder [BETA] (Paradox Mods 87190) is required. Traffic (80095) is optional: the publish format has no
        optional dependencies, so it is only named in the description. -->
   <Dependency Id="87190" />
   <ChangeLog>
-* Browse for a package folder or zip, recent packages, clearer errors (Road Builder missing, newer package format, a city that wasn't prepared).
-* Cancel during Prepare map and Import; Remove imported deletes what an import created.
-* French Options page.
+* Cities that drove on the left: Prepare map sets the same side, and one-way and asymmetric roads now run as in CS1.
+* TM:PE lane connections, lane arrows and U-turn rules are applied by default through the Traffic mod, exactly at junctions.
+* Check warns when the city drives on the other side than the CS1 city.
   </ChangeLog>
 </Publish>

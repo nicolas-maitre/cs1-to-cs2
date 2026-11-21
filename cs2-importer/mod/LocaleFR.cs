@@ -49,7 +49,7 @@ namespace Cs2ImporterMod
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyTrafficMod)), "Panneaux de priorité (mod Traffic)" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyTrafficMod)), "Après les routes, pose les panneaux de priorité de TM:PE avec le mod Traffic. Ignoré si le mod Traffic n'est pas installé." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyLaneConnections)), "Connexions de voies (mod Traffic)" },
-                { s.GetOptionDescLocaleID(nameof(Setting.ApplyLaneConnections)), "Expérimental, désactivé par défaut. Après les panneaux de priorité, recrée les connexions de voies et les flèches de voie de TM:PE avec le mod Traffic ; lors des tests, la plupart des carrefours sont comme dans CS1, certains diffèrent. Ignoré si le mod Traffic n'est pas installé." },
+                { s.GetOptionDescLocaleID(nameof(Setting.ApplyLaneConnections)), "Après les panneaux de priorité, recrée exactement aux carrefours les connexions de voies, les flèches de voie et les règles de demi-tour de TM:PE avec le mod Traffic. Là où une route se prolonge simplement dans une autre, CS2 garde sa propre continuité des voies. Ignoré si le mod Traffic n'est pas installé." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyBuildings)), "Bâtiments, arbres, quartiers" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyBuildings)), "Après les routes et les zones, place les bâtiments de service, parcs et monuments de CS1, les arbres et objets, et les quartiers avec leurs politiques." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyTransit)), "Lignes de transport" },

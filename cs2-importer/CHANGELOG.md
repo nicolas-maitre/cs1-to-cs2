@@ -2,6 +2,18 @@
 
 The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The version is `Mod.Version` in `mod/Mod.cs` (the `<Version>` in `mod/Cs2ImporterMod.csproj` must match; `node tools/release/build.mjs --check` verifies both).
 
+## 0.3.1 (2026-11-21)
+
+- **Fix: left-hand cities.** In a city that drove on the left in CS1, one-way roads were built running backwards, and asymmetric roads mirrored. Roads of a left-hand plan (`plan.source.leftHandTraffic`) are now built end → start, which is exactly CS1's layout. CacaoCity: 141 of 141 one-way and 16 of 16 asymmetric roads as in CS1 (DECISIONS-importer.md #55).
+- **Driving side:** Prepare map sets the new city's driving side to the CS1 city's ("Traffic drives on the left, as in the CS1 city."). Check warns when the loaded city drives on the other side. Needs a package from exporter 1.2.1 or later; older packages build as before.
+- **Lane connections on by default** ("Lane connections (Traffic mod)"), in right-hand and left-hand cities alike:
+  - TM:PE lane connections and lane arrows are written into the Traffic mod's data, exactly at junctions.
+  - Where a road just continues into another, CS2 keeps its own lane continuation, which already matches CS1 in most cases.
+  - Skibidi: 162 of 176 lanes as in CS1 (92 %; every junction lane exact); CacaoCity: 125 of 127 (98.4 %). They persist through save and load.
+  - For older plans without the driving side, a left-hand city is recognised from its lanes.
+- **U-turn rules** are applied as lane connections (the Traffic mod has no U-turn setting): bans remove the U-turn lane, allowed U-turns get one where CS2 has none.
+- **Status line:** "Lane connections: N connections at a of b junctions; x of y CS1 lane references matched."
+
 ## 0.3.0 (2026-11-21, release candidate)
 
 - **Packages:**

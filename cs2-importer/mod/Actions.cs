@@ -126,6 +126,8 @@ namespace Cs2ImporterMod
                 var sb = new StringBuilder();
                 if (!string.IsNullOrEmpty(s.LastUnpacked)) sb.Append(s.LastUnpacked).Append('\n');
                 sb.Append(CheckText(r, rb)).Append('\n').Append(MapText(map));
+                var lht = MapSteps.PlanLeftHand((Dictionary<string, object>)MiniJson.Parse(File.ReadAllText(planFile)));
+                if (lht.HasValue && InCity() && lht.Value != MapSteps.CityLeftHand()) sb.Append('\n').Append(T.S(lht.Value ? "check.sideLeft" : "check.sideRight"));
                 if ((bool)map["terrain"] && InCity())
                 {
                     var diff = MapSteps.TerrainMismatch(planFile);
@@ -317,6 +319,8 @@ namespace Cs2ImporterMod
             object v;
             var c = r.TryGetValue("clear", out v) ? v as Dictionary<string, object> : null;
             if (c != null) sb.Append(T.S("prep.removed", c.TryGetValue("edgesDeleted", out v) ? v : 0, c.TryGetValue("buildingsDeleted", out v) ? v : 0)).Append('\n');
+            var tr = r.TryGetValue("traffic", out v) ? v as Dictionary<string, object> : null;
+            if (tr != null) sb.Append(T.S((bool)tr["leftHand"] ? "prep.lht" : "prep.rht")).Append('\n');
             var t = r.TryGetValue("terrain", out v) ? v as Dictionary<string, object> : null;
             if (t != null && t.ContainsKey("skipped")) sb.Append(T.S("prep.terrainSkipped")).Append('\n');
             else if (t != null) sb.Append(T.S("prep.terrain", (bool)t["worldMap"] ? T.S("check.mapWorld") : "", t["p95Error"], t["points"])).Append('\n');
@@ -391,7 +395,12 @@ namespace Cs2ImporterMod
             // zoning after the traffic steps: they mark edges Updated, and the blocks must be final when they're painted
             if (s.ApplyTrafficSettings) steps.Add(Op("traffic"));
             if (s.ApplyTrafficMod) steps.Add(Op("trafficmod"));
-            if (s.ApplyLaneConnections) steps.Add(Op("lanes"));
+            if (s.ApplyLaneConnections)
+            {
+                // right-hand cities only for now: in left-hand ones too few CS1 lanes resolve (DECISIONS-importer.md #54/#55)
+                if (MapSteps.CityLeftHand() && !LeftHandLanesReady) steps.Add(new KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>("lanes", a => SkippedWith(T.S("line.lanesLeftHand"))));
+                else steps.Add(Op("lanes"));
+            }
             if (s.ApplyZoning) steps.Add(Op("zoning"));
             steps.AddRange(ImportSteps.Registered);
             // last: the connections own the imported end nodes, and nothing may rebuild those nodes afterwards
@@ -430,6 +439,15 @@ namespace Cs2ImporterMod
             }
             catch (Exception ex) { Mod.Log.Warn("report not written: " + ex.Message); }
             yield return all;
+        }
+
+        /// <summary>Lane connections in left-hand cities: on since the left-hand roads match CS1 (DECISIONS-importer.md #55).
+        /// A switch kept for a quick rollback; tests can set it through op mod setStatic.</summary>
+        public static bool LeftHandLanesReady = true;
+
+        static IEnumerator SkippedWith(string why)
+        {
+            yield return new Dictionary<string, object> { { "skipped", why } };
         }
 
         static KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>> Op(string op)
@@ -479,7 +497,7 @@ namespace Cs2ImporterMod
                 case "zoning": return T.S("line.zoning", d["cells_matched"], d["plan_cells"], d["coverage"], d["cells_painted"]);
                 case "traffic": return T.S("line.traffic", d["lights_added"], d["lights_removed"], d["all_way_stops"], d["turn_ban_ends"], Convert.ToInt32(d["crosswalks_added"]) + Convert.ToInt32(d["crosswalks_removed"]));
                 case "trafficmod": return T.S("line.trafficmod", d["priority_signs"], d["edges_with_priorities"]);
-                case "lanes": return T.S("line.lanes", d["nodes_done"], d["nodes_planned"], d["connections"]);
+                case "lanes": return T.S("line.lanes", d["connections"], d["nodes_done"], d["nodes_planned"], d["lane_refs_matched"], d["lane_refs"], ((string)d["handedness"]).StartsWith("mirrored") ? T.S("line.lanesMirrored") : "");
                 case "connections": return T.S("line.connections", d["placed"], d["items"], d["road"], d["train"], Convert.ToInt32(d["failed"]) > 0 ? T.S("line.connectionsFailed", d["failed"]) : "");
                 case "transit":
                 {

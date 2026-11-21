@@ -263,3 +263,44 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
 53. **French Options page** (`LocaleFR.cs`; status and error texts in `Strings.cs`). It uses the web tool's French terms: paquet, zonage, quartiers, connexions extérieures, configurations Road Builder, Préparer la carte. Both locale sources are registered (`en-US`, `fr-FR`), and the status line follows the game's language. The road import's own English progress ("batch i of n …") is translated in the mod.
     - **Verified:** every label read back from the game's active dictionary after `SetActiveLocale("fr-FR")`, plus a French Check status.
     - `LocaleEN.cs` keeps the `Get…LocaleID(…), "label"` form the web tool's guide test parses.
+54. **Lane connections: the 39 mismatches, persistence, U-turns, traffic handedness** (coordinator task after 9211fe5; `.gamectl/lanes/run3`, `run4`).
+    - **The mismatches weren't a mapping error.** With per-lane diagnostics (want / got / the node's lanes before the write), every one of them sat at a node where one road simply continues into the next. CS2 builds no junction lanes there: each lane runs on into the lane that starts where it ends. Writing Traffic mod data there produces nothing, and the mod drops the data from some of those nodes.
+      - **Now:** such nodes are skipped. Their sources are judged by that geometric continuation: "continuous" when it is exactly CS1's target set, else "pass_through_not_expressible" (a lane split or shift that only a junction could carry).
+      - **Suspects ruled out:** Road Builder lane order (every count matched, and the junction sources are 117 of 117 exact), reversed segments (the plan frame is consistent: 474 of 474 Skibidi references point the right way), and the vanilla turn bans (identical result with the traffic step off).
+    - **Skibidi 3 km (right-hand traffic), 176 explicit source lanes:**
+      - 117 match at junctions (all of them) and 45 are continuous, so **162 of 176 (92 %)** are as in CS1;
+      - 14 can't be expressed;
+      - after a save and load: 70 of 70 junctions keep their data, **165 of 176 (93.8 %)** (the continuity check reads slightly differently after the load).
+    - **Persistence:** the Traffic mod saves and restores the data itself. After `save.load`, `op lanes {checkOnly:true}` finds the same junctions and matches.
+    - **U-turns:** the Traffic mod 0.2.13 has no U-turn rule (`TrafficUpgrade` / `NoUturn` exist but nothing uses them), so TM:PE U-turn rules become lane connections:
+      - a ban drops a source lane's connections back into its own road;
+      - "allowed" adds a connection from the innermost inbound lane to the innermost outbound lane of the same road, when CS2 has no U-turn there.
+
+      Skibidi: 31 rules, 17 already as in CS2, 8 of 9 changed ones hold. The failures are at nodes without a junction (now counted as `uturn_at_nodes_without_junction`), plus one ban on a lane whose only movements are U-turns (an empty connection set can't be written).
+    - **Traffic handedness:** CacaoCity drove on the left. Into a right-hand CS2 city every CS1 lane is where CS2 has it but flows the other way, which explains the acceptance run's 0 of 265.
+      - **Exporter 1.2.1** writes `manifest.traffic.leftHand`, and the web tool writes `plan.source.leftHandTraffic`.
+      - **Prepare map** sets `CityConfigurationSystem.leftHandTraffic` to it while the map has no roads. The net systems read it every update, and the city saves it. The status says "Traffic drives on the left, as in the CS1 city." Check warns when an existing city drives on the other side.
+      - **Lane matching** compares the plan's side with the city's. For older plans without the field it tries plain and mirrored ordinals over the whole plan (`LaneMatch.Mirror`; mirrored only when clearly better).
+      - **Verified:** Cacao into a right-hand city was detected as mirrored (342 of 344 fitting mirrored, 2 plain); Cacao with the field, prepared as left-hand, matched plainly.
+    - **What's left before turning the toggle on by default** (the coordinator's bar was 95 % and persistence):
+      1. Skibidi is at 92–94 %. The rest are lane splits or shifts at nodes without a junction that CS2 can't represent, so no matching fix will raise it. Only a junction there could, and making one would change the network.
+      2. Left-hand cities: only 342 of Cacao's 764 lane references resolve. 212 are lane-count differences (workshop "more lanes" roads whose Road Builder version has another count) and 210 flow the wrong way even in a left-hand CS2 city. The latter likely come from one-way roads: CS2 flips one-way roads with the handedness (`FlipTrafficHandednessSystem.FlipOnewayRoadsJob`), so in a left-hand city the importer's one-way roads may run against CS1's direction. That needs a road-level check in a left-hand city, not a lane fix.
+
+      Everything that resolves matches exactly (Skibidi junctions 117 of 117, Cacao 58 of 58), so the step never makes a junction worse than leaving it alone.
+    - **Status line:** "Lane connections: N connections at a of b junctions; x of y CS1 lane references matched[ (the CS1 city drove on the other side of the road)]."
+    - **Tests:** `LaneMatch` (game-free: pick by ordinal, mirror, arrows, innermost lanes, outcome) has 6 tests in CoreTests (34 in all).
+55. **Left-hand cities: roads built end → start; lane connections on by default in both kinds of city** (coordinator decisions after #54).
+    - **Default:** "Lane connections (Traffic mod)" is on by default (coordinator (a)). Everything the step writes is exact, and what's left can't be expressed in CS2. `Actions.LeftHandLanesReady` gated left-hand cities until the measurement below; it is now true, and stays as a one-line rollback.
+    - **Measured** with op `lanedirs` (`src/Game/LaneDirs.cs`): every plan segment's CS2 car lanes, left → right in the plan frame, forward or backward. These were compared offline with CS1's lanes from the export (netinfos `m_direction`, reversed in a left-hand city):
+      - **Skibidi, right-hand, control:** every comparable segment the same (1258 two-way, 309 one-way, 5 asymmetric). The count differences are CS2 listing a lane twice, with the same directions.
+      - **Cacao in a left-hand city:** two-way roads were right (329), but **every one-way road ran backwards** (42, plus 4 with a count difference) and **the asymmetric roads came out mirrored and reversed** (15).
+    - **Why:** in a left-hand CS1 city every lane keeps its place but drives the other way. The plan's own lane references showed it first: 515 of 530 point backwards. The importer built each road plan start → end, so a one-way prefab drove along the plan direction.
+    - **Fix (game-free, in the planner):** for a plan with `source.leftHandTraffic: true`, `SegmentJob.BuildReversed` makes the importer create the course end → start (`ImportPlanner.BuildCurve`; `Entry` swaps the end nodes and elevations).
+      - Building a road the other way round mirrors and reverses it in the plan frame. That is exactly what one-way and asymmetric roads need, and it changes nothing for symmetric two-way roads.
+      - The plan frame (Start/End, lane references, segment-end sides, stop sides) stays as it is for every other step; they all find their edge by node, not by direction.
+      - `ImportOptions.ReverseLeftHand` turns it off. Core tests: `LeftHandTests` (3).
+    - **After the fix** (`.gamectl/lht/run1`, Cacao prepared as left-hand, saved as `cs1conv-lht-cacao`):
+      - roads 684 of 684; one-way 141 of 141 and asymmetric 16 of 16 the same as in CS1, nothing reversed or mirrored;
+      - lane connections 125 of 127 explicit sources as in CS1 (**98.4 %**), U-turn rules 17 of 17, outside connections 4 of 4.
+    - **Left:** 212 of Cacao's 764 lane references don't resolve because the CS2 road has a different lane count. CS1 counts bicycle lanes as driving lanes (e.g. "One-Lane One-Way Rd w/Bike Lanes": 3 in CS1, 1 in CS2). That is a plan-side refinement: count only the lanes CS2 builds as car lanes, or give each lane reference its vehicle type.
+

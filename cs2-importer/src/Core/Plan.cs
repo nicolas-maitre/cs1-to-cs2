@@ -40,6 +40,7 @@ namespace Cs2Importer.Core
         public V3[] Bezier;                   // 4 control points (CS2 x/z, CS1-derived y), or null
         public double ElevationStart, ElevationEnd;
         public string Kind = "ground";        // ground, elevated, bridge, slope, tunnel
+        public bool Reversed;                 // CS1 Invert flag: start/end swapped in the plan (schema §2 "Orientation")
     }
 
     public sealed class Plan
@@ -50,6 +51,8 @@ namespace Cs2Importer.Core
         public double CropCenterX, CropCenterZ, CropSize;
         public double Dx, Dz;
         public string HeightMode = "terrain-relative";
+        /// <summary>plan.source.leftHandTraffic (exporter 1.2.1+): the CS1 city drove on the left; null in older plans.</summary>
+        public bool? LeftHandTraffic;
         public readonly Dictionary<string, PlanPrefab> Prefabs = new Dictionary<string, PlanPrefab>();
         public readonly Dictionary<long, PlanNode> Nodes = new Dictionary<long, PlanNode>();
         public readonly List<PlanSegment> Segments = new List<PlanSegment>();
@@ -93,6 +96,7 @@ namespace Cs2Importer.Core
             var src = P.Obj(root, "source");
             plan.SourceCity = P.Str(src, "city", null);
             plan.SourceSave = P.Str(src, "saveName", null);
+            if (src != null && src.ContainsKey("leftHandTraffic") && src["leftHandTraffic"] is bool) plan.LeftHandTraffic = (bool)src["leftHandTraffic"];
             var crop = P.Obj(root, "crop");
             plan.CropCenterX = P.Num(crop, "centerX", 0);
             plan.CropCenterZ = P.Num(crop, "centerZ", 0);
@@ -145,6 +149,7 @@ namespace Cs2Importer.Core
                         ElevationStart = P.Num(o, "elevationStart", 0),
                         ElevationEnd = P.Num(o, "elevationEnd", 0),
                         Kind = P.Str(o, "kind", "ground"),
+                        Reversed = P.Bool(o, "reversed", false),
                         Bezier = ParseBezier(P.List(o, "bezier")),
                     };
                     plan.Segments.Add(s);

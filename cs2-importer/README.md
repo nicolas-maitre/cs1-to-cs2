@@ -56,7 +56,10 @@ gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --args '{"op":"m
 - **Pasted path** with quotes and spaces; recent packages in order.
 - **Cancel:** during Prepare map (stopped after the clear), and during Import (stopped after batch 4 of 6, 1600 roads).
 - **Remove imported:** on the partial import, 1688 roads and 1389 nodes removed. Then a full import, a save and a load, and Remove imported again: 2160 roads, 1794 nodes, 108 buildings, 3549 trees and props, and 9 transit lines removed. Every count is back to the prepared city's, and nothing was missing.
-- **Lane connections:** `.gamectl/modprep/lanes1` (DECISIONS #52).
+- **Lane connections:** `.gamectl/modprep/lanes1` (DECISIONS #52). After #54 (`.gamectl/lanes/run4`):
+  - Skibidi: 117 of 117 junction sources exact plus 45 already as in CS1, 162 of 176 (92 %), the same after save/load;
+  - Cacao (left-hand, set by Prepare map): 58 of 58 resolved sources exact, but only 342 of 764 references resolve.
+  - After #55 (left-hand roads built end → start, `.gamectl/lht/run1`): Cacao's roads 684/684, one-way and asymmetric roads all as in CS1; lane connections 125 of 127 (98.4 %), 550 of 764 references resolve (the rest have another lane count in CS2). Lane connections are on by default in both kinds of city.
 
 ## Quick start (scripts)
 

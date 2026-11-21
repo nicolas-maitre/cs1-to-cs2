@@ -47,6 +47,7 @@ namespace Cs2Importer
                 case "traffic": return M2Ops.Traffic(args);
                 case "trafficmod": return M2Ops.TrafficMod(args);
                 case "lanes": return LaneOps.Apply(args);
+                case "lanedirs": return LaneDirs.Dump(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (check, clear, import, verify, zoning, traffic, trafficmod, terrain, inspect, mod)");
             }
         }
@@ -433,8 +434,9 @@ namespace Cs2Importer
                         failures.Add(new Issue("error", "node-not-created", "segment " + s.Id + ": an end node failed to build in an earlier batch") { Segment = s.Id });
                         continue;
                     }
-                    var curve = ImportPlanner.Curve(s, V(a0.Pos), V(b0.Pos));
-                    w.CreateSegment(pf.Entity, curve, a0.Entity, b0.Entity, (float)s.Start.Elevation, (float)s.End.Elevation, (float)s.MiddleElevation);
+                    var curve = ImportPlanner.BuildCurve(s, V(a0.Pos), V(b0.Pos));
+                    if (s.BuildReversed) w.CreateSegment(pf.Entity, curve, b0.Entity, a0.Entity, (float)s.End.Elevation, (float)s.Start.Elevation, (float)s.MiddleElevation);
+                    else w.CreateSegment(pf.Entity, curve, a0.Entity, b0.Entity, (float)s.Start.Elevation, (float)s.End.Elevation, (float)s.MiddleElevation);
                     created++;
                     if (a0.Entity != Entity.Null) attached++;
                     if (b0.Entity != Entity.Null) attached++;
