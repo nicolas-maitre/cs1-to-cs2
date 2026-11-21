@@ -357,3 +357,16 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - no electricity or water outside connections.
 
      Fixes are assigned: utility outside connections in map prep (worker-4), CS1 off-road power lines and pipes (#115, buildings worker), unconnected facilities in the import report (worker-3).
+118. **RC2 passed (vanilla roads, `docs/QA.md` §8), but the release is not cut yet** (Claude). Results with no regression against RC1:
+     - roads built 100%, and every compared road runs in CS1's direction;
+     - lane connections matched 92% / 99% / 95.7%;
+     - all buildings placed;
+     - fewer Road Builder configs (26 / 32 / 10).
+
+     The user's review of the converted cities since then found four issues worth fixing before a release:
+     - road heights (#110–113);
+     - Node Controller lane alignment (#107);
+     - invented medians (#114);
+     - utilities: no power or water service (#115, #117).
+
+     **RC3 runs once those land, with a utilities and heights check added to acceptance.** RC builds come from a clean export of a commit, not the shared working tree.
