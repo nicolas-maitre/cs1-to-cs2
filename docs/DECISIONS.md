@@ -216,3 +216,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 80. **Trees on wider CS2 roads are moved aside (mean 3.1 m) instead of dropped**: 705 moved, 654 dropped, down from 1359 (Claude).
 81. **Building fallback passes: nearby 150 m → 400 m → `anywhere` in the crop, chosen per type in the web tool** (Claude). With `anywhere`, Skibidi places 108/108, with a maximum move of 1.2 km for the huge CS2 lots. The distance is reported for every building.
 82. **`tools/release/build.mjs` lands together with the importer's 0.3.0 version bump and changelog** (Claude, coordination). Committed on its own, its version check fails.
+83. **Rail and subway depots are never invented inside the converted city** (user, 2026-11-21 morning; supersedes the rail/subway part of #78). Depots are big, and the importer shouldn't invent city content.
+    - A rail or subway yard is placed only at the crop edge, next to where the line's own track leaves the crop (free land, nothing in the city disturbed), and linked to that track.
+    - If the line has no track leaving the crop (e.g. a metro entirely inside it), no depot is placed. The import report names the line and asks the user to place one.
+    - The web tool offers per type: "Depot at the crop edge" (default for rail/subway) or "I'll place it myself".
+    - Bus and tram default depots stay automatic for now (small, road-only); open for the user to change.
