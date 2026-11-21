@@ -84,7 +84,7 @@ Both games return the same keys. A key the game can't provide is `null`.
 | `speed` | number | selected simulation speed (CS1 1–3, CS2 1–3 as the game reports it) |
 | `frame` | number | bridge frame counter; it increments once per rendered frame |
 | `bridge_version` | string | |
-| `autosave_blocked` | bool | CS2 only: the game's autosave is switched off by the bridge (see below); CS1 omits it |
+| `autosave_blocked` | bool | the game's autosave is held back by the bridge (see the autosave guards below) |
 
 ## Methods
 
@@ -110,7 +110,7 @@ Each game implements these game-specific methods, with the same names and shapes
 | `camera.get` | – | `{x, y, z, distance, yaw, pitch}`: pivot / target position, zoom distance, angles in degrees | no |
 | `camera.set` | any of `x, y?, z, distance, yaw, pitch`, `instant?`=true | the new camera, same shape as `camera.get` | no |
 | `sim.set` | `paused?`, `speed?` | `{paused, speed}` | no |
-| `autosave.set` | `enabled` (bool) | CS2 only: `{autosave_blocked, reason}` | yes |
+| `autosave.set` | `enabled` (bool) | `{autosave_blocked, reason}` | yes |
 
 CS2 also has these, for the converter's test cities:
 
@@ -168,6 +168,24 @@ With the user's settings (autosave every minute, keep 10), each minute a script 
 - **How it's undone:** `autosave.set {"enabled":true}` gives the system back, and so does the mod unloading when the game quits.
   - Re-enabling it in a city that has been running longer than the autosave interval triggers an autosave straight away. Re-enable from the main menu if that matters.
 - **Verified:** a city ran unpaused for 3 minutes with no autosave written. The autosave lines in `Settings.coc` and the save files were identical before and after.
+
+## CS1 autosave guard
+
+CS1 overwrites `Saves\AutoSave.crp` every autosave interval. Before the guard existed, that happened once during the M1 export session. The CS1 bridge holds it back the same way as in CS2:
+
+- **When it's on:** when gamectl launched the game (`CS1TOCS2_GAMECTL=1`), after a `save.load` through the bridge, and after `autosave.set {"enabled":false}`.
+- **How CS1 autosaves** (Assembly-CSharp, by IL inspection):
+  - `LoadingManager` owns one `AutoSaveTimer` for the whole game session.
+  - Its `AutoSaveRoutine` coroutine waits the interval, then yields frame after frame while `AutoSaveTimer.m_Paused > 0`, then calls `SavePanel.AutoSave("AutoSave")`.
+  - `AutoSaveRoutine` is the only caller of `SavePanel.AutoSave`.
+  - `AutoSaveTimer.Start()` runs when a level finishes loading and when the autosave options change. `Stop()` ends the coroutine.
+- **How it blocks autosaves:** every frame, while the guard is on and the timer's `m_Running` is set, the bridge calls `AutoSaveTimer.Stop()`.
+  - This is in memory only: `Settings.autoSave` and `autoSaveInterval` are never changed, so a normal game start autosaves as configured.
+  - Why not `Pause()`: the game's load and save panels call `UnPause()` when they're hidden even if they never paused, which clamps the counter back to 0. A first version of the guard relied on `Pause()`, and an autosave still went through 2 minutes after a guarded load.
+- **How it's undone:** `AutoSaveTimer.Start()`, on `autosave.set {"enabled":true}` and when the bridge mod unloads (game quit or mod reload).
+  - `Start()` re-reads the user's settings and restarts the interval from zero, so lifting the guard never autosaves straight away (unlike CS2).
+- **`state.autosave_blocked`** is true while the guard is on and the autosave coroutine isn't running.
+- **Verified** on Skibidi.02, where the user's interval is about 1 minute: see the M2 notes in `cs1-exporter/DECISIONS-exporter.md`.
 
 ## CS1 notes
 

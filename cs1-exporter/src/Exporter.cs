@@ -30,6 +30,7 @@ namespace Cs1Exporter
             public double Seconds;
             public int Nodes, Segments, NetInfos, ImtFillers = -1;
             public Dictionary<string, string> Sections = new Dictionary<string, string>();
+            public Dictionary<string, int> Counts = new Dictionary<string, int>();
             public Report Report;
 
             public string Summary()
@@ -51,6 +52,7 @@ namespace Cs1Exporter
             if (args != null) args.TryGetValue("path", out p);
             var path = p as string;
             if (string.IsNullOrEmpty(path)) path = DefaultPath();
+            else path = Environment.ExpandEnvironmentVariables(path); // %LOCALAPPDATA%/... works from any shell
             if (!GameInfo.CityLoaded()) throw new InvalidOperationException("no city is loaded");
 
             var r = Export(path);
@@ -59,6 +61,8 @@ namespace Cs1Exporter
                 report.Add(new Dictionary<string, object> { { "level", i.Level }, { "section", i.Section }, { "message", i.Message } });
             var sections = new Dictionary<string, object>();
             foreach (var kv in r.Sections) sections[kv.Key] = kv.Value;
+            var counts = new Dictionary<string, object>();
+            foreach (var kv in r.Counts) counts[kv.Key] = kv.Value;
             return new Dictionary<string, object>
             {
                 { "path", r.Path },
@@ -68,6 +72,7 @@ namespace Cs1Exporter
                 { "segments", r.Segments },
                 { "netInfos", r.NetInfos },
                 { "imtFillers", r.ImtFillers },
+                { "counts", counts },
                 { "sections", sections },
                 { "report", report },
             };
@@ -128,7 +133,75 @@ namespace Cs1Exporter
                 return "ok";
             });
 
-            // M2: TM:PE and Node Controller data. Listed so readers see they were not exported on purpose.
+            // ---- M2 sections. Each is isolated like the ones above.
+            var zones = new ZonesExporter(report);
+            Section(report, sections, "zones", () =>
+            {
+                entries.Add(Json("zones.json", zones.Write));
+                result.Counts["zoneBlocks"] = zones.Blocks;
+                result.Counts["zonedCells"] = zones.ZonedCells;
+                return "ok";
+            });
+
+            var water = new WaterExporter(report);
+            Section(report, sections, "water", () =>
+            {
+                entries.Add(Json("water.json", w => water.Write(w, terrain.R16 != null ? terrain : null)));
+                entries.Add(new KeyValuePair<string, byte[]>("water.r16", water.R16));
+                result.Counts["waterSources"] = water.Sources;
+                return "ok";
+            });
+
+            LaneMap lanes = null;
+            Section(report, sections, "transit", () =>
+            {
+                lanes = lanes ?? new LaneMap();
+                var transit = new TransitExporter(report);
+                entries.Add(Json("transit.json", w => transit.Write(w, lanes)));
+                result.Counts["transitLines"] = transit.Lines;
+                result.Counts["transitStops"] = transit.Stops;
+                return "ok";
+            });
+
+            var tmpe = new TmpeExporter(report);
+            Section(report, sections, "tmpe", () =>
+            {
+                if (!tmpe.Available()) { report.Info("tmpe", "TM:PE is not loaded"); return "absent"; }
+                entries.Add(Json("tmpe.json", tmpe.Write));
+                foreach (var kv in tmpe.Counts) result.Counts["tmpe." + kv.Key] = kv.Value;
+                return "ok";
+            });
+
+            var nc = new NodeControllerExporter(report);
+            Section(report, sections, "nodecontroller", () =>
+            {
+                if (!nc.Available()) { report.Info("nodecontroller", "Node Controller is not loaded"); return "absent"; }
+                entries.Add(Json("nodecontroller.json", nc.Write));
+                result.Counts["ncNodes"] = nc.Nodes;
+                return "ok";
+            });
+
+            // M3 data, exported now so it's there.
+            var bx = new BuildingsExporter(report);
+            Section(report, sections, "buildings", () =>
+            {
+                entries.Add(Json("buildings.json", bx.WriteBuildings));
+                result.Counts["buildings"] = bx.Buildings;
+                return "ok";
+            });
+            Section(report, sections, "props", () =>
+            {
+                entries.Add(Json("props.json", bx.WriteProps));
+                result.Counts["props"] = bx.Props;
+                return "ok";
+            });
+            Section(report, sections, "trees", () =>
+            {
+                entries.Add(Json("trees.json", bx.WriteTrees));
+                result.Counts["trees"] = bx.Trees;
+                return "ok";
+            });
+
             List<GameInfo.ModEntry> mods = null;
             GameInfo.Known known = null;
             try
@@ -140,14 +213,12 @@ namespace Cs1Exporter
             {
                 report.Error("mods", "mod detection failed: " + Report.Describe(e));
             }
-            sections["tmpe"] = "absent";
-            sections["nodecontroller"] = "absent";
             if (known != null)
             {
-                if (known.Tmpe != null) report.Info("tmpe", "TM:PE " + known.Tmpe + " is enabled; its data (lane arrows, priority signs, ...) is exported from M2 on");
-                if (known.NodeController != null) report.Info("nodecontroller", "Node Controller " + known.NodeController + " is enabled; its node data is exported from M2 on");
                 if (known.EightyOneTiles != null) report.Info("manifest", "81 Tiles " + known.EightyOneTiles + " is enabled");
                 if (known.Imt != null && result.ImtFillers < 0) report.Warn("imt", "IMT " + known.Imt + " is enabled but its fillers could not be read");
+                if (known.Tmpe != null && sections["tmpe"] == "absent") report.Warn("tmpe", "TM:PE " + known.Tmpe + " is enabled but its managers were not found");
+                if (known.NodeController != null && sections["nodecontroller"] == "absent") report.Warn("nodecontroller", "Node Controller " + known.NodeController + " is enabled but its manager was not found");
             }
 
             // manifest.json and report.json are always written; they never depend on the sections above succeeding.

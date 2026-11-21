@@ -68,7 +68,7 @@ test('start: an old ready marker does not count; waits for the new one, then the
   const markerAt = Number(fs.readFileSync(`${s.log}.marker-at`, 'utf8'));
   assert.ok(doneAt >= markerAt, 'start returned only after the new marker was written');
   assert.equal(env.SteamAppId, '949230');
-  assert.equal(env.CS1TOCS2_GAMECTL, '1', 'marks the game as script-driven (CS2 autosave guard)');
+  assert.equal(env.CS1TOCS2_GAMECTL, '1', 'marks the game as script-driven (autosave guard)');
   assert.equal(env.SteamGameId, '949230');
   assert.deepEqual(env.argv.slice(-2), ['-continuelastsave', '-x y']);
   // and the module's bridge works

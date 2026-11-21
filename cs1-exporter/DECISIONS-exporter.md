@@ -78,3 +78,84 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
   - The CS1 bridge has no autosave guard; only CS2's does. Worth adding one to `tools/cs1-bridge` (outside this folder).
 - **Water is not exported** (`seaLevel` is null; water sources and the water level are M2).
 - **The 81 Tiles version is the assembly version**, and the detection matches on "EightyOne" / "81 Tiles". If the user ever runs the original 81 Tiles mod instead, it's detected the same way.
+
+---
+
+# M2 (2026-11-21, 04:45–05:30)
+
+All taken by Claude while the user was asleep; review them. The new sections are specified in `schema/README.md` §1.
+
+## Decisions
+
+14. **CS1 autosave guard: keep the autosave coroutine stopped, don't count pauses** (`tools/cs1-bridge/AutosaveGuard.cs`).
+    - **How CS1 autosaves** (by IL inspection): `LoadingManager.AutoSaveTimer.AutoSaveRoutine` is the only caller of `SavePanel.AutoSave`.
+    - **First try:** one extra `AutoSaveTimer.Pause()`. It failed on the real game: an autosave still went through about 2 min after a guarded load. The game's load and save panels call `UnPause()` when they're hidden even if they never paused, which clamps the counter back to 0.
+    - **Now:** every frame, if the guard is on and the timer's private `m_Running` is set, the bridge calls the public `AutoSaveTimer.Stop()`. Releasing the guard calls `Start()`, which re-reads the user's settings and restarts the interval, so lifting the guard never autosaves at once.
+    - **In memory only:** nothing is written to the settings.
+    - **When it's on:** set by `CS1TOCS2_GAMECTL=1` (gamectl launches), `save.load` and `autosave.set`. It's released on mod unload.
+    - **`state.autosave_blocked`** reports it.
+
+15. **TM:PE is read through its own `SaveData` methods** rather than walking its internals or calling the public API for every lane.
+    - **Why:** each manager's `ICustomDataManager<List<Configuration.X>>.SaveData(ref bool)` returns exactly the records TM:PE writes into the savegame: only what the user customised, in a stable persisted format. That's what a converter needs (defaults come from the game).
+    - **Safety:** checked by IL that these methods only read state and build lists.
+    - **Reflection only:** no compile-time reference to TrafficManager.dll or TMPE.API.dll, so a missing or changed TM:PE never breaks the build or the load.
+    - **Isolation:** each part (arrows, connections, …) fails on its own, and `tmpe.json.parts` lists the status of each.
+    - **Lane records are resolved** to `segment`, `laneIndex` and the `node` the lane flows into, so readers never need CS1 lane ids, which aren't stable across saves.
+    - **Lane arrows** come from `LaneArrowManager.GetFinalLaneArrows`, TM:PE's own final arrows.
+    - **"Unlimited" speed** (`SpeedValue.UNLIMITED` = 20 game units) shows up as 1000 km/h. It's flagged with `unlimited: true`.
+    - **Manual traffic lights** aren't persisted by TM:PE, so they're not exported. Timed lights are TM:PE's own record, written field by field.
+
+16. **Node Controller: a fixed list of user-settable properties per node and per segment end**, read by reflection from `ModsCommon.SingletonManager<NodeController.Manager>.Instance.Buffer`.
+    - Derived geometry and UI state are left out.
+    - `ModsCommon` is taken from the Node Controller assembly, because every mod by this author ships its own copy.
+    - Node Controller holds data for every node it has touched, not only user edits: 1179 nodes on Skibidi. They're all exported; `type` vs `defaultType` shows the user's type changes.
+
+17. **Zones: one record per `ZoneBlock`**, with the cells as two short strings (`zones`: one hex zone code per cell or `-` for an invalid cell; `occupied`: 0/1).
+    - Why: compact (1.7 MB → 0.35 MB zipped for 10 288 blocks) and easy to index.
+    - **Cell centre formula:** from the game's own math. The exporter re-checks it on every export by measuring each column's distance from the block's road. Column 0 is the cell next to the road: 13.7 m from the road centre line on Skibidi, then +8 m per column.
+
+18. **Water depth grid on the terrain lattice** (`water.r16`, 1081², same scale and row order as `terrain.r16`). It's sampled as `SampleRawHeightWithWater − SampleRawHeightSmooth`.
+    - Why: the terrain session can treat it like a second heightmap. It's a snapshot of the simulated water, not of the water sources' targets; the sources are exported separately with `targetHeight`.
+    - The grid takes about 1 s.
+
+19. **Transit stops:** each stop's lane (`NetNode.m_lane`) gives `segment` / `laneIndex` / `laneOffset`. For station types, the station building is the nearest building of the line's station service and sub-service within 64 m (`BuildingManager.FindBuilding`).
+
+20. **Buildings, props, trees exported now (M3 data):**
+    - **Buildings** are full objects (11 741). `angle` is in degrees (the schema rule) and `level` is 1-based.
+    - **Props and trees** are compact rows `[infoIndex, x, y, z, …]`, because there can be hundreds of thousands. Only free-standing instances are included; building and network props come with their prefabs.
+    - **No limit-raising mods:** Skibidi has no EML / unlimited-trees mod, so the vanilla buffers are complete. With such a mod the vanilla arrays could be partial; see the open issues.
+
+21. **`Exporter.Run` expands environment variables in `path`** (`%LOCALAPPDATA%/…`), so the documented command works from any shell.
+
+22. **A shared `Refl` helper and `LaneMap`** (lane id → segment, index, flow node) are used by TM:PE and transit. `Refl.WriteData` writes any plain object (lists, dictionaries, nullables, enums by name) for TM:PE's timed-light records.
+
+## Results (Skibidi.02, 2026-11-21 05:15)
+
+- **Export:** 5.4 MB in 4–5 s, every section `ok`, report 0 errors / 0 warnings. `inspect-cs1x.mjs`: 136/136 checks pass. The web tool's `cs1conv inspect` reads it.
+- **zones:** 10 288 blocks, 148 555 valid cells, 122 119 zoned. ResidentialLow 65 370, CommercialLow 30 746, Unzoned 26 436, Industrial 12 504, Office 6608, ResidentialHigh 4389, CommercialHigh 2502. 123 246 cells occupied.
+- **water:** sea level 181.98 m. 40 sources: 3 natural, 37 facility. 134 043 wet samples, max depth 82.5 m.
+- **transit:** 21 lines (17 bus, 3 metro, 1 train), 345 stops. Metro stops resolve to station buildings.
+- **tmpe** (TM:PE 11.9.4):
+  - 674 lane arrows, 928 lane connections;
+  - 2286 lane speed limits (695 of them "unlimited") and 22 custom default speeds;
+  - 30 vehicle restrictions (all bus lanes: Bus + Emergency);
+  - 227 junction restriction ends, 625 priority signs, 4 parking restrictions;
+  - 0 light toggles, 37 timed traffic lights.
+- **nodecontroller** (3.5.4.1): 1179 nodes and 2919 segment ends. Types: Custom 557, Middle 526, Bend 78, Crossing 14, End 4.
+- **buildings:** 11 741 (10 328 growable, 7 workshop). **props:** 539 (8 types). **trees:** 41 777 (4 types).
+- **Autosave guard**, verified on the running game (the user's autosave interval is about 1 min):
+  - **Pause-based first version:** autosaves still went through at 05:12:02 and 05:13:13. That's why it was replaced.
+  - **Stop-based guard:** active from about 05:14:00. No AutoSave was written for 4 min 20 s, about 4 intervals; `state.autosave_blocked` was true.
+  - **Release:** `autosave.set {"enabled":true}` at 05:18:22. The next AutoSave came one full interval later (05:19:23), not straight away.
+  - **Block again:** `autosave.set {"enabled":false}` stopped the timer again.
+  - **Mod reload:** a hot reload of the bridge mod released the guard and then re-armed it from the gamectl environment variable.
+  - **The AutoSave.crp overwritten in these tests** was the test session's own (from 04:33), not the user's.
+
+## Open issues (M2)
+
+- **Props and trees with limit mods:** with Extended Managers Library or an unlimited-trees mod, the vanilla `PropManager` / `TreeManager` buffers may not hold everything. Skibidi doesn't use one; if a later city does, read the mod's buffer.
+- **Node Controller exports every node it tracks.** A consumer that wants only real user edits should compare with defaults (`type` vs `defaultType`, offsets vs the defaults). Telling them apart reliably would need Node Controller's own "is default" logic.
+- **`water.r16` is a simulation snapshot.** On a map where water is still filling, it shows the current state. Use the sources' `targetHeight` and the sea level for the intended water.
+- **Transit station lookup is approximate:** nearest building of the right service within 64 m. That's fine for metro and train; for unusual multi-station hubs it could pick a neighbour.
+- **The M1 open issue about the AutoSave overwrite is fixed** by decision 14.
+- **Water is now exported**, which resolves the M1 open issue.

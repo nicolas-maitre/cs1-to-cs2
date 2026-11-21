@@ -64,3 +64,20 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - Verified in game: median 0.013 m against CS1 node heights, and it survives save/reload.
 30. **Terrain: sea level is set just below the lowest point** (a dry map until CS1 water conversion lands in M2), and the whole area is re-snapped so trees follow the new ground (Claude).
 31. **Order: new city → clear the base map's own roads and rails → terrain → road import** (Claude). CS2 doesn't move existing nets when the terrain changes; it builds walls up to them, as with the test map's pre-built highway and rail. So the base map's nets must go first, and outside connections must be rebuilt afterwards.
+
+## 2026-11-21: M2 (overnight)
+
+32. **CS1 autosave guard** (Claude; the CS2 guard's counterpart). Every frame, while the guard is on, the bridge stops CS1's `AutoSaveTimer` coroutine.
+    - Lifting the guard calls `Start()`, which restarts the interval from zero, so there is never an instant autosave.
+    - In memory only; settings are never changed.
+    - `Pause()` was tried first and failed: CS1's panels reset the pause counter.
+33. **Exporter M2 sections** (Claude; specs in `schema/README.md` §1):
+    - `zones.json`: zone cells packed as compact strings;
+    - `water.json` + `water.r16`: sea level, sources, and a snapshot of the water depth on the terrain grid;
+    - `transit.json`: lines, colours, stops in order, and the station building found within 64 m;
+    - `tmpe.json`: read through TM:PE's own save routines, so it contains only user customisations;
+    - `nodecontroller.json`;
+    - `buildings.json`, `props.json` and `trees.json`, ready for M3.
+
+    Skibidi: 10 288 zone blocks, 40 water sources, 21 lines / 345 stops, 674 lane arrows, 928 lane connections, 625 priority signs, 37 timed lights, 11 741 buildings, 41 777 trees.
+34. **Node Controller data covers every node NC touched, not only user edits** (Claude). Consumers compare `type` with `defaultType` to find the user's changes.

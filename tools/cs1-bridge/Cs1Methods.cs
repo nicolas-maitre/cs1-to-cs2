@@ -1,4 +1,4 @@
-// CS1-specific bridge methods (tools/PROTOCOL.md): state, saves.list, save.load, menu, quit, camera.get/set, sim.set.
+// CS1-specific bridge methods (tools/PROTOCOL.md): state, saves.list, save.load, menu, quit, camera.get/set, sim.set, autosave.set.
 // Everything here runs on the game's main thread (BridgeCore.Tick from BridgeRunner.Update).
 // Load / unload follow what the game's own UI does (LoadPanel.LoadRoutine, PauseMenu), verified by IL inspection.
 using System;
@@ -30,6 +30,7 @@ namespace Cs1Bridge
             core.Register("camera.get", "Camera {x, y, z (pivot), distance, yaw, pitch (degrees)}.", c => CameraGet());
             core.Register("camera.set", "Move the camera: any of {x, y, z, distance, yaw, pitch}, {instant}=true.", CameraSet);
             core.Register("sim.set", "Set {paused} and/or {speed} (1-3).", SimSet);
+            core.Register("autosave.set", "{enabled: bool}. false = hold back the game's autosaves (in memory only, never saved to settings); true = give them back.", AutosaveSet, true);
         }
 
         // ------------------------------------------------------------------ state
@@ -118,6 +119,7 @@ namespace Cs1Bridge
                 { "speed", speed },
                 { "frame", s_Core != null ? s_Core.Frame : 0 },
                 { "bridge_version", Bridge.Version },
+                { "autosave_blocked", AutosaveGuard.Active },
             };
         }
 
@@ -211,6 +213,9 @@ namespace Cs1Bridge
                 }
             }
 
+            // A city loaded by a script must not autosave over the user's AutoSave (see AutosaveGuard).
+            AutosaveGuard.Request(true, "save loaded through the bridge");
+            AutosaveGuard.Apply();
             Bridge.Log("loading save '" + asset.name + "' (city '" + meta.cityName + "')");
             s_SaveName = null;
             lm.LoadLevel(meta.assetRef, "Game", "InGame", ngs, false);
@@ -234,6 +239,15 @@ namespace Cs1Bridge
                 return true;
             });
             return BridgeCore.Pending;
+        }
+
+        static object AutosaveSet(Command cmd)
+        {
+            object v;
+            if (!cmd.Params.TryGetValue("enabled", out v) || !(v is bool)) throw new ArgumentException("enabled (bool) is required");
+            AutosaveGuard.Request(!(bool)v, "autosave.set");
+            AutosaveGuard.Apply();
+            return new Dictionary<string, object> { { "autosave_blocked", AutosaveGuard.Active }, { "reason", AutosaveGuard.Reason } };
         }
 
         // ------------------------------------------------------------------ menu / quit

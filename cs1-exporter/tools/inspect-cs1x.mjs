@@ -163,7 +163,9 @@ if (manifest) {
 const report = json('report.json');
 check('report.json present', !!report && Array.isArray(report.items));
 
-const sectionFiles = { network: ['network.json'], netinfos: ['netinfos.json'], imt: ['imt.json'], terrain: ['terrain.json', 'terrain.r16'] };
+const sectionFiles = { network: ['network.json'], netinfos: ['netinfos.json'], imt: ['imt.json'], terrain: ['terrain.json', 'terrain.r16'],
+  zones: ['zones.json'], water: ['water.json', 'water.r16'], transit: ['transit.json'], tmpe: ['tmpe.json'], nodecontroller: ['nodecontroller.json'],
+  buildings: ['buildings.json'], props: ['props.json'], trees: ['trees.json'] };
 for (const [s, files] of Object.entries(sectionFiles))
   if (sections[s] === 'ok') for (const f of files) check(`section ${s} ok → ${f} present`, entries.has(f));
 
@@ -311,6 +313,112 @@ if (terrain) {
   }
 }
 
+// ---------------------------------------------------------------- M2 / M3 sections
+
+const inMap = (p) => Array.isArray(p) && p.length === 3 && p.every((v) => typeof v === 'number') && Math.abs(p[0]) <= 8704 && Math.abs(p[2]) <= 8704;
+
+const zones = sections.zones === 'ok' ? json('zones.json') : undefined;
+if (zones) {
+  let bad = 0, badSeg = 0, cells = 0, zoned = 0, occupied = 0;
+  const byZone = {};
+  for (const b of zones.blocks) {
+    if (!inMap(b.position) || typeof b.angle !== 'number' || b.rows < 0 || b.rows > 8) bad++;
+    if (b.zones.length !== b.rows * 4 || b.occupied.length !== b.rows * 4 || /[^0-9A-F-]/.test(b.zones) || /[^01]/.test(b.occupied)) bad++;
+    if (network && b.segment !== 0 && !segById.has(b.segment)) badSeg++;
+    for (let i = 0; i < b.zones.length; i++) {
+      const c = b.zones[i];
+      if (c === '-') continue;
+      cells++;
+      const name = zones.zoneCodes[String(parseInt(c, 16))] ?? c;
+      byZone[name] = (byZone[name] ?? 0) + 1;
+      if (c >= '2' && c <= '7') zoned++;
+      if (b.occupied[i] === '1') occupied++;
+    }
+  }
+  check('zones: blocks well-formed', bad === 0, `${bad} bad`);
+  check('zones: block segments exist in the network', badSeg === 0, `${badSeg} missing`);
+  summary.zones = { blocks: zones.blocks.length, cells, zoned, occupied, byZone };
+}
+
+const water = sections.water === 'ok' ? json('water.json') : undefined;
+if (water) {
+  const r16 = entries.get(water.depth?.file ?? 'water.r16')?.data;
+  const res = water.depth?.resolution;
+  check('water: depth grid size = resolution² × 2', r16 && r16.length === res * res * 2, `${r16?.length}`);
+  let wet = 0, max = 0;
+  if (r16) for (let i = 0; i < r16.length; i += 2) { const v = r16.readUInt16LE(i); if (v) { wet++; if (v > max) max = v; } }
+  check('water: wetSamples matches the grid', wet === water.depth.wetSamples, `${wet} vs ${water.depth.wetSamples}`);
+  check('water: sources well-formed', water.sources.every((s) => inMap(s.inputPosition) && inMap(s.outputPosition) && typeof s.type === 'string'));
+  const types = {};
+  for (const s of water.sources) types[s.type] = (types[s.type] ?? 0) + 1;
+  summary.water = { seaLevel: water.seaLevel, sources: water.sources.length, sourceTypes: types, wetSamples: wet, maxDepth: +(max * (water.depth.heightScale ?? 1)).toFixed(2) };
+}
+
+const transit = sections.transit === 'ok' ? json('transit.json') : undefined;
+if (transit) {
+  let badStop = 0, stops = 0;
+  const types = {};
+  for (const l of transit.lines) {
+    types[l.type] = (types[l.type] ?? 0) + 1;
+    for (const s of l.stops) { stops++; if (!inMap(s.position) || (network && !nodeById.has(s.node))) badStop++; }
+  }
+  check('transit: stops are network nodes inside the map', badStop === 0, `${badStop} bad`);
+  check('transit: colours are [r,g,b]', transit.lines.every((l) => Array.isArray(l.color) && l.color.length === 3));
+  summary.transit = { lines: transit.lines.length, stops, types };
+}
+
+const tmpe = sections.tmpe === 'ok' ? json('tmpe.json') : undefined;
+if (tmpe) {
+  const counts = {};
+  for (const [k, v] of Object.entries(tmpe)) {
+    if (Array.isArray(v)) counts[k] = v.length;
+    else if (k === 'defaultSpeedLimits' && v && typeof v === 'object') counts[k] = Object.keys(v).length;
+  }
+  const failedParts = Object.entries(tmpe.parts ?? {}).filter(([, v]) => v !== 'ok').map(([k, v]) => `${k}: ${v}`);
+  check('tmpe: every part ok', failedParts.length === 0, failedParts.join('; '));
+  if (network) {
+    const laneRefs = [...(tmpe.laneArrows ?? []), ...(tmpe.speedLimits ?? []), ...(tmpe.vehicleRestrictions ?? [])];
+    const bad = laneRefs.filter((r) => !segById.has(r.segment) || r.laneIndex < 0).length;
+    check('tmpe: lane records resolve to network segments', bad === 0, `${bad} bad`);
+    const ends = [...(tmpe.junctionRestrictions ?? []), ...(tmpe.prioritySigns ?? [])];
+    const badJ = ends.filter((r) => !segById.has(r.segment) || !nodeById.has(r.node)).length;
+    check('tmpe: segment-end records resolve to network segments and nodes', badJ === 0, `${badJ} bad`);
+  }
+  summary.tmpe = { version: tmpe.assembly?.version, counts };
+}
+
+const nc = sections.nodecontroller === 'ok' ? json('nodecontroller.json') : undefined;
+if (nc) {
+  const types = {};
+  let ends = 0, badNode = 0;
+  for (const n of nc.nodes) {
+    types[n.type] = (types[n.type] ?? 0) + 1;
+    ends += n.segmentEnds.length;
+    if (network && !nodeById.has(n.id)) badNode++;
+  }
+  check('nodecontroller: nodes exist in the network', badNode === 0, `${badNode} missing`);
+  summary.nodecontroller = { version: nc.assembly?.version, nodes: nc.nodes.length, segmentEnds: ends, types };
+}
+
+const buildings = sections.buildings === 'ok' ? json('buildings.json') : undefined;
+if (buildings) {
+  const bad = buildings.buildings.filter((b) => !inMap(b.position) || typeof b.angle !== 'number').length;
+  check('buildings: positions inside the map', bad === 0, `${bad} bad`);
+  const byService = {};
+  for (const b of buildings.buildings) byService[b.service] = (byService[b.service] ?? 0) + 1;
+  summary.buildings = {
+    total: buildings.buildings.length, growable: buildings.buildings.filter((b) => b.growable).length,
+    workshop: buildings.buildings.filter((b) => b.workshopId).length, byService,
+  };
+}
+for (const [name, key] of [['props.json', 'props'], ['trees.json', 'trees']]) {
+  const d = sections[key] === 'ok' ? json(name) : undefined;
+  if (!d) continue;
+  const bad = d[key].filter((r) => r[0] < 0 || r[0] >= d.infos.length || !inMap([r[1], r[2], r[3]])).length;
+  check(`${key}: rows reference a known info and lie inside the map`, bad === 0, `${bad} bad`);
+  summary[key] = { total: d[key].length, types: d.infos.length };
+}
+
 // expectations
 const actual = {
   nodes: summary.network?.nodes, segments: summary.network?.segments, imt: summary.imt?.fillers, netinfos: summary.netinfos?.total,
@@ -346,6 +454,14 @@ if (asJson) {
     const o = summary.terrainOrientation;
     console.log(`  terrain vs ${o.spec.n} ground nodes, median |error|: spec ${o.spec.median} m, transposed ${o.transposed.median} m, flipZ ${o.flipZ.median} m, flipX ${o.flipX.median} m`);
   }
+  if (summary.zones) console.log(`  zones: ${summary.zones.blocks} blocks, ${summary.zones.cells} cells (${summary.zones.zoned} zoned, ${summary.zones.occupied} occupied) ${JSON.stringify(summary.zones.byZone)}`);
+  if (summary.water) console.log(`  water: sea level ${summary.water.seaLevel} m, ${summary.water.sources} sources ${JSON.stringify(summary.water.sourceTypes)}, ${summary.water.wetSamples} wet samples, max depth ${summary.water.maxDepth} m`);
+  if (summary.transit) console.log(`  transit: ${summary.transit.lines} lines, ${summary.transit.stops} stops ${JSON.stringify(summary.transit.types)}`);
+  if (summary.tmpe) console.log(`  tmpe ${summary.tmpe.version}: ${JSON.stringify(summary.tmpe.counts)}`);
+  if (summary.nodecontroller) console.log(`  nodecontroller ${summary.nodecontroller.version}: ${summary.nodecontroller.nodes} nodes, ${summary.nodecontroller.segmentEnds} segment ends ${JSON.stringify(summary.nodecontroller.types)}`);
+  if (summary.buildings) console.log(`  buildings: ${summary.buildings.total} (${summary.buildings.growable} growable, ${summary.buildings.workshop} workshop) ${JSON.stringify(summary.buildings.byService)}`);
+  if (summary.props) console.log(`  props: ${summary.props.total} (${summary.props.types} types)`);
+  if (summary.trees) console.log(`  trees: ${summary.trees.total} (${summary.trees.types} types)`);
   console.log(`  report: ${summary.report.errors} errors, ${summary.report.warnings} warnings, ${summary.report.info} info`);
   for (const i of items) if (i.level !== 'info') console.log(`    [${i.level}] ${i.section}: ${i.message}`);
   console.log(`  checks: ${summary.checks.passed} passed, ${summary.checks.failed} failed`);

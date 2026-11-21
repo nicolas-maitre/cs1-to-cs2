@@ -38,6 +38,7 @@ namespace Cs1Bridge
                 var server = new BridgeServer("cs1", Port, Version) { Log = Log };
                 var core = new BridgeCore(server) { Log = Log };
                 core.CaptureScreenshot = (path, supersize) => Application.CaptureScreenshot(path, supersize);
+                AutosaveGuard.Init();
                 Cs1Methods.Register(core);
                 server.Start();
                 s_Server = server;
@@ -57,6 +58,7 @@ namespace Cs1Bridge
 
         public static void Stop()
         {
+            AutosaveGuard.Release();
             if (s_Object != null) { UnityEngine.Object.Destroy(s_Object); s_Object = null; }
             if (s_Server != null) { try { s_Server.Stop(); } catch (Exception e) { Log("stop failed: " + e.Message); } }
             s_Server = null;
@@ -67,6 +69,8 @@ namespace Cs1Bridge
         {
             var core = s_Core;
             if (core == null) return;
+            try { AutosaveGuard.Apply(); }
+            catch (Exception e) { Log("autosave guard failed: " + e); }
             try { core.Tick(); }
             catch (Exception e) { Log("tick failed: " + e); }
         }
