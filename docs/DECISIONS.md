@@ -389,3 +389,4 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      | Median error | 0.88 m | 0.26 m | 0 m |
      | p90 | 3.05 m | 0.95 m | 5.0 m |
      | Segments over 2 m | 408 | 44 | 90 |
+124. **CS1 tunnels must come out as CS2 tunnels** (user report, 2026-11-21). CS1 tunnels can be shallower than CS2's minimum tunnel depth, so CS2 built open cuttings with walls instead. Tunnel segments are placed at least at CS2's minimum tunnel depth, with the portals kept at their CS1 positions and the slopes adjusted. Every deepened tunnel is reported with its CS1 depth, the CS2 depth used and the difference, and the street above stays at ground level.
