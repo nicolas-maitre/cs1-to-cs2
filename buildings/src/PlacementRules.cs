@@ -3,6 +3,7 @@
 //   - DECISIONS.md #106 (user): never moved to free land by default; a smaller alternative only.
 //   - DECISIONS-buildings #36 / #37: stations stay at their CS1 spot (short slides), roads above / below don't block.
 using System;
+using System.Collections.Generic;
 
 namespace Cs2Buildings
 {
@@ -84,6 +85,31 @@ namespace Cs2Buildings
             if (prefab.StartsWith("RailYard", StringComparison.Ordinal)) return "train";
             return null;
         }
+
+        /// <summary>
+        /// Decision #152: which items to retry with "nearby" after the normal pass. Per bus or tram depot kind with none
+        /// placed, the first CS1 depot of that kind that was strict (fallback "skip") and failed. Other kinds (rail and
+        /// subway yards, #83) and other buildings (#106) are never retried.
+        /// </summary>
+        public static List<int> DepotRetries(IList<string> kinds, IList<bool> placed, IList<bool> strict)
+        {
+            var res = new List<int>();
+            var placedKinds = new HashSet<string>();
+            for (int i = 0; i < kinds.Count; i++) if (kinds[i] != null && placed[i]) placedKinds.Add(kinds[i]);
+            var taken = new HashSet<string>();
+            for (int i = 0; i < kinds.Count; i++)
+            {
+                var k = kinds[i];
+                if (k != "bus" && k != "tram") continue;
+                if (placed[i] || !strict[i] || placedKinds.Contains(k) || taken.Contains(k)) continue;
+                taken.Add(k);
+                res.Add(i);
+            }
+            return res;
+        }
+
+        /// <summary>The report note for a depot placed by decision #152.</summary>
+        public const string DepotMovedNote = "placed away from its CS1 spot because its lines need a depot";
 
         /// <summary>"This city has no bus depot placed (1 in CS1): its bus lines get no vehicles; place it yourself …".</summary>
         public static string DepotWarning(string kind, int planned)

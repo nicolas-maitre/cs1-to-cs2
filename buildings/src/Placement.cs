@@ -66,6 +66,7 @@ namespace Cs2Buildings
             public float SnapDistance = -1;
             public Entity Placed;
             public int SubNetsExpected = -1, SubNetsBuilt = -1; // course definitions written / edges owned by the building
+            public bool DepotRetry;          // decision #152: a bus / tram CS1 depot retried with "nearby" (none of its kind placed)
             public string PumpWater;         // surface-water pump: "shore N m away" (slid toward the water) or "groundwater pump" (swapped)
         }
 
@@ -159,8 +160,40 @@ namespace Cs2Buildings
             // frame whenever frameBudgetMs is used up, so the game keeps rendering (a 14 km city stalled CS2 for 27 s).
             double frameStart = sw.Elapsed.TotalMilliseconds;
             int resolveFrames = 0;
-            foreach (var it in items)
+            // Decision #152: after the normal pass, a bus or tram depot kind with none placed retries its CS1 depot (one per
+            // kind) with the default depots' "nearby" fallback: its lines get no vehicles otherwise. Run option
+            // depotFallback=false opts out (the mod's buildings.depotFallback).
+            bool depotFallback = P.Bool(a, "depotFallback", true);
+            var queue = new List<Item>(items);
+            bool depotRetried = false;
+            int depotRetries = 0;
+            for (int qi = 0; ; qi++)
             {
+                if (qi == queue.Count)
+                {
+                    if (depotRetried || !depotFallback) break;
+                    depotRetried = true;
+                    var kinds = new List<string>();
+                    var ok = new List<bool>();
+                    var strict = new List<bool>();
+                    foreach (var x in items)
+                    {
+                        kinds.Add(PlacementRules.DepotKind(x.Prefab));
+                        ok.Add(x.Status == "ready" || x.Status == "alreadyPlaced");
+                        strict.Add(x.Status != "prefabMissing" && PlacementRules.Fallback(x.Station, x.Fallback, defaultFallback) == "skip");
+                    }
+                    foreach (int ri in PlacementRules.DepotRetries(kinds, ok, strict))
+                    {
+                        var x = items[ri];
+                        int n;
+                        if (failures.TryGetValue(x.Status, out n)) failures[x.Status] = n - 1;
+                        x.Status = "pending"; x.Reason = null; x.Fallback = "nearby"; x.DepotRetry = true;
+                        queue.Add(x);
+                        depotRetries++;
+                    }
+                    if (qi == queue.Count) break;
+                }
+                var it = queue[qi];
                 if (frameBudgetMs > 0 && sw.Elapsed.TotalMilliseconds - frameStart > frameBudgetMs) { yield return null; resolveFrames++; frameStart = sw.Elapsed.TotalMilliseconds; }
                 // Snap the front point to the nearest real road edge once; every attempt reuses it.
                 RoadEdge road = null;
@@ -469,7 +502,8 @@ namespace Cs2Buildings
                 if (road != Entity.Null) { connected++; if (road == it.RoadEdge) connectedToSnapEdge++; }
                 it.Reason = (road != Entity.Null ? "connected" : "placed, not connected to a road" + (it.RoadSide != null ? " (road side: " + it.RoadSide + ")" : ""))
                     + (it.Alternative > 0 ? "; alternative #" + it.Alternative : "") + (it.Slide != 0 ? "; slid " + it.Slide + " m along the road" : "") + (it.NearJunction ? "; front near a junction" : "")
-                    + (it.Moved >= 0 ? "; moved " + it.Moved.ToString("F0") + " m to free land (" + it.FallbackPass + " pass)" + (it.MovedToOtherRoad ? " on another road" : " on the same road") : "");
+                    + (it.Moved >= 0 ? "; moved " + it.Moved.ToString("F0") + " m to free land (" + it.FallbackPass + " pass)" + (it.MovedToOtherRoad ? " on another road" : " on the same road") : "")
+                    + (it.DepotRetry ? "; " + PlacementRules.DepotMovedNote : "");
                 if (it.PumpWater != null)
                 {
                     if (it.PumpWater.StartsWith("shore", StringComparison.Ordinal))
@@ -538,7 +572,7 @@ namespace Cs2Buildings
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "warnings", warnings }, { "placeYourself", placeYourself }, { "connectRoad", connectRoad },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "warnings", warnings }, { "placeYourself", placeYourself }, { "connectRoad", connectRoad }, { "depotRetries", depotRetries }, { "depotsMoved", DepotsMoved(items) },
                 { "pumps", new Dictionary<string, object> { { "slidToWater", pumpsSlidToWater }, { "groundwater", pumpsSwapped }, { "dry", pumpsDry }, { "noWaterData", pumpsUnknown }, { "shoreReach", pumpShoreReach }, { "samples", pumpSamples } } }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
                 { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "subNetCourses", subNetCourses }, { "buildingsWithSubNets", withSubNets }, { "subNetsMissing", subNetsMissing }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
@@ -556,6 +590,16 @@ namespace Cs2Buildings
             reply.Remove("results");
             reply["sample"] = list.GetRange(0, Math.Min(10, list.Count));
             yield return reply;
+        }
+
+        /// <summary>Report lines for the depots placed away from their CS1 spot by decision #152.</summary>
+        static List<object> DepotsMoved(List<Item> items)
+        {
+            var l = new List<object>();
+            foreach (var it in items)
+                if (it.DepotRetry && it.Status == "placed")
+                    l.Add((it.Cs1Info ?? it.Prefab) + ": " + PlacementRules.DepotMovedNote + " (" + it.Distance.ToString("F0") + " m from its CS1 spot, " + Cs1Pos(it) + ")");
+            return l;
         }
 
         static void Fail(Item it, Dictionary<string, int> failures, string kind, string reason)

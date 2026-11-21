@@ -108,6 +108,20 @@ namespace RulesTests
             Eq(true, PlacementRules.DepotWarning("bus", 1).StartsWith("This city has no bus depot placed (1 in CS1): its bus lines get no vehicles"), "text");
         }
 
+        // Decision #152: per bus / tram kind with none placed, its first strict CS1 depot is retried with "nearby".
+        public static void TestDepotRetries()
+        {
+            var kinds = new[] { "bus", null, "bus", "train", "tram", "tram", "taxi" };
+            var placed = new[] { false, false, false, false, false, true, false };
+            var strict = new[] { true, true, true, true, true, true, true };
+            var r = PlacementRules.DepotRetries(kinds, placed, strict);
+            Eq(1, r.Count, "one retry: bus (tram has one placed; train / taxi never)");
+            Eq(0, r[0], "the first bus depot");
+            Eq(0, PlacementRules.DepotRetries(new[] { "bus" }, new[] { false }, new[] { false }).Count, "already nearby (a default depot): no retry");
+            Eq(0, PlacementRules.DepotRetries(new[] { "subway", "train" }, new[] { false, false }, new[] { true, true }).Count, "yards keep #83");
+            Eq(2, PlacementRules.DepotRetries(new[] { "tram", "bus" }, new[] { false, false }, new[] { true, true }).Count, "one per kind");
+        }
+
         // The web report's wording: CS1 = plan − transform, CS2 = plan + import offset.
         public static void TestPlaceYourselfText()
         {

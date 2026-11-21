@@ -282,3 +282,11 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
     - **Guard:** `utilities` and `powerhook` snapshot every road edge's start and end node before building and compare after; the result has `roadGuard {roadEdges, gone, rewired, sample}` and `ok`.
     - **Verified:** CacaoCity left-hand (`cs1conv-util-cacao6-lht`, `left_hand: true`; QA with worker-2's outside connections): homes electricity 99.6 %, water 98.7 %, sewage 98.7 %.
     - **Diagnostic ops:** `linetest` (the variants above), `nodes {x, z, r}` (each edge's role: start / end / local) and `water {points}`. Bridge execs that create nets need `phase: "tool"`; without it CS2 creates nothing.
+46. **A bus or tram depot kind with none placed retries its CS1 depot nearby** (DECISIONS.md #152, from RC3).
+    - **Why:** Skibidi's only Bus Depot overlapped a road at its CS1 spot and wasn't placed (#106), so its 9 bus lines ran 4 buses after 300 s instead of RC2's 34. A city whose CS1 depots of a kind all failed is in the same situation as one that had none, and that one gets a default depot with `nearby`.
+    - **Rule:** after the normal pass, per bus or tram kind (prefab BusDepot… / TramDepot…) with nothing placed, the first CS1 depot of that kind that was strict and failed is retried with `nearby`: one per kind, the same passes and radius as the default depots.
+      - Rail and subway yards (#83) and every other building (#106) are never retried.
+      - Run option `depotFallback` (default true; mod `buildings.depotFallback`) opts out.
+    - **Report:** the depot's reason ends in "placed away from its CS1 spot because its lines need a depot". `depotsMoved` lists them with the distance and the CS1 spot, and `depotRetries` counts them. The "no bus depot placed" warning still shows when the retry fails too.
+    - **Tests:** `PlacementRules.DepotRetries` and `DepotMovedNote` in RulesTests (11/11).
+    - **Verified:** Skibidi acceptance on the dev tree (`.gamectl/acceptance/20261121-233917`, ok=true, every step green). The Bus Depot was retried and placed 117 m from its CS1 spot; buildings 79/108; **31 buses** after 300 s (RC3: 4, RC2: 34) on 9 routes. Roads and lane connections were unchanged after reload, the report was complete, and homes ~99 % supplied.
