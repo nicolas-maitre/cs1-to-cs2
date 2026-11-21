@@ -74,7 +74,9 @@ namespace Cs2ImporterMod
                 var r = (Dictionary<string, object>)Entry.Run(Args(s, "check"));
                 var rb = RoadBuilderState(s, r);
                 r["roadbuilder"] = rb;
-                Mod.Instance.SetStatus(CheckText(r, rb));
+                var map = MapContents(PlanFile(s));
+                r["map"] = map;
+                Mod.Instance.SetStatus(CheckText(r, rb) + "\n" + MapText(map));
                 return r;
             }
             catch (Exception e)
@@ -82,6 +84,45 @@ namespace Cs2ImporterMod
                 Mod.Instance.SetStatus("Check failed: " + e.Message);
                 return new Dictionary<string, object> { { "error", e.Message } };
             }
+        }
+
+        /// <summary>What the package brings for "Prepare map" and the connections step (schema §2).</summary>
+        static Dictionary<string, object> MapContents(string planFile)
+        {
+            var plan = (Dictionary<string, object>)MiniJson.Parse(File.ReadAllText(planFile));
+            var terrain = P.Obj(plan, "terrain");
+            var water = P.Obj(plan, "water");
+            var apply = P.Obj(water, "apply");
+            var oc = P.Obj(plan, "outsideConnections");
+            var conns = P.List(oc, "connections");
+            var srcs = P.List(apply, "sources");
+            bool terrainFiles = false;
+            if (terrain != null)
+            {
+                var meta = Path.Combine(Path.GetDirectoryName(planFile), P.Str(terrain, "meta", "terrain/terrain.json").Replace('/', Path.DirectorySeparatorChar));
+                terrainFiles = File.Exists(meta);
+            }
+            return new Dictionary<string, object>
+            {
+                { "terrain", terrainFiles }, { "world", terrain != null && P.Bool(terrain, "world", false) },
+                { "water", apply != null }, { "seaLevel", apply != null ? P.Num(apply, "seaLevel", 0) : terrain != null ? P.Num(terrain, "seaLevelDry", 0) : (double?)null },
+                { "waterSources", srcs != null ? srcs.Count : 0 }, { "outsideConnections", conns != null ? conns.Count : 0 },
+            };
+        }
+
+        static string MapText(Dictionary<string, object> m)
+        {
+            var sb = new StringBuilder("Map: ");
+            if (!(bool)m["terrain"]) sb.Append("no terrain in the package (the map's own terrain stays)");
+            else
+            {
+                sb.Append("terrain").Append((bool)m["world"] ? " with its surroundings" : "");
+                if ((bool)m["water"]) sb.Append(", sea level ").Append(Math.Round(Convert.ToDouble(m["seaLevel"]), 1)).Append(" m, ").Append(m["waterSources"]).Append(" water sources");
+                else sb.Append(", no water (a dry map)");
+            }
+            sb.Append(", ").Append(m["outsideConnections"]).Append(" outside connections.");
+            if ((bool)m["terrain"]) sb.Append(" In a new city, press \"Prepare map\" before importing.");
+            return sb.ToString();
         }
 
         static Dictionary<string, object> RoadBuilderState(Setting s, Dictionary<string, object> check)
@@ -154,6 +195,67 @@ namespace Cs2ImporterMod
             }
         }
 
+        // ---------------------------------------------------------------- prepare map
+
+        public static bool PrepareMap(Setting s)
+        {
+            try
+            {
+                var gm = GameManager.instance;
+                if (gm == null || gm.isGameLoading || !gm.gameMode.IsGame()) throw new InvalidOperationException("Start a new city first.");
+                if (ImportSystem.Busy) throw new InvalidOperationException("An import is already running.");
+                var plan = PlanFile(s);
+                var report = Path.Combine(LocalRoot, "import-reports", "prepare-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
+                Mod.Instance.SetStatus("Preparing the map…");
+                ImportSystem.Start(MapSteps.PrepareMap(plan, t => Mod.Instance.SetStatus("Preparing the map… " + t)), (result, error) =>
+                {
+                    if (error != null) { Mod.Instance.SetStatus("Preparing the map failed: " + error.Message); return; }
+                    var r = result as Dictionary<string, object>;
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(report));
+                        File.WriteAllText(report, MiniJson.Write(r), new UTF8Encoding(false));
+                        s.LastReportPath = report;
+                    }
+                    catch (Exception ex) { Mod.Log.Warn("report not written: " + ex.Message); }
+                    Mod.Instance.SetStatus(PrepareText(r, report));
+                });
+                return true;
+            }
+            catch (Exception e)
+            {
+                Mod.Instance.SetStatus("Map not prepared: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>Not a button: scripts (op "mod", press "WaterCheck") read CS2's water at the package's CS1 checkpoints,
+        /// e.g. after letting the water settle. The same check "Prepare map" reports right away.</summary>
+        public static Dictionary<string, object> WaterCheck(Setting s)
+        {
+            try { return MapSteps.WaterCheck((Dictionary<string, object>)MiniJson.Parse(File.ReadAllText(PlanFile(s)))); }
+            catch (Exception e) { return new Dictionary<string, object> { { "error", e.Message } }; }
+        }
+
+        static string PrepareText(Dictionary<string, object> r, string report)
+        {
+            if (r == null) return "Map prepared, without a report.";
+            var sb = new StringBuilder("Map prepared.\n");
+            object v;
+            var c = r.TryGetValue("clear", out v) ? v as Dictionary<string, object> : null;
+            if (c != null) sb.Append("Removed ").Append(c.TryGetValue("edgesDeleted", out v) ? v : 0).Append(" roads and tracks and ").Append(c.TryGetValue("buildingsDeleted", out v) ? v : 0).Append(" buildings of the base map.\n");
+            var t = r.TryGetValue("terrain", out v) ? v as Dictionary<string, object> : null;
+            if (t != null && t.TryGetValue("skipped", out v)) sb.Append("Terrain skipped: ").Append(v).Append(".\n");
+            else if (t != null) sb.Append("Terrain applied").Append((bool)t["worldMap"] ? " with its surroundings" : "").Append(": within ").Append(t["p95Error"]).Append(" m of the package at 95 % of ").Append(t["points"]).Append(" check points.\n");
+            var w = r.TryGetValue("water", out v) ? v as Dictionary<string, object> : null;
+            if (w != null && w.TryGetValue("skipped", out v)) sb.Append("Water skipped: ").Append(v).Append(".\n");
+            else if (w != null && (string)w["mode"] == "cs1") sb.Append("Water: sea level ").Append(Math.Round(Convert.ToDouble(w["seaLevel"]), 1)).Append(" m, ").Append(w["sources"]).Append(" CS1 water sources. Unpause for a while to let rivers and lakes fill.\n");
+            else if (w != null) sb.Append("Water: none in the package, the map is dry.\n");
+            sb.Append("Next: press \"Import into this city\".\n");
+            sb.Append("Full report: ").Append(report);
+            return sb.ToString();
+        }
+
         // ---------------------------------------------------------------- import
 
         public static bool Import(Setting s)
@@ -199,6 +301,8 @@ namespace Cs2ImporterMod
             if (s.ApplyTrafficMod) steps.Add(Op("trafficmod"));
             if (s.ApplyZoning) steps.Add(Op("zoning"));
             steps.AddRange(ImportSteps.Registered);
+            // last: the connections own the imported end nodes, and nothing may rebuild those nodes afterwards
+            if (s.ApplyConnections) steps.Add(new KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>("connections", MapSteps.Connections));
             foreach (var st in steps)
             {
                 Mod.Instance.SetStatus("Importing… " + st.Key);
@@ -270,6 +374,7 @@ namespace Cs2ImporterMod
                 case "zoning": return "Zoning: " + d["cells_matched"] + " of " + d["plan_cells"] + " cells (" + d["coverage"] + " %), " + d["cells_painted"] + " painted.";
                 case "traffic": return "Traffic: " + d["lights_added"] + " lights added, " + d["lights_removed"] + " removed, " + d["all_way_stops"] + " all-way stops, " + d["turn_ban_ends"] + " turn bans, " + (Convert.ToInt32(d["crosswalks_added"]) + Convert.ToInt32(d["crosswalks_removed"])) + " crosswalk changes.";
                 case "trafficmod": return "Traffic mod: " + d["priority_signs"] + " priority signs on " + d["edges_with_priorities"] + " roads.";
+                case "connections": return "Outside connections: " + d["placed"] + " of " + d["items"] + " (" + d["road"] + " road, " + d["train"] + " train)" + (Convert.ToInt32(d["failed"]) > 0 ? ", " + d["failed"] + " without an imported end node" : "") + ".";
                 case "transit":
                 {
                     var st = d.TryGetValue("stops", out v) ? v as Dictionary<string, object> : null;

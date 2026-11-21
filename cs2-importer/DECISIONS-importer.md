@@ -102,6 +102,7 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
 
 ### Open issues (M2)
 
+- **Resolved by #43 and #44:** the 8 segments turned out to be CS2 merging shallow forks (verify now follows them), and the importer's own trench clamp is undone where it made crossings too shallow. The original note:
 - **Shallow grade separations get joined.** In the whole-city run (4740 segments), 8 segments in two spots weren't built as planned:
   - (548, −2518): a Two Lane Highway in a 5.2 m cut next to a ground road;
   - (−942, −650): a one-way road in a 4.6 m cut under 12 m elevated ramps.
@@ -174,3 +175,45 @@ Decisions taken by the importer worker on 2026-11-21 while the user was away ("C
     - **Planner:** `BuildJobs` is a C# port of their `transit/lib/plan.mjs` `transitJobs` (kerbside stops keyed by segment:side:t, shared between lines). The two have to be kept in step.
     - **Names:** `NameSystem` needs the end-frame barrier, so `ImportSystem` allows the safe barriers before every step (the same fix as the bridge's, #36).
     - **Option and order:** one Options toggle, "Transit lines", on by default. The step runs after the buildings steps, so metro and train lines find their stations.
+
+## Release flow in the mod (2026-11-21, coordinator decisions after 301b1ee)
+
+41. **"Prepare map" in Cs2ImporterMod** (coordinator #1: terrain, water and connections were the biggest release gap).
+    - **What it is:** a new Options group, "New city", with one button and a confirmation. It runs before Import, in a fresh city, from the self-contained web package (schema §2): `terrain/`, `plan.terrain`, `plan.water.apply`, `plan.water.checkpoints`.
+    - **Their code, compiled in:** the terrain worker's exec library (`terrain/cs2-apply/*.cs`) is compiled into the mod by reference, like `buildings/src` and `transit/cs2-exec`. `mod/MapSteps.cs` calls their public `MapPrep.Run` / `Ops.Run` with the same args their scripts send. No change in `terrain/`; the terrain worker keeps the namespace, entry points, op names and args stable and will warn before changing them.
+    - **Order and waits** (`tools/e2e` order, the terrain worker's timings):
+      - `clear {all:true}`: every top-level net and base-map building; then 60 frames.
+      - `apply`: heightmap, world map, `heightScale`/`heightOffset`, sea level = `water.apply.seaLevel`, else `terrain.seaLevelDry`.
+      - Sample again 60 frames later and compare with the r16 file: a 9 × 9 grid over the map plus 10 × 10 over the crop (the bilinear sampler is ported from `terrain/lib/heightmap.mjs`).
+      - `water.set {seaLevel, clear:true, sources}`, then `water.reset {mode:"sea"}`. Without water data but with terrain: a dry map (no sources, the lowered sea level).
+      - 600 frames to settle, then the wet/dry check at the package checkpoints.
+    - **All in ToolUpdate**, in the mod's own `ImportSystem` coroutine. The terrain worker had only run `apply` from the main phase; from ToolUpdate it gave 0 m error at all 181 points.
+    - **Report:** status text plus `%LOCALAPPDATA%\cs1-to-cs2\import-reports\prepare-<ts>.json`.
+42. **Outside connections are the last Import step** ("Outside connections" toggle, on by default): `plan.outsideConnections` → `MapPrep oc.create` on the imported end nodes, then 30 frames and `oc.list`. Last, because no later step may rebuild those nodes.
+43. **Clearance pass in the planner** (`src/Core/Clearance.cs`, coordinator #2).
+    - **What it does:** finds crossings without a shared node (16-piece polylines of the plan beziers, 128 m grid). It estimates the CS2 heights as built: flat heights on the converted terrain, node height = CS1 terrain (`y − heightAboveTerrain`) + Elevation, plus the bulge where `Curve()` keeps it.
+    - **Target:** where the clearance is below min(8 m, CS1's clearance there), it lowers the lower road's nodes, then raises the upper road's elevated nodes.
+    - **Limit:** no node ever goes past its own CS1 height above terrain. A shortfall it can't fix is reported as `shallow-crossing`; a fix as `clearance-restored`. `MinClearance = 0` turns it off.
+    - **Effect on Skibidi:**
+      - 3 km crop: no change (2035/2035 in the mod flow).
+      - Whole city: 2 of 322 crossings were too shallow, both because our own −11.5 m trench clamp (#7) lifted 16–22 m deep CS1 ramps under other ramps: 0.9 → 8.0 m and 4.9 → 8.0 m. Both had been built anyway, so this is about the right shape, not the count.
+44. **The 8 `edge-missing` of the whole-city run were not shallow crossings: they were CS2 merging forks** (in-game inspection of `cs1conv-e2e-20261121-1025`).
+    - **What CS2 does:** where two CS1 segments leave a node at a shallow angle (a highway splitting at a tunnel portal, two ramps leaving an elevated junction, two one-way roads leaving a cut), CS2 merges their first 10–60 m into one edge. It adds its own node where they part. The roads and their connectivity are there.
+    - **Why verify missed them:** it only walked through intermediate nodes with exactly two edges.
+    - **Fix (verify):** when that walk fails, a breadth-first search through non-plan nodes of any degree (≤ 8 edges, ≤ 1.5 × chord + 50 m), allowing the shared trunk edge. Such segments count as built and are listed as `merged-fork` notes (`notes_by_kind`), not failures.
+    - **Remaining (whole city, mod flow `cs1conv-m2-modprep-full`):** 4738/4740 built, 6 of them through forks. The 2 missing ones are CS1 geometry that overlaps in CS2:
+      - a 16 m isolated pavement stub under an elevated highway, snapped onto it;
+      - Basic Road 25217, 9 m from a parallel road it meets through a 9 m stub (12 m-wide roads).
+
+      Neither can be fixed without changing the network, so both stay reported as `edge-missing`.
+    - **Prefab check on a merged fork:** the shared trunk carries the neighbour's prefab, so one edge of the segment's own prefab is enough.
+45. **Transit jobs: one C# port, checked against the Node original** (coordinator #4).
+    - `BuildJobs` moved from `mod/TransitStep.cs` to the game-free `src/Core/TransitPlan.cs`.
+    - `tests/fixtures/make-transit-golden.mjs` runs the transit worker's `transitJobs` on a trimmed plan (`transit-plan.json`: the whole-city Skibidi transit, the segments its stops use, plus a stop on a missing segment) for EU and NA, into `transit-jobs.json`.
+    - `TransitPlanTests` compares field by field. A one-field change in the golden file fails it (tried), so drift on either side fails CoreTests. After changing `transit/lib/plan.mjs`, rerun the script without arguments.
+    - Rounding now follows JavaScript: half up, round before the offset, and `String(t)` for the keys.
+46. **Smaller additions.**
+    - Check now adds a "Map:" line: terrain or not, world map, sea level, water sources, outside connections, and "press Prepare map" when there is terrain.
+    - `Actions.WaterCheck` (not a button) lets scripts re-run the wet/dry check after simulating (op `mod`, `press: "WaterCheck"`).
+    - The `mod` op's `wait` works for `PrepareMap` too.
+    - Lane connections and lane arrows stay report-only for this release (coordinator #3; the web worker puts them in the user guide's limits).

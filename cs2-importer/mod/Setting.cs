@@ -17,13 +17,14 @@ using Game.UI.Widgets;
 namespace Cs2ImporterMod
 {
     [FileLocation("ModsSettings/Cs2Importer/Cs2Importer")]
-    [SettingsUIGroupOrder(PackageGroup, ImportGroup, ResultGroup)]
-    [SettingsUIShowGroupName(PackageGroup, ImportGroup, ResultGroup)]
+    [SettingsUIGroupOrder(PackageGroup, MapGroup, ImportGroup, ResultGroup)]
+    [SettingsUIShowGroupName(PackageGroup, MapGroup, ImportGroup, ResultGroup)]
     public class Setting : ModSetting
     {
         public const string SettingsName = "Cs2Importer";
         public const string Section = "Main";
         public const string PackageGroup = "Package";
+        public const string MapGroup = "Map";
         public const string ImportGroup = "Import";
         public const string ResultGroup = "Result";
 
@@ -53,6 +54,15 @@ namespace Cs2ImporterMod
         [SettingsUIButton]
         [SettingsUIConfirmation]
         public bool InstallRoadBuilderConfigs { set { Actions.InstallRoadBuilderConfigs(this); } }
+
+        // ---------------------------------------------------------------- map
+
+        /// <summary>In a new city: base map's nets and buildings removed, the package's terrain, world map and water applied.</summary>
+        [SettingsUISection(Section, MapGroup)]
+        [SettingsUIButton]
+        [SettingsUIConfirmation]
+        [SettingsUIDisableByCondition(typeof(Setting), nameof(ImportDisabled))]
+        public bool PrepareMap { set { Actions.PrepareMap(this); } }
 
         // ---------------------------------------------------------------- import
 
@@ -86,6 +96,10 @@ namespace Cs2ImporterMod
         /// <summary>After the buildings: CS1 bus/tram stops and transit lines (transit/ worker's library).</summary>
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyTransit { get; set; } = true;
+
+        /// <summary>Last: outside connections where CS1 highways and train tracks leave the crop (terrain/ worker's library).</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ApplyConnections { get; set; } = true;
 
         [SettingsUISection(Section, ImportGroup)]
         [SettingsUIButton]
@@ -121,7 +135,7 @@ namespace Cs2ImporterMod
             PackageFolder = "";
             ClearArea = true;
             TerrainIsConverted = false;
-            ApplyZoning = ApplyTrafficSettings = ApplyTrafficMod = ApplyBuildings = ApplyTransit = true;
+            ApplyZoning = ApplyTrafficSettings = ApplyTrafficMod = ApplyBuildings = ApplyTransit = ApplyConnections = true;
             OffsetX = OffsetZ = 0;
             StatusText = "";
             LastReportPath = "";

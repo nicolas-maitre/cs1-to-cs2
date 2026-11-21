@@ -38,7 +38,7 @@ namespace CoreTests
             Console.WriteLine("bounds x " + job.MinX.ToString("0") + ".." + job.MaxX.ToString("0") + ", z " + job.MinZ.ToString("0") + ".." + job.MaxZ.ToString("0"));
             Console.WriteLine("skipped " + GameBridge.MiniJson.Write(Cs2Importer.Core.ImportPlanner.CountByKind(job.Skipped)));
             Console.WriteLine("warnings " + GameBridge.MiniJson.Write(Cs2Importer.Core.ImportPlanner.CountByKind(job.Warnings)));
-            foreach (var w in job.Warnings.Where(w => w.Level == "warning").Take(8)) Console.WriteLine("  " + w.Kind + ": " + w.Message);
+            foreach (var w in job.Warnings.Where(w => w.Level == "warning" || w.Kind == "clearance-restored").Take(12)) Console.WriteLine("  " + w.Kind + ": " + w.Message);
             var elev = job.Nodes.Values.GroupBy(n => n.Elevation > 0 ? "elevated" : n.Elevation < 0 ? "tunnel" : "ground").Select(g => g.Key + "=" + g.Count());
             Console.WriteLine("node elevations " + string.Join(" ", elev) + "; min " + job.Nodes.Values.Min(n => n.Elevation) + " max " + job.Nodes.Values.Max(n => n.Elevation));
             var kinds = job.Segments.GroupBy(s => s.Source.Kind).Select(g => g.Key + "=" + g.Count());

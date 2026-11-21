@@ -43,7 +43,7 @@ namespace Cs2Importer
                 var m = asm.GetType("Cs2ImporterMod.Actions").GetMethod(press) ?? throw new ArgumentException("no action " + press);
                 pressed = m.Invoke(null, new[] { setting });
             }
-            bool wait = press == "Import" && args.TryGetValue("wait", out object w) && w is bool wb && wb;
+            bool wait = (press == "Import" || press == "PrepareMap") && args.TryGetValue("wait", out object w) && w is bool wb && wb;
             if (wait) return WaitForImport(asm, setting, pressed);
             return Snapshot(setting, press, pressed);
         }

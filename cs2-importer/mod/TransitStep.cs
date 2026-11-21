@@ -6,7 +6,8 @@
 //      at the positions step 1 created them;
 //   3. CS1 names and numbers (NameSystem: needs the end-frame barrier, which ImportSystem allows before every step);
 //   4. a check: lines and counts.
-// BuildJobs is a C# port of transit/lib/plan.mjs transitJobs (keep the two in step).
+// The jobs come from Cs2Importer.Core.TransitPlan, a C# port of transit/lib/plan.mjs transitJobs, kept in step by a
+// golden test (tests/CoreTests/TransitPlanTests.cs).
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -20,12 +21,6 @@ namespace Cs2ImporterMod
 {
     public static class TransitStep
     {
-        static readonly Dictionary<string, Dictionary<string, string>> StopPrefabs = new Dictionary<string, Dictionary<string, string>>
-        {
-            { "EU", new Dictionary<string, string> { { "Bus Stop", "EU_BusStop01" }, { "Tram Stop", "EU_TramStop01" } } },
-            { "NA", new Dictionary<string, string> { { "Bus Stop", "NA_BusStop01" }, { "Tram Stop", "NA_TramStop01" } } },
-        };
-
         public static IEnumerator Run(Dictionary<string, object> args)
         {
             var root = MiniJson.Parse(File.ReadAllText(Cs2Importer.Entry.PlanFile(args), Encoding.UTF8)) as Dictionary<string, object>;
@@ -35,7 +30,7 @@ namespace Cs2ImporterMod
             double offX = P.Num(args, "offsetX", 0), offZ = P.Num(args, "offsetZ", 0);
             // stop prefabs follow the zoning theme of the plan (EU by default, as the transit CLI)
             string theme = P.Str(args, "transit.theme", null) ?? P.Str(P.Obj(root, "zoning"), "theme", "EU");
-            var jobs = BuildJobs(root, theme, offX, offZ);
+            var jobs = Cs2Importer.Core.TransitPlan.BuildJobs(root, theme, offX, offZ);
             var report = new Dictionary<string, object> { { "plan", jobs.Stats }, { "planSkipped", jobs.Skipped }, { "theme", theme } };
 
             // 1. stops
@@ -120,109 +115,5 @@ namespace Cs2ImporterMod
         }
 
         static Dictionary<string, object> Skipped(string why) { return new Dictionary<string, object> { { "skipped", why } }; }
-
-        sealed class Jobs
-        {
-            public readonly List<Dictionary<string, object>> Stops = new List<Dictionary<string, object>>();
-            public readonly List<Dictionary<string, object>> Lines = new List<Dictionary<string, object>>();
-            public readonly List<object> Skipped = new List<object>();
-            public readonly Dictionary<string, object> Stats = new Dictionary<string, object> { { "lines", 0 }, { "bus", 0 }, { "station", 0 }, { "kerbStops", 0 }, { "sharedStops", 0 } };
-            public void Inc(string k) { Stats[k] = (int)Stats[k] + 1; }
-        }
-
-        /// <summary>C# port of transit/lib/plan.mjs transitJobs (offset added for the importer's test placement).</summary>
-        static Jobs BuildJobs(Dictionary<string, object> plan, string theme, double offX, double offZ)
-        {
-            var j = new Jobs();
-            Dictionary<string, string> stopNames;
-            if (!StopPrefabs.TryGetValue(theme ?? "EU", out stopNames)) stopNames = StopPrefabs["EU"];
-            var segs = new Dictionary<long, List<object>>();
-            var planSegs = P.List(plan, "segments");
-            if (planSegs != null)
-                foreach (var o in planSegs)
-                {
-                    var s = o as Dictionary<string, object>;
-                    var bz = P.List(s, "bezier");
-                    if (s != null && bz != null && bz.Count == 4) segs[(long)P.Num(s, "id", -1)] = bz;
-                }
-            var byKey = new Dictionary<string, Dictionary<string, object>>();
-            foreach (var lo in P.List(P.Obj(plan, "transit"), "lines"))
-            {
-                var l = lo as Dictionary<string, object>;
-                if (l == null) continue;
-                j.Inc("lines");
-                var lineStops = new List<object>();
-                var line = new Dictionary<string, object>
-                {
-                    { "key", "cs1-" + Convert.ToString(P.Num(l, "cs1Id", 0), CultureInfo.InvariantCulture) }, { "name", P.Str(l, "name", "") },
-                    { "number", P.Has(l, "number") ? (object)P.Num(l, "number", 0) : null }, { "prefab", P.Str(l, "line", null) },
-                    { "color", P.Str(l, "color", null) }, { "requiresStations", P.Bool(l, "requiresStations", false) },
-                    { "vehicles", P.Has(l, "vehicles") ? (object)P.Num(l, "vehicles", 0) : null }, { "truncated", P.Bool(l, "truncated", false) },
-                    { "stops", lineStops },
-                };
-                var stops = P.List(l, "stops") ?? new List<object>();
-                if (P.Bool(l, "requiresStations", false))
-                {
-                    j.Inc("station");
-                    foreach (var so in stops)
-                    {
-                        var s = (Dictionary<string, object>)so;
-                        lineStops.Add(new Dictionary<string, object> { { "x", P.Num(s, "x", 0) + offX }, { "z", P.Num(s, "z", 0) + offZ }, { "cs1Building", P.Num(s, "cs1Building", 0) } });
-                    }
-                }
-                else
-                {
-                    j.Inc("bus");
-                    foreach (var so in stops)
-                    {
-                        var s = (Dictionary<string, object>)so;
-                        long segId = (long)P.Num(s, "segment", -1);
-                        List<object> bz;
-                        if (!segs.TryGetValue(segId, out bz))
-                        {
-                            j.Skipped.Add(new Dictionary<string, object> { { "line", line["name"] }, { "stop", P.Num(s, "cs1Node", 0) }, { "reason", "segment not in plan" } });
-                            continue;
-                        }
-                        double t = P.Num(s, "t", 0.5);
-                        string side = P.Str(s, "side", "right");
-                        string key = segId + ":" + side + ":" + Convert.ToString(t, CultureInfo.InvariantCulture);
-                        Dictionary<string, object> stop;
-                        if (!byKey.TryGetValue(key, out stop))
-                        {
-                            double px, pz, dx, dz;
-                            BezierAt(bz, t, out px, out pz, out dx, out dz);
-                            double len = Math.Sqrt(dx * dx + dz * dz);
-                            if (len == 0) len = 1;
-                            string generic = P.Str(l, "stopPrefab", null) ?? "Bus Stop";
-                            string prefab;
-                            if (!stopNames.TryGetValue(generic, out prefab)) prefab = generic;
-                            stop = new Dictionary<string, object>
-                            {
-                                { "key", key }, { "x", Math.Round(px + offX, 2) }, { "z", Math.Round(pz + offZ, 2) },
-                                { "tx", Math.Round(dx / len, 4) }, { "tz", Math.Round(dz / len, 4) }, { "side", side }, { "prefab", prefab },
-                                { "segment", (double)segId }, { "cs1Node", P.Num(s, "cs1Node", 0) },
-                            };
-                            byKey[key] = stop;
-                            j.Stops.Add(stop);
-                            j.Inc("kerbStops");
-                        }
-                        else j.Inc("sharedStops");
-                        lineStops.Add(new Dictionary<string, object> { { "x", stop["x"] }, { "z", stop["z"] }, { "key", key } });
-                    }
-                }
-                j.Lines.Add(line);
-            }
-            return j;
-        }
-
-        static void BezierAt(List<object> b, double t, out double px, out double pz, out double dx, out double dz)
-        {
-            double u = 1 - t;
-            Func<int, int, double> c = (i, k) => Convert.ToDouble(((List<object>)b[i])[k], CultureInfo.InvariantCulture);
-            px = u * u * u * c(0, 0) + 3 * u * u * t * c(1, 0) + 3 * u * t * t * c(2, 0) + t * t * t * c(3, 0);
-            pz = u * u * u * c(0, 2) + 3 * u * u * t * c(1, 2) + 3 * u * t * t * c(2, 2) + t * t * t * c(3, 2);
-            dx = 3 * u * u * (c(1, 0) - c(0, 0)) + 6 * u * t * (c(2, 0) - c(1, 0)) + 3 * t * t * (c(3, 0) - c(2, 0));
-            dz = 3 * u * u * (c(1, 2) - c(0, 2)) + 6 * u * t * (c(2, 2) - c(1, 2)) + 3 * t * t * (c(3, 2) - c(2, 2));
-        }
     }
 }

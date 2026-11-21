@@ -190,3 +190,16 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
 71. **The user guide quotes the importer mod's exact option labels, and a test checks them against `cs2-importer/mod/LocaleEN.cs`** (Claude), so a renamed option fails the build instead of silently making the guide wrong.
 72. **Default transit depots** (Claude). When the CS1 crop has a line but no depot of its type, the package adds a default one (e.g. SubwayYard01) and reports it. Rail depots need their track connected by hand.
 73. **Shared pure libraries are committed together with the web tool when the web tool depends on their new behaviour** (`terrain/lib/water.mjs`, `buildings/lib/plan.mjs`), so CI never sees one without the other (Claude, coordination rule).
+74. **The CS2 importer mod prepares the map itself: a "Prepare map" button in a "New city" group** (Claude). It runs, in order:
+    1. clear base-map nets and buildings;
+    2. terrain and world map from the package, plus sea level;
+    3. water sources;
+    4. settle, then a wet/dry check.
+
+    Outside connections are the last Import step. The terrain code is compiled in from `terrain/cs2-apply`, and its exec API stays stable.
+
+    Mod-only flow, no Node tools:
+    - Skibidi 3 km: terrain error 0 m; water 94/100 wet after 2 min; 2035/2035 roads; 108/108 buildings; 9/9 lines; 20/20 connections; 624 cars.
+    - Whole city (14.3 km): 4738/4740 roads, 10/10 connections, trains and cargo running.
+75. **"Edge missing" at shallow forks was a verification bug, not a build bug** (Claude). CS2 merges the first metres of two courses that leave a node at a shallow angle. Verify now walks through CS2 fork nodes and lists them as `merged-fork`. Clearance pass: crossings with < min(8 m, CS1's clearance) are lowered or raised, but never past their CS1 height. The 2 remaining whole-city misses are CS1 geometry that overlaps in CS2, and they're reported.
+76. **The transit planner's C# port is guarded by a golden test** generated from `transit/lib/plan.mjs` (Claude).

@@ -19,6 +19,7 @@ namespace Cs2ImporterMod
                 { s.GetSettingsLocaleID(), "CS1 → CS2 importer" },
                 { s.GetOptionTabLocaleID(Setting.Section), "Import" },
                 { s.GetOptionGroupLocaleID(Setting.PackageGroup), "Package" },
+                { s.GetOptionGroupLocaleID(Setting.MapGroup), "New city" },
                 { s.GetOptionGroupLocaleID(Setting.ImportGroup), "Import into this city" },
                 { s.GetOptionGroupLocaleID(Setting.ResultGroup), "Status" },
 
@@ -32,6 +33,10 @@ namespace Cs2ImporterMod
                 { s.GetOptionDescLocaleID(nameof(Setting.InstallRoadBuilderConfigs)), "Copies the package's generated Road Builder roads (*-cs1conv.json) to ModsData\\RoadBuilder. Road Builder reads them only at startup, so restart the game afterwards." },
                 { s.GetOptionWarningLocaleID(nameof(Setting.InstallRoadBuilderConfigs)), "Copy the package's Road Builder configs? Existing configs with the same names are replaced; you'll need to restart the game." },
 
+                { s.GetOptionLabelLocaleID(nameof(Setting.PrepareMap)), "Prepare map" },
+                { s.GetOptionDescLocaleID(nameof(Setting.PrepareMap)), "For a new city, before the import: removes the map's own roads, tracks and buildings, then replaces its terrain and surroundings with the package's and sets the CS1 sea level and water sources." },
+                { s.GetOptionWarningLocaleID(nameof(Setting.PrepareMap)), "Remove every road, track and building of this map and replace its terrain and water with the package's? There is no undo." },
+
                 { s.GetOptionLabelLocaleID(nameof(Setting.ClearArea)), "Clear the area first" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ClearArea)), "Bulldozes the roads already in the package's area (plus 50 m) before building. Roads owned by buildings are kept. Imported roads can't cross existing ones." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyZoning)), "Zoning" },
@@ -44,6 +49,8 @@ namespace Cs2ImporterMod
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyBuildings)), "After the roads and zones, places the CS1 service buildings, parks and landmarks, the trees and props, and the districts with their policies." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.ApplyTransit)), "Transit lines" },
                 { s.GetOptionDescLocaleID(nameof(Setting.ApplyTransit)), "After the buildings, creates the CS1 bus and tram stops and the transit lines with their names, numbers and colours. Metro and train lines need the stations from the buildings step." },
+                { s.GetOptionLabelLocaleID(nameof(Setting.ApplyConnections)), "Outside connections" },
+                { s.GetOptionDescLocaleID(nameof(Setting.ApplyConnections)), "Last, turns the ends of CS1 highways and train tracks at the edge of the package's area into CS2 outside connections, so traffic and trains can come and go." },
                 { s.GetOptionLabelLocaleID(nameof(Setting.Import)), "Import into this city" },
                 { s.GetOptionDescLocaleID(nameof(Setting.Import)), "Builds the package's roads in the loaded city, then runs the steps turned on above, in that order. There is no undo: save first." },
                 { s.GetOptionWarningLocaleID(nameof(Setting.Import)), "Build the package in this city now? There is no undo." },

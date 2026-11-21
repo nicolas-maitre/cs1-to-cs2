@@ -18,7 +18,9 @@ The whole pipeline, from CS1 to a saved CS2 city, runs with [`tools/e2e/run.mjs`
 | Package folder / Packages on this PC | The import package (the folder with `cs1conv-plan.json` and `roadbuilder\`). The dropdown lists packages under `%LOCALAPPDATA%\cs1-to-cs2`; picking one also runs Check. |
 | **Check** | Plan check, plus whether every road type is available. For a missing Road Builder road it says whether its config isn't installed yet ("press Install…, then restart") or is installed but not loaded ("restart the game"). It also counts roads already in the area. |
 | **Install Road Builder configs** | Copies the package's `*-cs1conv.json` to `ModsData\RoadBuilder`, after a confirmation. Road Builder reads configs only at startup, so the game must be restarted. |
+| **Prepare map** (group "New city") | In a new city, before Import, after a confirmation: removes the base map's roads, tracks and buildings, then applies the package's terrain and world map, the CS1 sea level and water sources (or a dry map), and checks the terrain against the file and the water at the package's checkpoints. It uses the terrain worker's library (`terrain/cs2-apply`, compiled in; `mod/MapSteps.cs`). About 15 s. |
 | Clear the area first | On by default. Bulldozes the existing roads in the area. |
+| Outside connections | On by default, the last step. Where CS1 highways and train tracks leave the crop, the imported end nodes become CS2 outside connections (`plan.outsideConnections`, `MapPrep oc.create`). |
 | Transit lines | On by default. CS1 bus and tram stops and lines (names, numbers, colours) via the transit worker's library (`transit/cs2-exec`, compiled in; `mod/TransitStep.cs`), after the buildings. Metro and train lines need the stations from the buildings step. |
 | Buildings, trees, districts | On by default. The buildings/ worker's steps (`buildings/src/Steps.cs`, compiled into the mod: buildings, objects, districts, surfaces) run after zoning. A plan without those sections reports them as skipped. |
 | Zoning / Traffic lights, stops, turn bans, crosswalks / Priority signs (Traffic mod) | On by default. The M2 steps run after the roads in one chain, and their results show in the status line and the combined report. Other mods can add steps with `Cs2ImporterMod.ImportSteps.Register` (see `mod/ImportSteps.cs`). |
@@ -29,10 +31,20 @@ The whole pipeline, from CS1 to a saved CS2 city, runs with [`tools/e2e/run.mjs`
 
 ```bash
 gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --args '{"op":"mod","set":{"PackageFolder":"…","OffsetX":2000,"OffsetZ":-4000},"press":"Check"}'
+gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --phase tool --pump tool --args '{"op":"mod","press":"PrepareMap","wait":true}'
 gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --phase tool --pump tool --args '{"op":"mod","press":"Import","wait":true}'
+gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --args '{"op":"mod","press":"WaterCheck"}'   # CS2 water vs the package's CS1 checkpoints
 ```
 
-## Quick start
+**The player's flow** (verified 2026-11-21, no Node tools; see the results below):
+1. Unzip the web tool's package under `%LOCALAPPDATA%\cs1-to-cs2`.
+2. Start CS2, pick the package, press **Install Road Builder configs**, then restart CS2.
+3. Start a new city (Sunshine Peninsula has the fewest base-map nets).
+4. Options → CS1 → CS2 importer: pick the package; it runs Check.
+5. Press **Prepare map**, then **Import into this city**.
+6. Unpause for a few minutes so rivers and lakes fill.
+
+## Quick start (scripts)
 
 ```bash
 # once per package, with CS2 closed: Road Builder reads its configs only at startup
@@ -61,7 +73,7 @@ gamectl cs2 exec cs2-importer/bin/Release/net48/Cs2Importer.dll --phase tool --p
 | `check` | phase main | Parses and validates the plan, looks up every prefab (with a hint for missing Road Builder configs), counts CS2 roads already in the area. |
 | `clear` | phase tool, pump tool | Bulldozes top-level CS2 roads in the plan's bounds + `margin` (50 m), or in `x0,z0,x1,z1`. |
 | `import` | phase tool, pump tool | Optional `clear`, then the batches, then a verify pass. Returns the report; `report` writes it to a file too. |
-| `verify` | phase main | Re-checks an earlier import against the plan. |
+| `verify` | phase main | Re-checks an earlier import against the plan. Segments CS2 built through a fork of its own (two courses leaving a node at a shallow angle share their first metres) count as built and are listed in `notes_by_kind.merged-fork`. |
 | `terrain` | phase main | Height range, water and roads in a square (`x, z, size=3200, step=50`): for picking a test spot. |
 | `inspect` | phase main | Real nodes within `r` of `x, z` with their edges: for debugging a failure. |
 | `mod` | phase main; Import with `wait`: phase tool, pump tool | Drives the deployed mod's Options page: `set`, `press`, `wait`. |
@@ -169,4 +181,16 @@ The city is saved as `cs1conv-m2-full`. Screenshots in `.gamectl/e2e/20261121-05
 - Buildings: 108 of 108; Objects: 3404 of 4216; districts and surfaces skipped (none in the crop);
 - Transit: 9 of 9 lines, 145 of 145 stops.
 
-Report `%LOCALAPPDATA%\cs1-to-cs2\import-reports\import-20261121-102724.json`; saved as `cs1conv-m2-modflow`. The mod does not apply terrain, water or outside connections: those are still only the terrain/ Node tools.
+Report `%LOCALAPPDATA%\cs1-to-cs2\import-reports\import-20261121-102724.json`; saved as `cs1conv-m2-modflow`. At the time, the mod didn't apply terrain, water or outside connections (fixed by "Prepare map" and the connections step, below).
+
+**Release flow, mod only, from a web-CLI package** (no Node map prep; `.gamectl/modprep/run1` and `full1`, `modprep.json` there). Each run: new city on Sunshine Peninsula → Prepare map → Check → Import → simulate → `WaterCheck`.
+
+| | Skibidi 3 km crop (`cs1conv-m2-modprep`) | Whole city, 14.3 km (`cs1conv-m2-modprep-full`) |
+| --- | --- | --- |
+| Prepare map | 7.5 s; 197 base-map nets and 5 buildings removed | 16.6 s; the same base map |
+| Terrain vs the package file | 0 m error at 181 of 181 points (world map applied) | 0 m at 181 of 181 |
+| Water | sea level 182 m, 5 CS1 sources; after 2 min of simulation 94/100 wet, 100/100 dry points as in CS1, median depth error 0.73 m | 15 sources; after 3 min 95/100 wet, 100/100 dry, median depth error 1.65 m |
+| Import steps | all on: roads 2035/2035 in 4.4 s, traffic, Traffic mod, zoning 93.07 %, buildings 108/108, objects 3404/4216, transit 9/9 lines with 145/145 stops; whole chain 47 s | roads and connections only: **4738/4740** in 8.3 s (6 via CS2 forks, #44) |
+| Outside connections | 20/20 (13 road, 7 train); after the simulation 190 connection lanes and 624 cars | 10/10 (6 road, 4 train); 96 lanes, 28 trains, 24 cargo vehicles |
+
+The 2 segments still missing in the whole city are CS1 geometry that overlaps in CS2: a 16 m isolated pavement stub under an elevated highway (snapped onto it), and Basic Road 25217, which runs 9 m from a parallel road it meets through a 9 m stub.

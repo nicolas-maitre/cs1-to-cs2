@@ -575,6 +575,8 @@ namespace Cs2Importer
                 }
                 if (ns.Entity != Entity.Null) { planNodeEntities.Add(ns.Entity); nodesOk++; }
             }
+            int viaForks = 0;
+            var notes = new List<Issue>(); // built, but worth knowing (not failures)
             int built = 0, pieces = 0, wrongPrefab = 0, elevatedEdges = 0, tunnelEdges = 0, wantElevated = 0, wantTunnel = 0, raisedSides = 0, loweredSides = 0;
             var builtEdges = new HashSet<Entity>();
             foreach (var s in attempted)
@@ -594,6 +596,14 @@ namespace Cs2Importer
                     continue;
                 }
                 var path = FindPath(w, a, b, planNodeEntities, builtEdges);
+                bool viaFork = false;
+                if (path == null)
+                {
+                    // CS2 merges the first metres of two courses that leave a node at a shallow angle into one edge and
+                    // adds its own node where they part (a fork): the segment is there, through that node
+                    path = FindPathThroughForks(w, a, b, planNodeEntities, s.ChordLength * 1.5 + 50);
+                    viaFork = path != null;
+                }
                 if (path == null)
                 {
                     failures.Add(new Issue("error", "edge-missing", "segment " + s.Id + ": no CS2 edge between nodes " + s.Start.Id + " and " + s.End.Id) { Segment = s.Id });
@@ -601,12 +611,20 @@ namespace Cs2Importer
                 }
                 built++;
                 pieces += path.Count;
+                if (viaFork)
+                {
+                    viaForks++;
+                    notes.Add(new Issue("info", "merged-fork", "segment " + s.Id + ": CS2 merged its start or end with a neighbouring course that leaves the same node at a shallow angle, and built the rest from a node of its own") { Segment = s.Id });
+                }
                 var expected = prefabs.ByKey[s.PrefabKey].Entity;
-                bool prefabOk = true, elev = false, tun = false;
+                // a merged fork's trunk carries the neighbouring course's prefab: there, one edge of ours is enough
+                bool prefabOk = !viaFork, elev = false, tun = false;
                 foreach (var e in path)
                 {
                     builtEdges.Add(e);
-                    if (w.Em.GetComponentData<Game.Prefabs.PrefabRef>(e).m_Prefab != expected) prefabOk = false;
+                    bool same = w.Em.GetComponentData<Game.Prefabs.PrefabRef>(e).m_Prefab == expected;
+                    if (viaFork) prefabOk |= same;
+                    else if (!same) prefabOk = false;
                     var g = w.EdgeGeneralFlags(e);
                     if ((g & Game.Prefabs.CompositionFlags.General.Elevated) != 0) elev = true;
                     if ((g & Game.Prefabs.CompositionFlags.General.Tunnel) != 0) tun = true;
@@ -631,12 +649,12 @@ namespace Cs2Importer
             return new Dictionary<string, object>
             {
                 { "segments_planned", job.Segments.Count }, { "segments_attempted", attempted.Count }, { "segments_built", built },
-                { "segments_failed", attempted.Count - built }, { "cs2_edges_for_plan", pieces }, { "nodes_found", nodesOk }, { "nodes_planned", nodes.Count },
+                { "segments_failed", attempted.Count - built }, { "segments_via_cs2_fork", viaForks }, { "cs2_edges_for_plan", pieces }, { "nodes_found", nodesOk }, { "nodes_planned", nodes.Count },
                 { "wrong_prefab", wrongPrefab }, { "elevated_planned", wantElevated }, { "elevated_built", elevatedEdges },
                 { "tunnel_planned", wantTunnel }, { "tunnel_built", tunnelEdges }, { "other_cs2_edges_in_area", extra },
                 // edges with retaining-wall sides: buildings can't connect to a Raised/Lowered side
                 { "edges_raised_sides", raisedSides }, { "edges_lowered_sides", loweredSides },
-                { "_failures", failures },
+                { "_failures", failures }, { "notes_by_kind", ImportPlanner.CountByKind(notes) }, { "notes", ImportPlanner.Samples(notes, 10) },
             };
         }
 
@@ -664,6 +682,39 @@ namespace Cs2Importer
             if (used.Count > 0)
                 foreach (var first in w.EdgesOf(from))
                     if (used.Contains(first) && w.OtherEnd(first, from) == to) return new List<Entity> { first };
+            return null;
+        }
+
+        /// <summary>
+        /// Breadth-first search from `from` to `to` through CS2 nodes that are not plan nodes, whatever their degree, up to
+        /// 8 edges and `maxLength` metres. Edges already claimed by another segment may be reused: a merged fork's trunk
+        /// carries both segments.
+        /// </summary>
+        internal static List<Entity> FindPathThroughForks(GameWorld w, Entity from, Entity to, HashSet<Entity> planNodes, double maxLength)
+        {
+            var queue = new List<KeyValuePair<Entity, List<Entity>>>(); // System.dll's Queue<T> isn't referenced here
+            int head = 0;
+            var length = new Dictionary<Entity, double> { { from, 0 } };
+            queue.Add(new KeyValuePair<Entity, List<Entity>>(from, new List<Entity>()));
+            while (head < queue.Count)
+            {
+                var cur = queue[head++];
+                if (cur.Value.Count >= 8) continue;
+                foreach (var e in w.EdgesOf(cur.Key))
+                {
+                    if (cur.Value.Contains(e)) continue;
+                    var next = w.OtherEnd(e, cur.Key);
+                    double len = length[cur.Key] + w.Em.GetComponentData<Game.Net.Curve>(e).m_Length;
+                    if (len > maxLength) continue;
+                    var path = new List<Entity>(cur.Value) { e };
+                    if (next == to) return path;
+                    if (planNodes.Contains(next)) continue;
+                    double seen;
+                    if (length.TryGetValue(next, out seen) && seen <= len) continue;
+                    length[next] = len;
+                    queue.Add(new KeyValuePair<Entity, List<Entity>>(next, path));
+                }
+            }
             return null;
         }
 

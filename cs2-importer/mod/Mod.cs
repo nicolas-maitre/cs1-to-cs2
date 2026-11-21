@@ -33,9 +33,9 @@ namespace Cs2ImporterMod
             Settings.RegisterInOptionsUI();
             // buildings/ worker's steps (buildings, objects, districts, surfaces), behind one Options toggle
             Cs2Buildings.Steps.RegisterAll((name, step) => ImportSteps.Register(name, args =>
-                Settings.ApplyBuildings ? step(args) : SkippedStep(name)));
+                Settings.ApplyBuildings ? step(args) : SkippedStep("Buildings, trees, districts")));
             // transit after the buildings (stations and depots first)
-            ImportSteps.Register("transit", args => Settings.ApplyTransit ? TransitStep.Run(args) : SkippedStep("transit"));
+            ImportSteps.Register("transit", args => Settings.ApplyTransit ? TransitStep.Run(args) : SkippedStep("Transit lines"));
             // the import coroutine creates road definitions, which must happen in ToolUpdate (M0 Spike 1b)
             updateSystem.UpdateAt<ImportSystem>(SystemUpdatePhase.ToolUpdate);
         }
@@ -48,9 +48,10 @@ namespace Cs2ImporterMod
             Instance = null;
         }
 
-        static IEnumerator SkippedStep(string name)
+        /// <param name="toggle">The Options label that turned the step off.</param>
+        static IEnumerator SkippedStep(string toggle)
         {
-            yield return new Dictionary<string, object> { { "skipped", "turned off in the Options (Buildings, trees, districts)" } };
+            yield return new Dictionary<string, object> { { "skipped", "turned off in the Options (" + toggle + ")" } };
         }
 
         /// <summary>Rewrites the status line on the Options page (it is a locale entry, so the page re-reads it).</summary>

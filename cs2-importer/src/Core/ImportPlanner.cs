@@ -12,6 +12,9 @@ namespace Cs2Importer.Core
         /// <summary>Height above the CS2 terrain (metres): 0 for ground nodes, &gt; 0 elevated, &lt; 0 tunnel.</summary>
         public double Elevation;
         public double Cs1HeightAboveTerrain;
+        /// <summary>CS1 height of the node (plan y); y - heightAboveTerrain is CS1's terrain there, which the converted
+        /// CS2 terrain reproduces. Used to estimate CS2 heights for the clearance check.</summary>
+        public double Cs1Y;
         /// <summary>Height above the CS2 terrain at which the node is placed: Elevation ("flat" heights), or the full CS1
         /// heightAboveTerrain ("exact" heights, once the CS1 terrain has been applied to CS2).</summary>
         public double PositionHeight;
@@ -55,6 +58,13 @@ namespace Cs2Importer.Core
         /// <summary>"exact" heights: a node whose CS1 height differs from its composition elevation by more than this keeps
         /// the composition elevation as its position too (a clamped trench). See DECISIONS-importer.md M2.</summary>
         public double ExactLimit = 4.5;
+        /// <summary>
+        /// Crossings without a shared node: CS2 joins two courses that cross with too little vertical room (the whole-city
+        /// run). Where the planned CS2 clearance is below min(MinClearance, CS1's clearance there), the lower road's
+        /// below-ground nodes go deeper, or the upper road's elevated nodes higher, but never past the node's own CS1
+        /// height above terrain. 0 turns the pass off. See DECISIONS-importer.md #43.
+        /// </summary>
+        public double MinClearance = 8.0;
     }
 
     public sealed class ImportJob
@@ -138,7 +148,7 @@ namespace Cs2Importer.Core
         {
             NodeJob j;
             if (job.Nodes.TryGetValue(n.Id, out j)) return j;
-            j = new NodeJob { Id = n.Id, X = n.X + job.Options.OffsetX, Z = n.Z + job.Options.OffsetZ, Cs1HeightAboveTerrain = n.HeightAboveTerrain };
+            j = new NodeJob { Id = n.Id, X = n.X + job.Options.OffsetX, Z = n.Z + job.Options.OffsetZ, Cs1HeightAboveTerrain = n.HeightAboveTerrain, Cs1Y = n.Y };
             job.Nodes[n.Id] = j;
             return j;
         }
@@ -179,6 +189,7 @@ namespace Cs2Importer.Core
                 if (hi - lo > 1)
                     job.Warnings.Add(new Issue("info", "elevation-mismatch", "segments at node " + n.Id + " disagree on its elevation (" + lo.ToString("0.0") + " .. " + hi.ToString("0.0") + " m); using " + best.ToString("0.0")) { Node = n.Id });
             }
+            if (job.Options.MinClearance > 0) Clearance.Keep(job);
             bool exact = job.Options.Heights == "exact";
             foreach (var n in job.Nodes.Values)
                 n.PositionHeight = exact && !double.IsNaN(n.Cs1HeightAboveTerrain) && Math.Abs(n.Cs1HeightAboveTerrain - n.Elevation) <= job.Options.ExactLimit
