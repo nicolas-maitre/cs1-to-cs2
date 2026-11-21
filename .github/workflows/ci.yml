@@ -23,6 +23,11 @@ jobs:
       run:
         shell: bash
     steps:
+      # Windows runners default to core.autocrlf=true, which checks text files out with CRLF; the web tool's
+      # generated-docs tests compare files byte for byte with LF output. Keep the repository's own line endings.
+      - name: Keep LF line endings on checkout
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
