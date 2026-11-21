@@ -49,9 +49,10 @@ Output goes to `release/<product version>/` (git-ignored):
 
 `node tools/release/acceptance.mjs` runs the user's flow with the release artefacts (needs local.props and the CS2 lock):
 1. builds the release and installs the importer mod **from its zip** into CS2's Mods folder (the dev build there is backed up and put back; `--keep-mod` leaves the release build);
-2. makes the package with the web CLI (`--cs1x`, default the Skibidi sample; `--auto-crop`, default 3000);
-3. presses the mod's Options buttons as a user would: **Install Road Builder configs**, restart CS2, new city (`--map`, default Corral Riches), **Check**, **Import into this city**;
-4. simulates for 60 s (`--simulate`), takes screenshots, saves `cs1conv-acceptance-<time>`, and writes `.gamectl/acceptance/<time>/summary.json` with each step's time and result.
+2. makes the package with the web CLI (`--cs1x`, default the Skibidi sample; `--auto-crop`, default 3000, or a fixed square with `--crop cx,cz,size`);
+3. presses the mod's Options buttons as a user would: **Install Road Builder configs**, restart CS2, new city (`--map`, default Corral Riches), **Check**, **Prepare map**, **Import into this city**;
+4. checks that every road runs the way it did in CS1: the importer's op `lanedirs` dumps each segment's CS2 car-lane directions, and [`lanedirs-compare.mjs`](../tools/release/lanedirs-compare.mjs) compares them with the export's CS1 lanes (one-way, two-way and asymmetric roads; left-hand cities included);
+5. simulates for 60 s (`--simulate`), counts the public-transport vehicles by kind (bus, tram, metro, train) with the transit exec library, takes screenshots, saves `cs1conv-acceptance-<time>`, and writes `.gamectl/acceptance/<time>/summary.json` with each step's time and result.
 
 The buttons are pressed through the Cs2Importer exec library's `op mod`, which calls the same `Actions` methods; there is no other way into the Options page from a script. Results go in [QA.md](QA.md) under "Release acceptance".
 

@@ -213,3 +213,73 @@ What works (verified in game):
   - **Station sub-nets' lanes:** the station platform edges come from the placer's OwnerDefinition sub-net courses; maybe their lanes lack something the pathfinder needs (e.g. a pathfind graph entry for owned edges).
   - **Station stops:** the integrated station stops have no `Attached` (bus stops are attached to their road edge); maybe they need their access lanes set.
   - **Decisive next test:** in a plain new city, build a station by hand-equivalent means (the vanilla object tool through the same forced-apply trick that works for lines and tracks), then a line on it. If that line pathfinds, the difference is in how the placer creates station sub-nets.
+
+### 5b. Root-cause hunt (time-boxed): started, cut short by the usage limit
+
+- **Leads from the IL** (no game run yet):
+  - Route segments are read by `Game.Routes.RoutePathSystem` and `Game.Pathfind.RoutesModifiedSystem` (`AddPathEdgeJob` / `UpdatePathEdgeJob`), among others.
+  - There is no route-specific `*PathfindSetup` system, so a segment path is most likely requested inside `RoutePathSystem`'s jobs (`CheckRoutePathsJob`, `CheckSegmentRoutes`).
+- **Next step:**
+  1. Read `RoutePathSystem.OnUpdate` and `CheckSegmentRoutes` to see which condition skips the rail segments: state 0, 0 elements, while bus segments are computed.
+  2. Then run the planned vanilla-station comparison (tool definitions plus the forced apply frame), diffing against a placer station.
+
+### 5c. Root-cause hunt: findings (time-boxed, about 1.5 h). Rail lines still have no path; causes found
+
+Runs: `.gamectl/tracklink/6k-run7`, diagnostics `node transit/tools/node-diag.mjs` / `line-diag.mjs` (6 km Skibidi, save `cs1conv-train6k-trains`).
+
+1. **CS2 pathfinds a line segment only when its target lanes change** (`RoutePathSystem.SetupPathfind`, IL_0264–02AF).
+   - It returns false when `PathTargets` already equal the waypoints' `RouteLane` ends.
+   - So a rail line created before its stations are joined keeps an empty path forever. `Updated` segments or `Applied` lanes never re-ask.
+   - **Fix (transit, done):** `transit.mjs depots --recreate` deletes the rail lines and creates them again after the track links.
+2. **A Permanent course starting on a building-owned node (a station platform end) is silently not built.** Node diagnostics showed every subway "link" absent: both ends kept one edge.
+   - **Fix (transit, done):** all station and yard links now go the player's way (Temp definition + one forced apply frame). The TrainStation02 link built this way is present: 2 edges per node, lanes on the link.
+3. **The subway links are still rejected:** each must climb 12–15 m in about 20 m.
+   - CS1 "Overground Metro Station **Elevated** 01" was matched to `SubwayStation03`, whose platform ends sit at ground level, while the imported metro track is elevated. The tool validation rejects such grades, so apply builds nothing.
+   - **Fix → buildings worker:** match elevated CS1 metro stations to `SubwayStationElevated01/02` (they're in the alternatives list), or place the station at the track's elevation.
+4. **TrainStation03 straddles the imported track:** both its platform ends (x −2526 / −2314) link to track ends near x −2350, inside the station's span.
+   - The station was placed over the CS1 track instead of where CS1's platforms were, so Train Line 1 can't pass through it.
+   - **Fix → buildings worker:** for stations, align the lot with the CS1 station's position and orientation (no slide, no "nearby" move), so its platform tracks continue the imported track.
+5. **Status:** Train Line 1 and Metro Lines 1–3 still have 0 path elements. Causes 3 and 4 are on the station placement side. With them fixed, transit's `depots --recreate` (link + recreate) is ready to verify trains: `node transit/run-tracklink.mjs --load <save> --plan <plan> --recreate`.
+
+## 7. Release candidate (buildings worker)
+
+`node tools/release/acceptance.mjs --simulate 300 [--skip-build] [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after e17a74c: a fresh release build (product 0.3.0; exporter 1.2.1, **importer 0.3.1**, **web 0.5.2**, buildings 0.3.0).
+- **Install:** the importer from `cs2-importer-0.3.1.zip` before each city.
+- **Flow:** the user's: Install Road Builder configs → restart → new city on Corral Riches → Check → Prepare map → 20 s → Import → 300 s at speed 3.
+- **New checks in the script:**
+  - **lane directions:** the importer's op `lanedirs` against the export's CS1 lanes ([`tools/release/lanedirs-compare.mjs`](../tools/release/lanedirs-compare.mjs));
+  - **vehicles:** public-transport vehicles counted by kind after the simulation (transit exec library, read only).
+- **Result:** all three **ok=true**; the dev mod was restored after each; no lock left.
+
+| | Skibidi 3 km (`20261121-133435`) | CacaoCity, left-hand (`20261121-134438`) | Westfield (`20261121-140001`) |
+| --- | --- | --- | --- |
+| Package | 2035 roads, 33 RB types, 108 buildings, 4216 trees, 9 lines | 684 roads, 42 RB types, 43 buildings, 12 260 trees, 44 IMT surfaces | 648 roads, 15 RB types, 13 buildings |
+| Check | all 37 road types available | all 44 available; "The CS1 city drove on the left, this city drives on the right: … Prepare map sets the side" | all 16 available |
+| Prepare map | 15.9 s, terrain 95 % exact | 15.6 s; **"Traffic drives on the left, as in the CS1 city."** | 15.5 s |
+| Roads | **2035 / 2035** (4.2 s; 1 not-elevated note) | **684 / 684** (2.2 s) | **648 / 648** (2.2 s) |
+| **One-way directions** (CS2 lanes vs CS1, per road) | **all 1949 the same**: 353 one-way, 1590 two-way, 6 asymmetric; 0 reversed or mirrored | **all 554 the same**: 162 one-way, 369 two-way, 23 asymmetric; CS2 city left-hand | **all 647 the same**: 403 one-way, 244 two-way |
+| **Lane connections** (on by default now) | 362 at 70 of 95 junctions; 685/685 CS1 lane refs; explicit sources **92 %** (162/176) | 342 at 68 of 79 junctions; 727/729 refs; explicit sources **99 %** (206/208); handedness from `plan.source.leftHandTraffic` | 127 at 34 of 39 junctions; 299/301 refs; explicit sources **95.7 %** (88/92) |
+| Traffic / Traffic mod | 66 turn bans, 121 lights removed; 325 priority signs | 4 lights added, 7 removed; 57 priority signs | 43 turn bans; 3 priority signs |
+| Zoning | 93.1 % | 91.1 % | 99.99 % |
+| Buildings | **108 / 108** | **43 / 43** | **13 / 13** |
+| Trees and props | 3404 / 4216 | 10 828 / 12 260 | none |
+| IMT surfaces | none | **44 / 44** | none |
+| Transit lines | **9 / 9** (8 bus, 1 subway), 145 / 145 stops | none in the city | none in the city |
+| Outside connections | 20 / 20 (13 road, 7 train) | 4 / 4 | 22 / 22 |
+| Vehicles after 300 s | **26 buses** (Bus01), no tram lines in the city; **0 metro, 0 train** | 2 buses (no lines) | 10 buses (no lines) |
+
+- **One-way and asymmetric roads run as in CS1 in all three cities, the left-hand one included.**
+  - This is importer 0.3.1's left-hand fix, now checked in the release flow.
+  - **Comparer validated:** on worker-3's earlier left-hand Cacao dump (`.gamectl/lht/run3`) it gives the same verdict as importer decision #55.
+  - It handles the web tool's `reversed` plan segments: 477 of Cacao's 684 run end → start in the plan.
+- **Lane connections:** what isn't matched is explained by the outcomes.
+  - "pass-through not expressible": 14 in Skibidi, 2 in Cacao, 4 in Westfield. These are lane splits at nodes without a junction, which CS2 can't represent.
+  - Two "target lane enters the node" in Cacao and Westfield.
+  - Nothing resolved was wrong.
+- **Trains and metros: known limit (DECISIONS.md #99), not a failure here.**
+  - Skibidi's subway line was created complete with 0 vehicles, and no metro or train ran after 300 s.
+  - The crop-edge yards and track links (transit, opt-in) are not part of the user flow, so this run doesn't exercise them.
+  - Worker-4's §5c traced two causes to station placement. Both are fixed in the working tree as buildings 0.3.1 (decision #36: stations stay at the CS1 spot and keep their elevated / ground height). They are **not** in these artefacts and not yet verified in game.
+  - Left for transit: CS2 train stations are 200 m long against CS1's 128 m, so the track link has to join the imported track at the platform ends.
+- **The buses in Cacao and Westfield** (cities without lines) are not from imported lines (routes 0); they're counted as found.
+- **Not run:** the Skibidi crop with a train line crossing the edge (`--crop 500,-400,3000`). With trains a known limit and the yards opt-in, it would only repeat "0 trains". It can be run as is when worker-4's track link and the station fix are both in.

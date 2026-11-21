@@ -265,3 +265,13 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      4. CS2 train stations are placed over the imported track instead of continuing it. They need the CS1 position and orientation. Open, buildings worker.
 
      Trains and metros stay a known limit until 3–4 are fixed and verified.
+102. **Tram-only lanes are left out of car-lane ordinals and counts, like bicycle-only lanes** (Claude). Shared car+tram lanes stay counted. Web and importer agree.
+103. **The release candidate passed acceptance on three cities with importer 0.3.1 and web 0.5.2** (Claude; `docs/QA.md` §7):
+
+     | | Skibidi 3 km | CacaoCity (left-hand) | Westfield |
+     | --- | --- | --- | --- |
+     | Roads | 2035/2035 | 684/684 | 648/648 |
+     | Lane connections (CS1 sources matched) | 92% | 99% | 95.7% |
+     | Buildings | 108/108 | 43/43 | 13/13 |
+
+     Every compared road runs in CS1's direction, and no lane connection was set wrong. Trains and metros are the known limit (#99, #101). The final release is cut after the vanilla-road preference (#100) lands and passes the same acceptance.

@@ -1,6 +1,6 @@
 // Release acceptance test: the real user flow with the release artefacts, no exec of import code.
 //
-//   node tools/release/acceptance.mjs [--cs1x <file>] [--map "Corral Riches"] [--auto-crop 3000] [--skip-build] [--keep-mod]
+//   node tools/release/acceptance.mjs [--cs1x <file>] [--map "Corral Riches"] [--auto-crop 3000 | --crop cx,cz,size] [--simulate 60] [--skip-build] [--keep-mod]
 //
 // 1. build      node tools/release/build.mjs (unless --skip-build)
 // 2. install    the importer mod from release/<v>/cs2-importer-<v>.zip into CS2's Mods folder (the dev build there is
@@ -11,7 +11,9 @@
 // 6. restart    start CS2 again, new city on a flat map, paused
 // 7. check      Options → package folder, "Clear the area" on, press Check; then "Prepare map" (terrain, water) and 20 s to settle
 // 8. import     press "Import into this city", wait for the mod to finish
-// 9. verify     screenshots, the mod's import report, save as cs1conv-acceptance-<date>, quit, release the lock
+// 9. verify     lane directions (op "lanedirs" vs the export's CS1 lanes: tools/release/lanedirs-compare.mjs), simulate
+//               (--simulate s), public-transport vehicles by kind (transit exec library, read-only), screenshots, the mod's
+//               import report, save as cs1conv-acceptance-<date>, quit, release the lock
 //
 // Pressing the Options buttons from a script: the Cs2Importer exec library's op "mod" sets the Options values and calls
 // the same Actions methods the buttons call (no other path into the settings UI). Everything else is the mod's own code.
@@ -37,6 +39,8 @@ const cs1x = path.resolve(opt('cs1x', path.join(LOCAL_DIR, 'samples', 'skibidi.c
 const map = opt('map', 'Corral Riches');
 const MODS = path.join(os.homedir(), 'AppData', 'LocalLow', 'Colossal Order', 'Cities Skylines II', 'Mods', 'Cs2Importer');
 const LIB = path.join(REPO, 'cs2-importer', 'bin', 'Release', 'net48', 'Cs2Importer.dll');
+const TRANSIT_LIB = path.join(REPO, 'transit', 'cs2-exec', 'bin', 'Release', 'net48', 'Cs1ConvTransit.dll');
+const TRANSIT_TYPE = 'Cs1ConvTransit.Ops';
 
 const S = { started: new Date().toISOString(), dir: runDir, cs1x, map, steps: [] };
 const save = () => fs.writeFileSync(path.join(runDir, 'summary.json'), JSON.stringify(S, null, 1));
@@ -95,7 +99,8 @@ try {
 
   await step('package', () => {
     const pkg = path.join(runDir, 'package');
-    const outText = node([path.join(REPO, 'web', 'cli', 'cs1conv.ts'), 'plan', cs1x, '--auto-crop', opt('auto-crop', '3000'), '--out', pkg], { timeout: 600e3 });
+    const cropArgs = opt('crop') ? ['--crop', opt('crop')] : ['--auto-crop', opt('auto-crop', '3000')]; // --crop cx,cz,size: e.g. a square a train line leaves
+    const outText = node([path.join(REPO, 'web', 'cli', 'cs1conv.ts'), 'plan', cs1x, ...cropArgs, '--out', pkg], { timeout: 600e3 });
     const plan = JSON.parse(fs.readFileSync(path.join(pkg, 'cs1conv-plan.json'), 'utf8'));
     S.package = pkg;
     return {
@@ -165,7 +170,32 @@ try {
     }
     return { status: r.StatusText, progress_seen: r.progress_seen, reportPath: r.LastReportPath, report: report && Object.fromEntries(Object.entries(report).map(([k, x]) => [k, JSON.stringify(x).slice(0, 1500)])) };
   });
+  // One-way and asymmetric roads must run the way they did in CS1 (left-hand cities included): dump every plan
+  // segment's CS2 car-lane directions (importer op "lanedirs") and compare them with the export's CS1 lanes.
+  await step('lane-directions', async () => {
+    const r = await b.exec(LIB, { args: { op: 'lanedirs', plan: S.package }, timeout: 600 });
+    const dump = path.join(runDir, 'lanedirs.json');
+    fs.writeFileSync(dump, JSON.stringify(r, null, 1));
+    let out;
+    try {
+      out = node([path.join(REPO, 'tools', 'release', 'lanedirs-compare.mjs'), cs1x, path.join(S.package, 'cs1conv-plan.json'), dump, '--json', path.join(runDir, 'lanedirs-compare.json')]);
+    } catch (e) { out = String(e.stdout ?? ''); }
+    const c = JSON.parse(fs.readFileSync(path.join(runDir, 'lanedirs-compare.json'), 'utf8'));
+    return { segments: r.segments, missing: r.missing, cs2LeftHandTraffic: r.cs2_left_hand_traffic, byKind: c.byKind, reversed: c.reversed, mirrored: c.mirrored, other: c.other, examples: c.examples.slice(0, 5), ok: c.ok, out: out ? undefined : 'no output' };
+  });
   await step('simulate', async () => { await b.call('sim.set', { paused: false, speed: 3 }); await b.wait(1, Number(opt('simulate', '60')), { timeout: 600 }); await b.pause(); return { seconds: Number(opt('simulate', '60')) }; });
+  // Public-transport vehicles after the simulation (read-only count from the transit exec library): are buses,
+  // trams, metros and trains actually running? Lines without vehicles show up here, not in the import status.
+  if (fs.existsSync(TRANSIT_LIB)) {
+    await step('vehicles', async () => {
+      const r = await b.exec(TRANSIT_LIB, { type: TRANSIT_TYPE, args: { op: 'counts' }, timeout: 300 });
+      const by = r.byPrefab ?? {};
+      const kind = (n) => /subway|metro/i.test(n) ? 'metro' : /train|engine|locomotive/i.test(n) ? 'train' : /tram/i.test(n) ? 'tram' : /bus/i.test(n) ? 'bus' : 'other';
+      const byKind = {};
+      for (const [n, c] of Object.entries(by)) { const k = kind(n); byKind[k] = (byKind[k] ?? 0) + (typeof c === 'number' ? c : (c?.count ?? 0)); }
+      return { total: r.publicTransportVehicles, byKind, byPrefab: by, depots: r.depots, routes: r.routes };
+    });
+  }
   await step('shots', async () => {
     const plan = JSON.parse(fs.readFileSync(path.join(S.package, 'cs1conv-plan.json'), 'utf8'));
     return planShots(b, plan, { dir: runDir, tag: 'acceptance', log });
