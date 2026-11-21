@@ -28,12 +28,15 @@ Without `--json` you get short human text.
 | `state`, `ping`, `methods` | Print the state object, or the list of methods. |
 | `saves [--limit n]` | `saves.list` |
 | `load <save> [--timeout 900]` | `save.load`. The bridge replies once `city_loaded` is true. |
+| `maps [--limit n]` | CS2: `maps.list`, the playable maps with their ids. |
+| `new <map> [--name city] [--timeout 900]` | CS2: `game.new`, a new city from a map id or name. Replies once the city is loaded. |
+| `save <cs1conv-name> [--timeout 300]` | CS2: `save.write`. The bridge only accepts names that start with `cs1conv-`. |
 | `menu` | Returns to the main menu. Unsaved progress is lost. |
 | `camera [x z [distance yaw pitch]] [--y n] [--smooth]` | With no arguments it prints the camera (`camera.get`); with arguments it calls `camera.set`. Negative numbers work as written: `camera -1200 300`. |
 | `pause`, `resume`, `speed <n>` | `sim.set` |
 | `wait <frames> [--seconds s]` | Waits until the frames (and the seconds, if given) have passed in the game. |
 | `screenshot [file.png] [--supersize 1-4]` | Without a file it writes `<repo>/.gamectl/shots/<game>-<yyyymmdd-hhmmss-ms>.png`. A relative file is resolved against the current folder, `.png` is added when missing, and a folder argument gets the default file name. Prints the path. |
-| `exec <dll> [--type T] [--method M] [--args json] [--phase main\|tool]` | Hot-loads a DLL and runs its entry point. The DLL path is made absolute. `--phase` exists only on CS2. |
+| `exec <dll> [--type T] [--method M] [--args json] [--phase main\|tool] [--pump main\|tool]` | Hot-loads a DLL and runs its entry point. The DLL path is made absolute. `--phase` and `--pump` exist only on CS2 (`--pump tool` keeps a coroutine in ToolUpdate, see PROTOCOL.md). |
 | `log [--lines 50] [--grep re] [--follow] [--file name\|path]` | Tails the game's logs. `--grep` is a case-insensitive JS regex. With `--json`, `--follow` prints NDJSON `{file,line}`. |
 
 `log` reads these files by default:
@@ -108,11 +111,12 @@ A `Bridge` has these methods:
 - `call(method, params, {timeout})`
 - `health()`, `ping()`, `state()`, `methods()`
 - `saves(limit)`, `load(name)`, `menu()`, `quit()`
+- CS2: `maps(limit)`, `newGame(map, {name, theme, options, timeout})`, `saveWrite(name)`
 - `cameraGet()`, `cameraSet(cam)`
 - `pause()`, `resume()`, `speed(n)`
 - `wait(frames, seconds)`
 - `screenshot(absPath, {supersize})`
-- `exec(dll, {type, method, args, phase, timeout})`
+- `exec(dll, {type, method, args, phase, pump, timeout})`
 
 Errors are `GamectlError`, which carries:
 

@@ -81,6 +81,16 @@ export async function startFakeBridge(opts) {
       Object.assign(state, { loading: false, mode: 'game', city_loaded: true, city_name: `${p.name} City`, save_name: p.name });
       return { loaded: p.name, city: state.city_name };
     },
+    'maps.list': (p) => ({ maps: [{ id: 'm1', name: 'Flat Plains', theme: 'European', buildable_land: 90, playable: true }, { id: 'm2', name: 'Hills', theme: 'North American', playable: false }].slice(0, p.limit ?? 100) }),
+    'game.new': async (p) => {
+      if (p.map !== 'm1' && p.map !== 'Flat Plains') throw new RpcError(`no map ${p.map}`);
+      Object.assign(state, { loading: false, mode: 'game', city_loaded: true, city_name: p.name ?? 'cs1conv-city', save_name: null });
+      return { map: 'Flat Plains', map_id: 'm1', city: state.city_name };
+    },
+    'save.write': (p) => {
+      if (!String(p.name).startsWith('cs1conv-')) throw new RpcError('save.write only writes saves whose name starts with "cs1conv-"');
+      return { saved: p.name, city: state.city_name, overwritten: false };
+    },
     menu: () => {
       Object.assign(state, { mode: 'menu', city_loaded: false, city_name: null, save_name: null });
       return { menu: true };

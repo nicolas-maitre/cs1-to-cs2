@@ -28,3 +28,5 @@ network-*.json
 screenshots/
 # gamectl CLI entry point (not build output)
 !tools/gamectl/bin/
+# Claude Code runtime state
+.claude/scheduled_tasks.lock

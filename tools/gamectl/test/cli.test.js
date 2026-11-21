@@ -116,6 +116,19 @@ test('sugar: state, saves, load, menu, pause/resume/speed, wait, methods', async
   assert.match((await cli(['cs2', 'methods'])).out, /camera\.set \*/);
 });
 
+test('cs2 sugar: maps, new, save', async () => {
+  assert.match((await cli(['cs2', 'maps'])).out, /^Flat Plains {2}\[m1\] {2}European {2}buildable 90\nHills {2}\[m2\] {2}North American {2}\(not playable\)$/);
+  await cli(['cs2', 'maps', '--limit', '1']);
+  assert.deepEqual(lastRpc().params, { limit: 1 });
+  const n = await cli(['cs2', 'new', 'Flat Plains', '--name', 'cs1conv-t']);
+  assert.equal(n.out, 'new city "cs1conv-t" on map "Flat Plains"');
+  assert.deepEqual(lastRpc(), { method: 'game.new', params: { map: 'Flat Plains', name: 'cs1conv-t' }, timeout_s: 900 });
+  assert.equal((await cli(['cs2', 'save', 'cs1conv-m1-test'])).out, 'saved "cs1conv-m1-test"');
+  assert.equal(lastRpc().timeout_s, 300);
+  assert.equal((await cli(['cs2', 'save', 'MyCity'])).code, 1);
+  assert.equal((await cli(['cs2', 'new'])).code, 2);
+});
+
 test('camera: get, set x z, set all five with negatives, --y', async () => {
   const g = await cli(['cs2', 'camera']);
   assert.match(g.out, /^x=.* distance=.* pitch=/);
@@ -149,7 +162,9 @@ test('exec: dll resolved to absolute, options passed, --phase checked', async ()
   assert.equal(r.code, 0, r.err);
   assert.deepEqual(lastRpc().params, { dll: path.join(cwd, 'bin', 'Spike.dll'), type: 'Spike.Entry', method: 'Go', args: { n: 3 }, phase: 'tool' });
   assert.equal((await cli(['cs2', 'exec', 'bin/Spike.dll', '--phase', 'sideways'], { cwd })).code, 2);
-  assert.equal((await cli(['cs2', 'exec', 'bin/Missing.dll'], { cwd })).code, 2);
+  assert.equal((await cli(['cs2', 'exec', 'bin/Spike.dll', '--phase', 'tool', '--pump', 'tool'], { cwd })).code, 0);
+  assert.equal(lastRpc().params.pump, 'tool');
+  assert.equal((await cli(['cs2', 'exec', 'bin/Spike.dll', '--pump', 'sideways'], { cwd })).code, 2);  assert.equal((await cli(['cs2', 'exec', 'bin/Missing.dll'], { cwd })).code, 2);
   assert.equal((await cli(['cs2', 'exec', 'bin/Spike.dll', '--args', 'nope'], { cwd })).code, 2);
 });
 

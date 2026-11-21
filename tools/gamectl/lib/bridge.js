@@ -206,6 +206,23 @@ export class Bridge {
   saves(limit) { return this.call('saves.list', limit !== undefined ? { limit } : {}); }
   /** @param {string} name @param {{timeout?: number}} [opts] */
   load(name, opts = {}) { return this.call('save.load', { name }, { timeout: opts.timeout ?? 900 }); }
+  /** cs2: playable maps. @param {number} [limit] */
+  maps(limit) { return this.call('maps.list', limit !== undefined ? { limit } : {}); }
+  /**
+   * cs2: start a new city from a map; replies once it is loaded.
+   * @param {string} map  map id or display name (see maps())
+   * @param {{name?: string, theme?: string, options?: Record<string, boolean>, timeout?: number}} [opts]
+   */
+  newGame(map, opts = {}) {
+    /** @type {Record<string, unknown>} */
+    const p = { map };
+    if (opts.name !== undefined) p.name = opts.name;
+    if (opts.theme !== undefined) p.theme = opts.theme;
+    if (opts.options !== undefined) p.options = opts.options;
+    return this.call('game.new', p, { timeout: opts.timeout ?? 900 });
+  }
+  /** cs2: save the loaded city; the bridge only accepts names starting with "cs1conv-". @param {string} name @param {{timeout?: number}} [opts] */
+  saveWrite(name, opts = {}) { return this.call('save.write', { name }, { timeout: opts.timeout ?? 300 }); }
   /** @param {{timeout?: number}} [opts] */
   menu(opts = {}) { return this.call('menu', {}, { timeout: opts.timeout ?? 300 }); }
   quit() { return this.call('quit', {}, { timeout: 15 }); }
@@ -241,7 +258,7 @@ export class Bridge {
   /**
    * Hot-load and run a DLL entry point.
    * @param {string} dll  path, resolved to absolute
-   * @param {{type?: string, method?: string, args?: unknown, phase?: 'main' | 'tool', timeout?: number}} [opts]
+   * @param {{type?: string, method?: string, args?: unknown, phase?: 'main' | 'tool', pump?: 'main' | 'tool', timeout?: number}} [opts]
    */
   exec(dll, opts = {}) {
     const abs = path.resolve(dll);
@@ -253,6 +270,10 @@ export class Bridge {
     if (opts.method !== undefined) p.method = opts.method;
     if (opts.args !== undefined) p.args = opts.args;
     if (opts.phase !== undefined) p.phase = opts.phase;
+    if (opts.pump !== undefined) {
+      if (this.game !== 'cs2') throw new GamectlError('usage', '--pump is only supported by the cs2 bridge');
+      p.pump = opts.pump;
+    }
     return this.call('exec', p, { timeout: opts.timeout });
   }
 }

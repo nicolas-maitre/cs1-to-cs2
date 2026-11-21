@@ -11,7 +11,7 @@ import { followFiles, tailFile } from './logs.js';
 const BOOLEAN_FLAGS = new Set(['json', 'follow', 'force', 'help', 'quiet', 'smooth']);
 const VALUE_FLAGS = new Set([
   'load', 'flags', 'timeout', 'load-timeout', 'lines', 'grep', 'type', 'method', 'args', 'phase', 'file', 'limit',
-  'supersize', 'seconds', 'wait', 'y',
+  'supersize', 'seconds', 'wait', 'y', 'name', 'pump',
 ]);
 
 export const USAGE = `gamectl — drive Cities: Skylines 1/2 through their bridge mods (tools/PROTOCOL.md)
@@ -27,12 +27,15 @@ rpc
   state | methods | ping
   saves [--limit n]
   load <save> [--timeout 900]
+  maps [--limit n]                              (cs2)
+  new <map> [--name city] [--timeout 900]       (cs2: new city from a map id or name)
+  save <cs1conv-name> [--timeout 300]           (cs2: only names starting with cs1conv-)
   menu
   camera [x z [distance yaw pitch]] [--y n] [--smooth]   (no args = get)
   pause | resume | speed <n>
   wait <frames> [--seconds s]
   screenshot [file.png] [--supersize 1-4]      (default .gamectl/shots/<game>-<timestamp>.png)
-  exec <dll> [--type T] [--method M] [--args json] [--phase main|tool]
+  exec <dll> [--type T] [--method M] [--args json] [--phase main|tool] [--pump main|tool]
 logs
   log [--lines 50] [--grep regex] [--follow] [--file name|path]
 
@@ -211,7 +214,7 @@ async function run(game, cmd, pos, opt, io) {
 
   // everything below needs the bridge
   if (cmd === 'call') arity(pos, 1, 2, 'call <method> [jsonParams] [--timeout s]');
-  const known = ['call', 'state', 'methods', 'ping', 'saves', 'load', 'menu', 'camera', 'pause', 'resume', 'speed', 'wait', 'screenshot', 'exec'];
+  const known = ['call', 'state', 'methods', 'ping', 'saves', 'load', 'maps', 'new', 'save', 'menu', 'camera', 'pause', 'resume', 'speed', 'wait', 'screenshot', 'exec'];
   if (!known.includes(cmd)) throw new GamectlError('usage', `unknown command "${cmd}"\n\n${USAGE}`);
   const b = await connect(game);
   const t = timeout !== undefined ? { timeout } : {};
@@ -244,6 +247,22 @@ async function run(game, cmd, pos, opt, io) {
       arity(pos, 1, 1, 'load <save> [--timeout 900]');
       const r = /** @type {any} */ (await b.load(pos[0], t));
       return { result: r, text: `loaded "${r?.loaded ?? pos[0]}"${r?.city ? ` (city ${r.city})` : ''}` };
+    }
+    case 'maps': {
+      arity(pos, 0, 0, 'maps [--limit n]');
+      const r = /** @type {any} */ (await b.maps(num(opt.limit, '--limit')));
+      const text = (r?.maps ?? []).map((/** @type {any} */ m) => `${m.name}  [${m.id}]${m.theme ? `  ${m.theme}` : ''}${m.buildable_land != null ? `  buildable ${Math.round(m.buildable_land)}` : ''}${m.playable === false ? '  (not playable)' : ''}`).join('\n') || '(no maps)';
+      return { result: r, text };
+    }
+    case 'new': {
+      arity(pos, 1, 1, 'new <map> [--name city] [--timeout 900]');
+      const r = /** @type {any} */ (await b.newGame(pos[0], { name: typeof opt.name === 'string' ? opt.name : undefined, ...t }));
+      return { result: r, text: `new city "${r?.city ?? ''}" on map "${r?.map ?? pos[0]}"` };
+    }
+    case 'save': {
+      arity(pos, 1, 1, 'save <cs1conv-name> [--timeout 300]');
+      const r = /** @type {any} */ (await b.saveWrite(pos[0], t));
+      return { result: r, text: `saved "${r?.saved ?? pos[0]}"${r?.overwritten ? ' (overwrote the old one)' : ''}` };
     }
     case 'menu': {
       arity(pos, 0, 0, 'menu');
@@ -291,14 +310,17 @@ async function run(game, cmd, pos, opt, io) {
       return { result: r, text: r?.path ?? file };
     }
     case 'exec': {
-      arity(pos, 1, 1, 'exec <dll> [--type T] [--method M] [--args json] [--phase tool]');
+      arity(pos, 1, 1, 'exec <dll> [--type T] [--method M] [--args json] [--phase tool] [--pump tool]');
       const phase = opt.phase;
       if (phase !== undefined && phase !== 'main' && phase !== 'tool') throw new GamectlError('usage', '--phase must be main or tool');
+      const pump = opt.pump;
+      if (pump !== undefined && pump !== 'main' && pump !== 'tool') throw new GamectlError('usage', '--pump must be main or tool');
       const r = await b.exec(path.resolve(cwd, pos[0]), {
         type: typeof opt.type === 'string' ? opt.type : undefined,
         method: typeof opt.method === 'string' ? opt.method : undefined,
         args: typeof opt.args === 'string' ? json(opt.args, '--args') : undefined,
         phase,
+        pump,
         ...t,
       });
       return { result: r, text: pretty(r) };

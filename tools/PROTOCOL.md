@@ -112,7 +112,20 @@ Each game implements these game-specific methods, with the same names and shapes
 | `sim.set` | `paused?`, `speed?` | `{paused, speed}` | no |
 | `autosave.set` | `enabled` (bool) | CS2 only: `{autosave_blocked, reason}` | yes |
 
-On the CS2 bridge `exec` takes an extra param, `phase`: `"main"` (default) or `"tool"`. `"tool"` runs the entry point inside a system in the `ToolUpdate` phase, the phase the road-placement spike needs.
+CS2 also has these, for the converter's test cities:
+
+| Method | Params | Result | While loading |
+| --- | --- | --- | --- |
+| `maps.list` | `limit?`=100 | `{maps:[{id, name, asset, theme, area, buildable_land, starting_year, playable, readonly, cloud}]}`, sorted by name | yes |
+| `game.new` | `map` (id, display name or asset name), `name?`="cs1conv-city", `theme?` (the map's), `options?` `{unlockAll, unlimitedMoney, unlockMapTiles}` (default true) `{leftHandTraffic, naturalDisasters}` (default false) | `{map, map_id, city, theme, unlock_all, unlimited_money, unlock_map_tiles}` once `city_loaded` (the bridge waits) | no |
+| `save.write` | `name`: must start with `cs1conv-`; letters, digits, `-`, `_`, `.` only | `{saved, city, overwritten, seconds}` once the file is written | no |
+
+- **`game.new`** does what the menu's New Game button does (`MenuUISystem.NewGame`), with one difference: the options go only to `CityConfigurationSystem`'s overrides. The menu also stores them in the user's settings as the next defaults; the bridge never does. It turns the autosave guard on, as `save.load` does.
+- **`save.write`** refuses every name that doesn't start with `cs1conv-`, so a script can never overwrite one of the user's saves. An existing `cs1conv-*` save of the same name is deleted first and rewritten (`overwritten: true`), as the game's autosave does with its own slots. It saves to the local user database (`AssetDatabase.user`), with a preview image rendered like an autosave's.
+
+On the CS2 bridge `exec` takes two extra params:
+- `phase`: `"main"` (default) or `"tool"`. `"tool"` runs the entry point inside a system in the `ToolUpdate` phase, the phase the road-placement spike needs.
+- `pump`: `"main"` (default) or `"tool"`, for an entry point that returns an `IEnumerator`. With `"main"` the coroutine continues on the main-loop pump after its first call. With `"tool"` (needs `phase:"tool"`) every later step also runs in `ToolUpdate`, one step per frame, so each step can create definitions that the same frame's net generation picks up. The importer uses this to run a whole multi-frame import in one call. If `ToolUpdate` stops running (the city is unloaded) for 600 frames, the call fails.
 
 ### `exec`: hot-loaded command code
 

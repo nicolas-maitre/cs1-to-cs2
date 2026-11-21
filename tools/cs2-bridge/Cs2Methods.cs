@@ -22,7 +22,7 @@ using UnityEngine;
 
 namespace Cs2Bridge
 {
-    internal sealed class Cs2Methods
+    internal sealed partial class Cs2Methods
     {
         // CS2's speed buttons (1x / 2x / 3x) set SimulationSystem.selectedSpeed to 1 / 2 / 4; 0 means paused.
         static readonly float[] SpeedLevels = { 1f, 2f, 4f };
@@ -64,6 +64,7 @@ namespace Cs2Bridge
             m_Core.Register("camera.set", "Set any of {x, y, z, distance, yaw, pitch}; returns the new camera.", CameraSet);
             m_Core.Register("autosave.set", "{enabled: bool}. false = block the game's autosaves (in memory only, never saved to settings); true = give them back.", AutosaveSet, true);
             m_Core.Register("sim.set", "Set {paused?, speed? 1-3}; returns {paused, speed}.", SimSet);
+            RegisterCityMethods();
         }
 
         // ------------------------------------------------------------------ state
@@ -331,6 +332,9 @@ namespace Cs2Bridge
         void RunExec(Command cmd, MethodInfo method, object[] args)
         {
             var phase = P.Str(cmd.Params, "phase", "main");
+            var pump = P.Str(cmd.Params, "pump", "main");
+            if (pump != "main" && pump != "tool") throw new ArgumentException("pump must be \"main\" or \"tool\"");
+            if (pump == "tool" && phase != "tool") throw new ArgumentException("pump \"tool\" needs phase \"tool\"");
             if (phase == "main") { m_Core.RunExecNow(cmd, method, args); return; }
             if (phase != "tool") throw new ArgumentException("phase must be \"main\" or \"tool\"");
             if (!CityLoaded()) throw new InvalidOperationException("phase \"tool\" needs a loaded city (ToolUpdate does not run in the menu)");

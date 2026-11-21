@@ -14,8 +14,9 @@ Needs `CS2Managed` in the repo's `local.props`. Same build setup as `spikes/m0-c
 | --- | --- | --- |
 | `Mod : IMod` | `Mod.cs` | Starts `BridgeServer("cs2", 17760)` in `OnLoad` and stops it in `OnDispose`, which also deletes the info file. Logs to `Logs\Cs2Bridge.log`. |
 | `BridgeDispatchSystem` | `BridgeSystems.cs` | Runs at `SystemUpdatePhase.MainLoop`, so it runs in the menu, during loads and in a city. Calls `BridgeCore.Tick()` every frame. |
-| `BridgeToolPhaseSystem` | `BridgeSystems.cs` | Runs at `SystemUpdatePhase.ToolUpdate` and handles `exec` with `phase:"tool"`. Those calls fail if no city is loaded, because ToolUpdate doesn't run in the menu. A coroutine started there continues on the main-loop pump. |
+| `BridgeToolPhaseSystem` | `BridgeSystems.cs` | Runs at `SystemUpdatePhase.ToolUpdate` and handles `exec` with `phase:"tool"`. Those calls fail if no city is loaded, because ToolUpdate doesn't run in the menu. A coroutine started there continues on the main-loop pump, or, with `pump:"tool"`, keeps running in ToolUpdate (one step per frame). |
 | Game methods | `Cs2Methods.cs` | `state`, `saves.list`, `save.load`, `menu`, `quit`, `camera.get/set`, `sim.set`, screenshots |
+| Converter test cities | `Cs2CityMethods.cs` | `maps.list`, `game.new` (new city from a map), `save.write` (only `cs1conv-*` names) |
 
 ## CS2 specifics
 
@@ -28,6 +29,8 @@ Needs `CS2Managed` in the repo's `local.props`. Same build setup as `spikes/m0-c
   Changes apply immediately, so `instant` is ignored. The game snaps the pivot's `y` to the terrain within a frame, so a `y` you set doesn't stick.
 - **`saves.list`:** `name` is the save's asset name, which is its file name without `.cok`. `cloud` is true for saves that are not in the local user database, i.e. Paradox cloud saves. The list also includes `display_name`.
 - **`save.load`:** matches on the asset name first, then the display name, then the city name, taking the newest save that matches. It replies about 10 frames after `city_loaded` becomes true. It fails if the game reports the load as failed.
+- **`game.new`:** replays `MenuUISystem.NewGame` (read from the game's IL): sets the map name and prefab references on `MapMetadataSystem`, the city name, theme and options as `CityConfigurationSystem` overrides, normal game mode, the starting year, then `GameManager.Load(GameMode.Game, Purpose.NewGame, map)`. Unlike the menu it never writes the options to the user's settings. Defaults for test cities: unlock all, unlimited money and all map tiles on; natural disasters and left-hand traffic off.
+- **`save.write`:** replays `AutoSaveSystem.AutoSave`: a 680×383 preview from the main camera, delete an existing asset of that name, `MenuUISystem.GetSaveInfo(false)`, `GameManager.Save(name, info, AssetDatabase.user, preview)`. Names must start with `cs1conv-`.
 - **Autosave:** the game keeps autosaving while a city is loaded, using the interval and count from Options. When it creates an autosave it deletes the oldest one beyond that count, for every city. Keep test sessions short, or back up autosaves you care about.
 - **HTTP clients:** Node's global `fetch` adds `Sec-Fetch-Mode: cors`, which the bridge refuses with 403. Use `node:http`, curl or PowerShell instead.
 

@@ -36,6 +36,7 @@
     <Reference Include="$(CS2Managed)\Colossal.IO.AssetDatabase.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Colossal.AssetPipeline.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Colossal.PSI.Common.dll" Private="false" />
+    <Reference Include="$(CS2Managed)\Colossal.UI.Binding.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Unity.Entities.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Unity.Mathematics.dll" Private="false" />
     <Reference Include="$(CS2Managed)\Unity.Collections.dll" Private="false" />

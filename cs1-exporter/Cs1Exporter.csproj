@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Cities: Skylines 1 → .cs1x exporter (M1).
+    Builds against the game's own mscorlib (Mono 2, .NET 3.5 profile); CS1Managed comes from ../local.props.
+    `dotnet build -c Release` deploys the DLL to CS1's local Addons\Mods\Cs1Exporter folder.
+    The same DLL is also an `exec` library for tools/gamectl:  gamectl cs1 exec Cs1Exporter.dll (type Cs1Exporter.Exporter)
+  -->
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>Cs1Exporter</AssemblyName>
+    <RootNamespace>Cs1Exporter</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <NoConfig>true</NoConfig>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Hot reload on CS1 (exec and mod reload): Mono 2 returns the already-loaded assembly when name AND version
+         match, so every build needs a new version. See tools/PROTOCOL.md, "CS1 notes". -->
+    <Deterministic>false</Deterministic>
+    <AssemblyVersion>1.0.*</AssemblyVersion>
+    <NoWarn>$(NoWarn);CS7035</NoWarn>
+    <!-- CS1's Mono 2 only reads .mdb symbols; a .pdb next to the DLL is useless there. -->
+    <DebugType>none</DebugType>
+    <CS1ModsDir Condition="'$(CS1ModsDir)' == ''">$(LOCALAPPDATA)\Colossal Order\Cities_Skylines\Addons\Mods\$(AssemblyName)</CS1ModsDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="mscorlib"><HintPath>$(CS1Managed)\mscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System"><HintPath>$(CS1Managed)\System.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Core"><HintPath>$(CS1Managed)\System.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(CS1Managed)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ICities"><HintPath>$(CS1Managed)\ICities.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ColossalManaged"><HintPath>$(CS1Managed)\ColossalManaged.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(CS1Managed)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="tools/**" />
+    <None Remove="tools/**" />
+  </ItemGroup>
+
+  <Target Name="DeployToCS1" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(CS1ModsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(CS1ModsDir)" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) to $(CS1ModsDir)" />
+  </Target>
+</Project>
