@@ -36,7 +36,7 @@ Cliquez sur **Préparer la carte** dans une nouvelle ville avant d'importer : il
 
 ## Où sont mes connexions de voies et flèches de voie TM:PE ?
 
-Elles sont expérimentales : activez **Connexions de voies (mod Traffic)** avant d'importer (il faut le mod Traffic). La plupart des carrefours sortent comme dans CS1, certains diffèrent. Les demi-tours ne sont pas encore appliqués ; le rapport d'import les liste.
+**Connexions de voies (mod Traffic)** les recrée aux carrefours, avec les règles de demi-tour ; il est activé par défaut et nécessite le mod Traffic. Là où une route se prolonge dans une autre sans carrefour, CS2 garde sa propre continuité de voies, et les divisions de voies n'y sont pas reproductibles. Dans une ville qui roule à gauche, l'étape est ignorée pour l'instant. Le résumé de l'import indique combien de références de voies CS1 ont été retrouvées.
 
 ## Comment annuler un import ?
 
@@ -60,7 +60,7 @@ Les lignes CS2 reçoivent leurs véhicules d'un dépôt de leur type, et les lig
 
 ## Ai-je besoin du mod Traffic ?
 
-Seulement pour les panneaux de priorité et, à titre expérimental, les connexions et flèches de voie de TM:PE. Limites de vitesse, voies de bus, feux, arrêts toutes directions, interdictions de tourner et passages piétons fonctionnent sans lui.
+Seulement pour les panneaux de priorité, connexions de voies, flèches de voie et demi-tours de TM:PE. Limites de vitesse, voies de bus, feux, arrêts toutes directions, interdictions de tourner et passages piétons fonctionnent sans lui.
 
 ## Que deviennent les feux programmés et les réglages de Node Controller ?
 

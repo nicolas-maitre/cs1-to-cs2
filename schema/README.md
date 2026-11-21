@@ -57,6 +57,7 @@ Readers must still check `manifest.sections` before reading an entry: a section 
   "exporter": { "name": "Cs1Exporter", "version": "1.0.x" },
   "exportedAt": "2026-11-21T01:23:45+01:00",
   "city": { "name": "Skibidi", "saveName": "Skibidi.02" },
+  "traffic": { "leftHand": false },
   "game": { "version": "1.21.1-f9" },
   "mods": [ { "name": "IntersectionMarkingTool", "version": "1.15.0.0" }, { "name": "TrafficManager", "version": "…" } ],
   "coordinateSystem": "CS1 world space, metres, Y up, origin at map centre",
@@ -71,6 +72,7 @@ Readers must still check `manifest.sections` before reading an entry: a section 
 - **`mods[]`:** `name` is the assembly name. Each entry also has `title` (the name in Content Manager) and, for workshop mods, `workshopId` as a string.
 - **`detectedMods`:** the versions of the mods the converter cares about, or `null` when not enabled.
 - **`exporter`** (since 1.2): `version` is the release version (`1.2.0`), `build` the assembly build.
+- **`traffic.leftHand`** (since 1.2.1): `true` when the CS1 city drives on the left (the game's "invert traffic" setting). Lanes are then mirrored relative to the segment direction, so CS1 lane indices map to the mirrored CS2 lanes. Missing in older exports: treat as unknown.
 - **`excludedSections`** (since 1.2): optional sections the user switched off in the mod options. They are `"absent"` in `sections`.
 - **`test`** appears only in test exports (`simulateMissing` / `simulateFailure`, see `cs1-exporter/README.md`). Never use such a file for a real conversion.
 - **`tiles.unlocked`:** `[col, row]` pairs in a 9 × 9 grid of 1920 m tiles. Col 0 is minimum x and row 0 is minimum z, so tile (4,4) is the centre tile.
@@ -384,7 +386,7 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
 {
   "format": "cs1conv-plan", "formatVersion": 1,
   "generator": { "name": "cs1conv-web", "version": "0.2.0", "generatedAt": "…" },
-  "source": { "city": "Skibidi", "saveName": "Skibidi.02", "exportedAt": "…", "cs1xSha256": "…", "kind": "cs1x" },
+  "source": { "city": "Skibidi", "saveName": "Skibidi.02", "exportedAt": "…", "cs1xSha256": "…", "kind": "cs1x", "leftHandTraffic": false },
   "crop": { "centerX": 1200, "centerZ": -300, "size": 4000 },
   "transform": { "dx": -1200, "dz": 300, "heightMode": "terrain-relative" },
   "bounds": { "minX": -2000, "maxX": 2000, "minZ": -2000, "maxZ": 2000 },
@@ -406,6 +408,7 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
 }
 ```
 
+- **`source.leftHandTraffic`:** `true` when the CS1 city drives on the left (`manifest.traffic.leftHand`, exporter 1.2.1+), `false` when it drives on the right; absent when the export predates the field, and the importer then detects it from the lanes. It applies to the whole city (also without a `traffic` section): the importer sets the CS2 city's handedness in Prepare map and matches lane connections accordingly. In a left-hand city the CS1 lanes are mirrored relative to the segment direction; the plan's lane refs stay as in CS1. report.json says so (`kind: "traffic"`).
 - **Crop and transform:**
   - `crop` is a square in CS1 coordinates (no rotation), at most 14 336 m (the CS2 playable area).
   - CS2 position = CS1 position + (`dx`, `dz`), so the crop centre lands at the CS2 map origin. `bounds` is the crop in CS2 coordinates.
@@ -531,6 +534,8 @@ Added to the M2 `water` section when the `.cs1x` has `water.json`:
 }
 ```
 
+- **Left-hand traffic:** see `source.leftHandTraffic` in the plan header; lane refs here are as in CS1 (mirrored in a left-hand city).
+
 - **`nodes`:** every junction in the plan with its CS1 traffic-light state (node flag `TrafficLights`, with or without TM:PE): the importer adds or removes CS2 lights where CS2's default differs (vanilla `TrafficLights` / `RemoveTrafficLights`). `allWayStop: true` when TM:PE has a Stop sign on every road into the junction (vanilla all-way stop).
 - **`segmentEnds`:** per (segment, node):
   - `priority`: TM:PE `main` / `stop` / `yield` sign → Traffic mod priority sign;
@@ -607,12 +612,12 @@ Added to the M2 `water` section when the `.cs1x` has `water.json`:
   | `Recycling` | `Recycling` |
   | `EncourageBiking` | `Urban Cycling Initiative` |
   | `BikeBan` | `Bicycle Traffic Restriction` |
-  | `SmallBusiness` | `Small Business Enthusiast` (approximation) |
-  | `SmokeDetectors` | `Fire Safety Sprinkler System` (approximation) |
   | `PowerSaving` | `Energy Consumption Awareness` (approximation) |
   | `PaidParking` | `Roadside Parking Fee` (approximation) |
+  | `ParkingFees` | `Roadside Parking Fee` (approximation) |
+  | `SpeedBumps` | `Speed Bumps` |
 
-  The names come from the CS2 policy list. `cityPolicies` maps the CS1 city-wide policies the same way. The importer applies each policy where CS2 allows it (district or city).
+  The names are CS2 PolicyTogglePrefab / PolicySliderPrefab names listed from the running game (`CS2_POLICIES` in `web/src/core/m3/districts.ts`, checked by a test). CS2 has no small-business or smoke-detector policy: `SmallBusiness` and `SmokeDetectors` are reported, not converted. `cityPolicies` maps the CS1 city-wide policies the same way. The importer applies each policy where CS2 allows it (district or city).
 - **Not converted, reported:** zone specialisations (Leisure, Tourist, Organic, Hightech, SelfSufficient, specialised industry), other policies, and park areas (parks, industry areas, campuses, airports).
 
 ### `objects` and `surfaces` (M3)

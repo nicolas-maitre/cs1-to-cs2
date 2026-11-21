@@ -7,17 +7,28 @@ import type { PackageReportItem, PlanDistricts } from '../types.ts';
 import { plural, r1, tally } from '../m2/context.ts';
 import type { PlanContext, SectionResult } from '../m2/context.ts';
 
-/** CS1 DistrictPolicies → CS2 policy prefab (names from the CS2 policy list, Policy.TITLE[…]). */
-export const POLICY_MAP: Record<string, { cs2: string; approx?: string }> = {
+/**
+ * The CS2 policies a district or the city can have: the PolicyTogglePrefab / PolicySliderPrefab names listed from the
+ * running game (CS2 1.6, qa/cs2-policies-all.json), without the transit-line and building ones (routes, Day / Night
+ * Route, Out of Service, Empty). Every POLICY_MAP target must be one of them (test/m3.test.ts).
+ */
+export const CS2_POLICIES = [
+  'Advanced Pollution Management', 'Bicycle Traffic Restriction', 'City Promotion', 'Combustion Engine Ban', 'Energy Consumption Awareness',
+  'Gated Community', 'Heavy Traffic Ban', 'High-Speed Highways', 'Paid Outside Services', 'PreRelease Programs', 'Recycling', 'Speed Bumps',
+  'Urban Cycling Initiative', 'Lot Parking Fee', 'Roadside Parking Fee', 'Taxi Starting Fee',
+] as const;
+
+/** CS1 DistrictPolicies → CS2 policy prefab. Only real CS2 policies (CS2_POLICIES); the rest is reported. */
+export const POLICY_MAP: Record<string, { cs2: (typeof CS2_POLICIES)[number]; approx?: string }> = {
   HeavyTrafficBan: { cs2: 'Heavy Traffic Ban' },
   CombustionEngineBan: { cs2: 'Combustion Engine Ban' },
   Recycling: { cs2: 'Recycling' },
   EncourageBiking: { cs2: 'Urban Cycling Initiative' },
   BikeBan: { cs2: 'Bicycle Traffic Restriction' },
-  SmallBusiness: { cs2: 'Small Business Enthusiast', approx: 'small business enthusiasts' },
-  SmokeDetectors: { cs2: 'Fire Safety Sprinkler System', approx: 'smoke detectors → sprinkler systems' },
   PowerSaving: { cs2: 'Energy Consumption Awareness', approx: 'power saving → energy consumption awareness' },
   PaidParking: { cs2: 'Roadside Parking Fee', approx: 'paid parking → roadside parking fee' },
+  ParkingFees: { cs2: 'Roadside Parking Fee', approx: 'parking fees → roadside parking fee' },
+  SpeedBumps: { cs2: 'Speed Bumps' }, // After Dark
 };
 const SPECIALISATIONS = new Set(['Leisure', 'Tourist', 'Organic', 'Hightech', 'SelfSufficient', 'Forest', 'Farming', 'Oil', 'Ore', 'Wall2Wall', 'HighTech', 'Hotels', 'Financial']);
 
@@ -106,10 +117,11 @@ export function buildDistricts(ctx: PlanContext, enabled = true): SectionResult<
     });
     for (const a of p.approx) items.push({ level: 'info', kind: 'districts', message: `${dist.name}: policy ${a} (approximation)` });
   }
-  for (const x of [...city.none, ...city.specialisation]) tally(unconverted, x);
+  const cityUnconverted = [...city.none, ...city.specialisation];
   if (result.items.length) items.push({ level: 'info', kind: 'districts', message: `${plural(result.items.length, 'district')} in the crop: ${result.items.map(i => `${i.name}${i.policies.length ? ` (${i.policies.join(', ')})` : ''}`).join('; ')}`, count: result.items.length });
   if (city.cs2.length) items.push({ level: 'info', kind: 'districts', message: `city-wide policies: ${city.cs2.join(', ')}` });
   for (const [p, k] of unconverted) items.push({ level: 'info', kind: 'districts', message: `policy ${p} (${plural(k, 'district')}): ${SPECIALISATIONS.has(p) ? 'a zone specialisation; CS2 has no such policy, the zones stay generic' : 'no CS2 equivalent'}`, count: k });
+  for (const p of cityUnconverted) items.push({ level: 'info', kind: 'districts', message: `city-wide policy ${p}: ${SPECIALISATIONS.has(p) ? 'a zone specialisation; CS2 has no such policy' : 'no CS2 equivalent'}` });
   if (holes) items.push({ level: 'info', kind: 'districts', message: `${plural(holes, 'hole')} inside districts are filled (CS2 districts are simple areas)`, count: holes });
   const parks = d.parks.filter(p => p.mainGate || p.cells);
   const parkKinds = new Map<string, number>();
@@ -120,7 +132,7 @@ export function buildDistricts(ctx: PlanContext, enabled = true): SectionResult<
     items,
     summary: {
       id: 'districts', label,
-      status: !result.items.length && !city.cs2.length ? 'none' : unconverted.size ? 'partial' : 'converted',
+      status: !result.items.length && !city.cs2.length ? 'none' : unconverted.size || cityUnconverted.length ? 'partial' : 'converted',
       summary: [
         result.items.length ? tr(result.items.some(i => i.policies.length) ? 'sum.districts.withPolicies' : 'sum.districts', { n: result.items.length }) : d.districts.length ? tr('sum.districts.noneInCrop') : tr('sum.districts.none'),
         ...(city.cs2.length ? [tr('sum.districts.city', { policies: city.cs2.join(', ') })] : []),

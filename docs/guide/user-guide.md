@@ -61,7 +61,7 @@ There is no need to unzip it: the importer takes the zip and unpacks it itself. 
 
 ## 7. Install the mods and the road types in CS2
 
-Enable **Road Builder** and the **CS1 → CS2 Importer**. **Traffic** is optional: it sets the priority signs (and, experimentally, the lane connections). The line at the bottom of the importer's page says whether Road Builder and Traffic are running.
+Enable **Road Builder** and the **CS1 → CS2 Importer**. **Traffic** is optional: it sets the priority signs, lane connections, lane arrows and U-turn rules. The line at the bottom of the importer's page says whether Road Builder and Traffic are running.
 
 Start CS2 and open Options → **CS1 → CS2 importer** (tab **Import**). Press **Browse…** and choose the downloaded zip: the importer unpacks it under `%LOCALAPPDATA%\cs1-to-cs2\packages\`, shows "Unpacked <zip> to <folder>." and checks it. **Open packages folder** shows that folder in Explorer.
 
@@ -75,17 +75,17 @@ Start a new game (not the editor). Any map works, since the importer replaces it
 
 Open Options → **CS1 → CS2 importer** again. In the **Package** group, pick the package in **Packages on this PC** (the ones you used last come first), or use **Browse…**, or paste its folder, its `cs1conv-plan.json` or its zip into **Package folder** and press **Check**.
 
-The status line says what the package holds, for example "Package: Skibidi.02, 2035 roads to build. All 37 road types are available." and "Map: terrain with its surroundings, sea level 182 m, 5 water sources, 20 outside connections.". Its last line says whether this city's terrain is already the package's. If road types are missing, install the Road Builder configs and restart the game.
+The status line says what the package holds, for example "Package: Skibidi.02, 2035 roads to build. All 37 road types are available." and "Map: terrain with its surroundings, sea level 182 m, 5 water sources, 20 outside connections.". Its last lines say whether this city's terrain is already the package's, and whether it drives on the same side of the road as the CS1 city (in a new city, **Prepare map** sets the side). If road types are missing, install the Road Builder configs and restart the game.
 
 ## 10. Prepare the map
 
-In the **New city** group, press **Prepare map** and confirm. It removes the map's own roads, tracks and buildings, replaces its terrain and surroundings with your city's, and sets the CS1 sea level and water sources (a package without water data gives a dry map). **Status** follows the steps ("Preparing the map… applying the terrain", "… setting up the water") and ends with "Map prepared.", the terrain check ("within 0 m of the package at 95 % of 181 check points") and "Next: press "Import into this city".". It takes 10 to 20 seconds.
+In the **New city** group, press **Prepare map** and confirm. It removes the map's own roads, tracks and buildings, replaces its terrain and surroundings with your city's, sets the CS1 sea level and water sources (a package without water data gives a dry map), and makes traffic drive on the same side as in the CS1 city. **Status** follows the steps ("Preparing the map… applying the terrain", "… setting up the water") and ends with "Map prepared.", the terrain check ("within 0 m of the package at 95 % of 181 check points"), the side ("Traffic drives on the left, as in the CS1 city.") and "Next: press "Import into this city".". It takes 10 to 20 seconds.
 
 It can't be undone: use it in a new city. Without a loaded city (main menu, editor) it stops with "Map not prepared: Start a new city first.". A package exported without the terrain keeps the map's own terrain ("Terrain skipped: the package has no terrain").
 
 ## 11. Import into the city
 
-In the **Import into this city** group, choose the steps: **Clear the area first**, **Zoning**, **Traffic lights, stops, turn bans, crosswalks**, **Priority signs (Traffic mod)**, **Buildings, trees, districts**, **Transit lines** and, last, **Outside connections** are on by default; the roads are always built first. **Lane connections (Traffic mod)** is experimental and off by default. **Keep this map's terrain** is off: the import then refuses a city whose terrain isn't the package's; turn it on to import onto the map's own ground anyway (only cuts of 4 m or more keep their depth).
+In the **Import into this city** group, choose the steps: **Clear the area first**, **Zoning**, **Traffic lights, stops, turn bans, crosswalks**, **Priority signs (Traffic mod)**, **Lane connections (Traffic mod)**, **Buildings, trees, districts**, **Transit lines** and, last, **Outside connections** are on by default; the roads are always built first. **Keep this map's terrain** is off: the import then refuses a city whose terrain isn't the package's; turn it on to import onto the map's own ground anyway (only cuts of 4 m or more keep their depth).
 
 Press **Import into this city** and confirm. **Status** shows the progress ("Importing… batch 3 of 6", then each step) and ends with a summary per step, for example "Done in 4.33 s: 2035 of 2035 roads built.", "Transit: 9 of 9 lines, 145 of 145 stops." and "Outside connections: 20 of 20 (13 road, 7 train).". A step you turned off reads "skipped: turned off in the Options". The summary also gives the path of the full report, under `%LOCALAPPDATA%\cs1-to-cs2\import-reports\`.
 
@@ -99,7 +99,7 @@ To undo, press **Remove imported** and confirm: it deletes the roads, buildings,
 
 Read the web tool's **Report** tab (or `report.json`) and the import summary for what needs a hand:
 
-Lane connections and lane arrows are experimental: turn on **Lane connections (Traffic mod)**; most junctions come out as in CS1, some differ. U-turn rules aren't applied. About 7 % of the zone cells find no CS2 zone block, because CS2 blocks are shallower. Metro and train lines need their stations from the buildings step; a metro or train line whose track stays inside the square gets no yard: place one yourself (the import report names the line). Where two CS1 roads leave a junction at a very shallow angle, CS2 merges their first metres into one road and splits them a little further on, connected as in CS1. A few overlapping CS1 bits that CS2 can't fit (for example a road a few metres from a parallel road) are left out and listed in the report.
+Lane connections, lane arrows and U-turn rules apply at junctions; lane splits where a road continues into another without a junction stay as CS2 builds them (about 8 % of connections in our tests). In a city that drives on the left they aren't applied yet: the status says "Lane connections skipped: not applied yet in cities that drive on the left". About 7 % of the zone cells find no CS2 zone block, because CS2 blocks are shallower. Metro and train lines need their stations from the buildings step; a metro or train line whose track stays inside the square gets no yard: place one yourself (the import report names the line). Where two CS1 roads leave a junction at a very shallow angle, CS2 merges their first metres into one road and splits them a little further on, connected as in CS1. A few overlapping CS1 bits that CS2 can't fit (for example a road a few metres from a parallel road) are left out and listed in the report.
 
 ## Privacy
 

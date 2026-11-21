@@ -240,3 +240,10 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - Prepare map sets the CS2 city's handedness while the map has no roads.
     - Check warns when a loaded city drives on the other side.
     - Left-hand cities still need a road-level check (one-way direction under CS2's left-hand flip) before lane connections are enabled for them.
+91. **Two-city acceptance with the 0.3.0 release artefacts passed** (Claude; `docs/QA.md` §6):
+    - CacaoCity: 684/684 roads, 43/43 buildings, 10 813 trees, 44/44 IMT surfaces, zoning 91%.
+    - Westfield: 648/648 roads, 13/13 buildings, zoning 99.99%, 22/22 connections.
+
+    Metro and train vehicles are still pending on the crop-edge yard step (#83).
+92. **District and city policies map only to real CS2 policy prefabs** (Claude). The list of CS2's 23 policies was read from the game, and anything without an equivalent is reported as `policiesMissing`; a web test keeps the web map equal to the placer's. Exporter 1.2.1 adds `manifest.traffic.leftHand`.
+93. **Placement options `requireRoad` and `maxDistance` per item** (Claude), used for crop-edge yards, which keep to a 2.5 km link reach.

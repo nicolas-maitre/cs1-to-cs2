@@ -232,6 +232,16 @@ namespace Cs2Buildings
             return false;
         }
 
+        /// <summary>A policy prefab by name. PrefabID lookups can return a prefab of another type with the same name, so the
+        /// result must really be a PolicyTogglePrefab / PolicySliderPrefab (CS2 has 23 of them; see buildings/README.md).</summary>
+        static bool FindPolicy(PrefabSystem ps, string name, out PrefabBase prefab)
+        {
+            if (ps.TryGetPrefab(new PrefabID("PolicyTogglePrefab", name), out prefab) && prefab is PolicyTogglePrefab) return true;
+            if (ps.TryGetPrefab(new PrefabID("PolicySliderPrefab", name), out prefab) && prefab is PolicySliderPrefab) return true;
+            prefab = null;
+            return false;
+        }
+
         static bool Inside(float2[] quad, float2 p)
         {
             bool pos = false, neg = false;
@@ -306,6 +316,7 @@ namespace Cs2Buildings
             var after = AreaEntities(em);
             var names = world.GetOrCreateSystemManaged<Game.UI.NameSystem>();
             int found = 0, named = 0, policiesSet = 0;
+            var policiesMissing = new List<object>(); // CS2 has no PolicyToggle/SliderPrefab of that name
             var fresh = new List<Entity>();
             foreach (var e in after) if (!before.Contains(e)) fresh.Add(e);
             for (int i = 0; i < created.Count; i++)
@@ -336,7 +347,7 @@ namespace Cs2Buildings
                     {
                         PrefabBase pp;
                         Entity pEnt;
-                        if ((ps.TryGetPrefab(new PrefabID("PolicyTogglePrefab", (string)pn), out pp) || ps.TryGetPrefab(new PrefabID("PolicySliderPrefab", (string)pn), out pp)) && ps.TryGetEntity(pp, out pEnt))
+                        if (FindPolicy(ps, (string)pn, out pp) && ps.TryGetEntity(pp, out pEnt))
                         {
                             // What PoliciesUISystem.SetPolicy does, without its end-frame command buffer: a Modify event.
                             var ev = em.CreateEntity(ComponentType.ReadWrite<Game.Common.Event>(), ComponentType.ReadWrite<Game.Policies.Modify>());
@@ -344,6 +355,7 @@ namespace Cs2Buildings
                             set.Add(pn);
                             policiesSet++;
                         }
+                        else if (!policiesMissing.Contains(pn)) policiesMissing.Add(pn);
                     }
                 res["policiesSet"] = set;
             }
@@ -358,18 +370,19 @@ namespace Cs2Buildings
                     {
                         PrefabBase pp;
                         Entity pEnt;
-                        if ((ps.TryGetPrefab(new PrefabID("PolicyTogglePrefab", (string)pn), out pp) || ps.TryGetPrefab(new PrefabID("PolicySliderPrefab", (string)pn), out pp)) && ps.TryGetEntity(pp, out pEnt))
+                        if (FindPolicy(ps, (string)pn, out pp) && ps.TryGetEntity(pp, out pEnt))
                         {
                             var ev = em.CreateEntity(ComponentType.ReadWrite<Game.Common.Event>(), ComponentType.ReadWrite<Game.Policies.Modify>());
                             em.SetComponentData(ev, new Game.Policies.Modify(city, pEnt, true, 0f));
                             citySet.Add(pn);
                         }
+                        else if (!policiesMissing.Contains(pn)) policiesMissing.Add(pn);
                     }
             }
             for (int f = 0; f < 5; f++) yield return null;
             yield return new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", found }, { "named", named }, { "policiesSet", policiesSet }, { "failed", failed }, { "cityPoliciesSet", citySet },
+                { "items", items.Count }, { "placed", found }, { "named", named }, { "policiesSet", policiesSet }, { "failed", failed }, { "cityPoliciesSet", citySet }, { "policiesMissing", policiesMissing },
                 { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 2) }, { "results", results },
             };
         }

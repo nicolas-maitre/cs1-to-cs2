@@ -45,6 +45,8 @@ namespace Cs2Buildings
             public bool NearJunction;
             public string RoadSide;
             public string Fallback;          // "nearby" | "anywhere" | "skip" | null (run option)
+            public float MaxDistance;        // > 0: no fallback spot farther than this from the CS1 spot
+            public bool RequireRoad;         // only spots whose lot faces a road a building can connect to (no highway)
             public float Distance = -1;      // metres between the placed lot centre and the CS1 lot centre (every placed item)
             public string FallbackPass;      // "nearby" | "wide" | "anywhere" when a fallback pass placed it
             public float Moved = -1;         // metres from the CS1 position when the nearby fallback placed it
@@ -69,6 +71,7 @@ namespace Cs2Buildings
             public Bezier4x3 Curve;
             public float HalfWidth;
             public CompositionFlags Flags;
+            public bool Highway;  // highway rules (RoadData.UseHighwayRules): buildings can't connect to it
             public float4 Bounds; // minX, minZ, maxX, maxZ (expanded by the half width)
         }
 
@@ -138,6 +141,7 @@ namespace Cs2Buildings
                     float bestD = float.MaxValue;
                     foreach (var r in grid.Query(fp - snap - 32f, fp + snap + 32f))
                     {
+                        if (it.RequireRoad && r.Highway) continue;
                         float t;
                         float d = MathUtils.Distance(r.Curve.xz, fp, out t) - r.HalfWidth;
                         if (d < bestD) { bestD = d; road = r; roadT = t; }
@@ -232,6 +236,14 @@ namespace Cs2Buildings
                     if (wideRadius > nearbyRadius) passes.Add(new KeyValuePair<string, float>("wide", wideRadius));
                 }
                 if (fallback == "anywhere") passes.Add(new KeyValuePair<string, float>("anywhere", float.PositiveInfinity));
+                if (it.MaxDistance > 0)
+                {
+                    // Cap every pass at maxDistance; passes that would start beyond it are dropped.
+                    var capped = new List<KeyValuePair<string, float>>();
+                    float prev = 0;
+                    foreach (var p in passes) { if (prev >= it.MaxDistance) break; capped.Add(new KeyValuePair<string, float>(p.Key, math.min(p.Value, it.MaxDistance))); prev = p.Value; }
+                    passes = capped;
+                }
                 float prevRadius = 0;
                 float depth0 = em.GetComponentData<BuildingData>(prefabs[0].Value).m_LotSize.y * 4f;
                 foreach (var pass in passes)
@@ -243,6 +255,7 @@ namespace Cs2Buildings
                     for (int ri = 0; ri < near.Count; ri++)
                     {
                         var r = near[ri];
+                        if (it.RequireRoad && r.Highway) continue;
                         float len = MathUtils.Length(r.Curve.xz);
                         for (float s = endMargin; s <= len - endMargin; s += 6f)
                         {
@@ -495,6 +508,8 @@ namespace Cs2Buildings
                     Prefab = P.Str(d, "prefab", null),
                     Type = P.Str(d, "type", "BuildingPrefab"),
                     Fallback = P.Str(d, "fallback", null),
+                    RequireRoad = P.Bool(d, "requireRoad", false),
+                    MaxDistance = (float)P.Num(d, "maxDistance", 0),
                     Cs1Info = P.Str(d, "cs1Info", null),
                     X = P.Num(d, "x", 0), Z = P.Num(d, "z", 0), Score = P.Num(d, "score", 0),
                     Front = Pair(d, "front"), Facing = Pair(d, "facing"),
@@ -549,7 +564,10 @@ namespace Cs2Buildings
                     }
                     var mn = math.min(math.min(c.a.xz, c.b.xz), math.min(c.c.xz, c.d.xz)) - hw;
                     var mx = math.max(math.max(c.a.xz, c.b.xz), math.max(c.c.xz, c.d.xz)) + hw;
-                    list.Add(new RoadEdge { Entity = e, Curve = c, HalfWidth = hw, Flags = cf, Bounds = new float4(mn.x, mn.y, mx.x, mx.y) });
+                    bool highway = false;
+                    var pr = em.GetComponentData<PrefabRef>(e).m_Prefab;
+                    if (pr != Entity.Null && em.HasComponent<RoadData>(pr)) highway = (em.GetComponentData<RoadData>(pr).m_Flags & Game.Prefabs.RoadFlags.UseHighwayRules) != 0;
+                    list.Add(new RoadEdge { Entity = e, Curve = c, HalfWidth = hw, Flags = cf, Highway = highway, Bounds = new float4(mn.x, mn.y, mx.x, mx.y) });
                 }
             }
             return list;

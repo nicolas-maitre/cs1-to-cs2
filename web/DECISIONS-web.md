@@ -413,3 +413,26 @@ Asked by the buildings worker: its placer (Cs2Buildings) reads `plan.buildings.i
     - **FAQ:** two new entries (undo an import; "terrain isn't the package's").
     - **French guide:** it quotes the importer's French labels and status texts (`LocaleFR.cs`, `Strings.cs`), since the mod's page follows the game's language. It also says to see the English guide when the game runs in English.
     - **Label test:** it checks each guide against its own locale file. `CS1CONV_IMPORTER_WORKTREE=1` checks the working copy; it passes now against worker-3's uncommitted files.
+
+76. **`plan.traffic.leftHand`** (true / false / null) comes from the exporter's `manifest.traffic.leftHand` (1.2.1+); older exports give null, meaning unknown. The plan keeps CS1's lane refs as they are and only flags the city. The importer mirrors the lane connections and arrows, and uses its own detection when the flag is null. There is an info report line and a "What converts" detail when the city drives on the left. Checked on qa/cacao-v2.cs1x (true) and on an older Westfield export (null).
+
+77. **Left-hand traffic moved to `plan.source.leftHandTraffic`** (supersedes the field name in 76), at the request of worker-3, who consumes it. The flag applies to the whole city: the importer sets the CS2 city's handedness in Prepare map. A plan with traffic off has no `traffic` section, but still carries the flag.
+    - The field is a boolean, absent for older exports; the importer then detects handedness from the lanes. There is one field only, not two.
+    - The report line is written for every plan; the "What converts" detail stays under Traffic.
+
+78. **Policies map only to real CS2 policies.** The exporter session listed the game's PolicyToggle / PolicySlider prefabs (qa/cs2-policies-all.json). "Small Business Enthusiast" and "Fire Safety Sprinkler System" are not CS2 policies (Westfield's city policy was never set), so `SmallBusiness` and `SmokeDetectors` are now reported as having no CS2 equivalent.
+    - **Policy list in the code:** `CS2_POLICIES` in `m3/districts.ts` holds the district and city ones. A test checks every `POLICY_MAP` target against it, and against the game's list when the QA file is present.
+    - **Report wording:** city-wide policies without an equivalent read "city-wide policy X" instead of "(1 district)".
+    - **Results:** Westfield now has no `districts` section. Rennmont keeps `cityPolicies: ["Recycling"]`.
+
+79. **`SpeedBumps` → "Speed Bumps" and `ParkingFees` → "Roadside Parking Fee" added** (from the buildings worker's `DISTRICT_POLICY_MAP`). A test now requires the web `POLICY_MAP` to equal that map, so the web package and the scripted flow set the same policies.
+
+80. **Guide follows worker-3's lane and traffic-side updates.**
+    - **Lane connections:** still experimental. Lane arrows and U-turn rules now come with the same toggle; the matrix has them as one "approximated" row (exact at junctions, lane splits on through-roads not reproducible). Left-hand cities only partly resolve, for now.
+    - **Prepare map** sets the city's driving side from `plan.source.leftHandTraffic` and says so, and **Check** reports a side mismatch. Both texts are quoted in EN and FR.
+
+81. **Lane connections on by default** (the coordinator's decision, via worker-3).
+    - **Guide:** lists "Lane connections (Traffic mod)" among the default-on steps.
+    - **Limits** use worker-3's wording: exact at junctions; lane splits where a road continues without a junction stay as CS2 builds them, about 8 % of connections. In left-hand cities the step is skipped, and the guide quotes the status text in EN and FR.
+    - **Matrix:** "approximated", noted as applied in right-hand cities. Our status set has no separate "applied (right-hand cities)", so the restriction is in the notes.
+    - **FAQ and README:** follow the same wording. "Experimental" is gone everywhere.

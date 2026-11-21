@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 (2026-11-21)
+
+- **New:** `manifest.traffic.leftHand`, true for a left-hand-traffic city ("invert traffic"). The importer needs it to match lane connections: on CacaoCity, a left-hand city, none of 265 matched without it.
+- **Fix:** the zoning self-check in `report.json` reports the median distance and skips blocks whose road no longer exists (it showed a 3.3 km mean on one city whose data was fine).
+
 ## 1.2.0 (2026-11-21, M3 / release candidate)
 
 - **New:** `assets.json`, a catalogue of every building, prop, tree and network prefab in use. Each entry has its title, workshop id, category, footprint, height, tags, instance count, and the building AI's settings (capacities, radii).

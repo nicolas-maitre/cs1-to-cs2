@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { translator } from '../src/core/i18n/index.ts';
+import { DISTRICT_POLICY_MAP } from '../../buildings/lib/objects.mjs';
 import { buildBuildingsPlan } from '../../buildings/lib/plan.mjs';
 import { matchAssets } from '../../buildings/match/match.mjs';
 import { readCityFile, readCs1x } from '../src/core/cs1x.ts';
@@ -11,7 +12,7 @@ import type { PlanContext } from '../src/core/m2/context.ts';
 import { buildBuildings, facingFor, matchAssetTypes } from '../src/core/m3/buildings.ts';
 import type { Cs2Catalogue } from '../src/core/m3/buildings.ts';
 import { slimCatalogue } from '../src/core/m3/catalogue.ts';
-import { buildDistricts, mapPolicies, traceOutlines } from '../src/core/m3/districts.ts';
+import { buildDistricts, CS2_POLICIES, mapPolicies, POLICY_MAP, traceOutlines } from '../src/core/m3/districts.ts';
 import { buildPackage, packageFiles } from '../src/core/plan.ts';
 import type { Cs1Asset, Cs1Building, Cs1City, NetInfo } from '../src/core/types.ts';
 import { city, lane, node, straight } from './fixtures.ts';
@@ -175,9 +176,23 @@ describe('districts', () => {
   });
 
   it('maps CS1 policies to CS2 where an equivalent exists', () => {
-    expect(mapPolicies(['HeavyTrafficBan', 'SmokeDetectors', 'Leisure', 'PetBan'])).toEqual({
-      cs2: ['Heavy Traffic Ban', 'Fire Safety Sprinkler System'], approx: ['smoke detectors → sprinkler systems'], specialisation: ['Leisure'], none: ['PetBan'],
+    expect(mapPolicies(['HeavyTrafficBan', 'PowerSaving', 'SmokeDetectors', 'SmallBusiness', 'Leisure', 'PetBan'])).toEqual({
+      cs2: ['Heavy Traffic Ban', 'Energy Consumption Awareness'], approx: ['power saving → energy consumption awareness'], specialisation: ['Leisure'],
+      none: ['SmokeDetectors', 'SmallBusiness', 'PetBan'], // CS2 has no smoke-detector or small-business policy
     });
+  });
+
+  it('maps only to real CS2 policies (the game\'s PolicyToggle / PolicySlider prefabs)', () => {
+    const targets = Object.values(POLICY_MAP).map(m => m.cs2);
+    expect(targets.filter(t => !(CS2_POLICIES as readonly string[]).includes(t))).toEqual([]);
+    // the same mapping as the buildings worker's scripted flow (buildings/lib/objects.mjs)
+    expect(Object.fromEntries(Object.entries(POLICY_MAP).map(([k, m]) => [k, m.cs2]))).toEqual(DISTRICT_POLICY_MAP);
+    // against the list read from the game, when the QA file is on this machine
+    const file = path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'cs1-to-cs2', 'qa', 'cs2-policies-all.json');
+    if (!fs.existsSync(file)) return;
+    const game = new Set((JSON.parse(fs.readFileSync(file, 'utf8')).prefabs as { name: string; type: string }[])
+      .filter(p => p.type === 'PolicyTogglePrefab' || p.type === 'PolicySliderPrefab').map(p => p.name));
+    expect(CS2_POLICIES.filter(p => !game.has(p))).toEqual([]);
   });
 
   it('exports district outlines in plan coordinates with policies, and reports park areas', () => {

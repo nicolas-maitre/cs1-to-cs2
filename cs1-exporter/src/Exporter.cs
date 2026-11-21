@@ -13,7 +13,7 @@ namespace Cs1Exporter
     public static class ModInfo
     {
         /// <summary>Release version shown in the mod name and written to manifest.exporter.version.</summary>
-        public const string Version = "1.2.0";
+        public const string Version = "1.2.1";
         public const string Name = "CS1 → CS2 Exporter";
     }
 
@@ -489,6 +489,13 @@ namespace Cs1Exporter
             w.Name("city").BeginObject();
             w.Prop("name", GameInfo.CityName());
             w.Prop("saveName", GameInfo.SaveName());
+            w.EndObject();
+            // Traffic handedness: a left-hand-traffic city (CS1 "invert traffic") has its lanes mirrored relative to the
+            // segment direction; the importer needs it to map lane indices (QA, CacaoCity: 0 of 265 lane connections).
+            w.Name("traffic").BeginObject();
+            bool leftHand = false;
+            try { leftHand = Singleton<SimulationManager>.instance.m_metaData.m_invertTraffic == SimulationMetaData.MetaBool.True; } catch { }
+            w.Prop("leftHand", leftHand);
             w.EndObject();
             w.Name("game").BeginObject();
             w.Prop("version", GameInfo.GameVersion());

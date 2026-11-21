@@ -101,6 +101,8 @@ export interface Manifest {
   coordinateSystem?: string;
   mapSize?: number;
   sections?: Record<string, SectionStatus>;
+  /** exporter 1.2.1+: true when the CS1 city drives on the left (lanes mirrored); absent in older exports */
+  traffic?: { leftHand?: boolean };
 }
 
 export interface Cs1ReportItem {
@@ -290,7 +292,14 @@ export interface Plan {
   format: 'cs1conv-plan';
   formatVersion: 1;
   generator?: { name: string; version: string; generatedAt: string };
-  source: { city: string; saveName: string; exportedAt: string; cs1xSha256: string | null; kind?: string };
+  source: {
+    city: string; saveName: string; exportedAt: string; cs1xSha256: string | null; kind?: string;
+    /**
+     * The CS1 city drives on the left (manifest.traffic.leftHand, exporter 1.2.1+): its lanes are mirrored relative to
+     * the segment direction. Absent when the export predates the field; the importer then detects it from the lanes.
+     */
+    leftHandTraffic?: boolean;
+  };
   crop: Crop;
   transform: { dx: number; dz: number; heightMode: 'terrain-relative' };
   /** CS2 bounds of the crop after the transform. */

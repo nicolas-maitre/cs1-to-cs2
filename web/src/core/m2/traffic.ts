@@ -83,6 +83,8 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
   const tm = ctx.city.tmpe;
   const items: PackageReportItem[] = [];
   const tr = ctx.t, label = tr('cat.traffic');
+  const lh = ctx.city.manifest.traffic?.leftHand;
+  const leftHand = lh === true; // the report line and plan.source.leftHandTraffic are written by buildPackage
   const inPlanEnd = (seg: number, node: number) => ctx.planSegments.has(seg) && ctx.planNodes.has(node);
 
   // Traffic lights come from the network itself (with or without TM:PE).
@@ -97,7 +99,7 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
   if (!tm) {
     return {
       section: { requires: [], nodes, segmentEnds: [], laneConnections: [], laneArrows: [] }, items,
-      summary: { id: 'traffic', label, status: 'absent', summary: tr('sum.traffic.absent', { n: nodes.filter(n => n.trafficLights).length }), details: [] },
+      summary: { id: 'traffic', label, status: 'absent', summary: tr('sum.traffic.absent', { n: nodes.filter(n => n.trafficLights).length }), details: leftHand ? [tr('sum.traffic.leftHand')] : [] },
     };
   }
 
@@ -207,6 +209,7 @@ export function buildTraffic(ctx: PlanContext, enabled = true): SectionResult<Pl
         tr('sum.traffic.d3'),
         ...(timed ? [tr('sum.traffic.d4', { n: timed })] : []),
         tr('sum.traffic.d5'),
+        ...(leftHand ? [tr('sum.traffic.leftHand')] : []),
       ],
     },
   };

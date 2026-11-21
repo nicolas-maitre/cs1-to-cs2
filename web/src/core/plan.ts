@@ -346,6 +346,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
   const objects = buildObjects(ctx, { enabled: opts.objects !== false, catalogue: opts.catalogue ?? null, theme: (opts.zoning ?? DEFAULT_ZONING).theme });
   const surfaces = buildSurfaces(ctx, opts.surfaces !== false);
   for (const r of [zoning, water, transit, traffic, nc, buildings, districts, objects, surfaces]) items.push(...r.items);
+  if (city.manifest.traffic?.leftHand === true) items.push({ level: 'info', kind: 'traffic', message: 'the CS1 city drives on the left (plan.source.leftHandTraffic): its lanes are mirrored, so lane connections and lane arrows refer to mirrored lanes' });
   for (const [k, n] of speedGroups) {
     const [base, kmh] = k.split('|');
     items.push({ level: 'info', kind: 'speed-limit', message: `${base}: ${n} segment(s) with a TM:PE speed limit of ${kmh} km/h use a Road Builder variant with that speed`, count: n, cs1: { netInfo: base } });
@@ -399,6 +400,7 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     source: {
       city: city.manifest.city?.name ?? 'unknown', saveName: city.manifest.city?.saveName ?? 'unknown', exportedAt: city.manifest.exportedAt ?? '',
       cs1xSha256: city.sha256, kind: city.source,
+      ...(typeof city.manifest.traffic?.leftHand === 'boolean' ? { leftHandTraffic: city.manifest.traffic.leftHand } : {}),
     },
     crop: { ...crop },
     transform: { dx, dz, heightMode: 'terrain-relative' },

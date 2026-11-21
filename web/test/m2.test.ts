@@ -350,3 +350,20 @@ describe('empty sections', () => {
     expect(buildZoning(ctx, DEFAULT_ZONING).summary).toMatchObject({ status: 'none', summary: 'the city has no zoned areas' });
   });
 });
+
+describe('left-hand traffic', () => {
+  it('passes manifest.traffic.leftHand into plan.source.leftHandTraffic (absent when the export predates it)', () => {
+    const c = cross();
+    expect('leftHandTraffic' in buildPackage(c, { crop: CROP }).plan.source).toBe(false);
+    const left = cross();
+    left.manifest = { ...left.manifest, traffic: { leftHand: true } };
+    const pkg = buildPackage(left, { crop: CROP });
+    expect(pkg.plan.source.leftHandTraffic).toBe(true);
+    expect(buildPackage(left, { crop: CROP, traffic: false }).plan.source.leftHandTraffic).toBe(true); // with traffic off too
+    expect(pkg.report.items.some(i => i.kind === 'traffic' && /drives on the left/.test(i.message))).toBe(true);
+    expect(pkg.summary.find(s => s.id === 'traffic')!.details.join(' ')).toMatch(/drives on the left/);
+    const right = cross();
+    right.manifest = { ...right.manifest, traffic: { leftHand: false } };
+    expect(buildPackage(right, { crop: CROP }).plan.source.leftHandTraffic).toBe(false);
+  });
+});

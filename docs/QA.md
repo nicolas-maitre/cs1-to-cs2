@@ -122,7 +122,7 @@ All on worker-3's road-only save `cs1conv-e2e-embank-fix` (Skibidi 3 km), not sa
 | **Roadside trees** (`roadsideMove`, 6 m): a tree on a wider CS2 road is pushed perpendicular to just past the road edge if that spot is free | 2744 trees, 1359 dropped on roads | **3404 trees: 705 moved (mean 3.1 m), 654 dropped**, 158 in a lot |
 | **Huge lots:** `fallback` `nearby` (150 m, then a 400 m `wideRadius` pass) or `anywhere` (any imported road in the crop, nearest first) | 96/108 placed, 12 big services failed | **108/108 placed**, 105 connected; passes: nearby 20, wide 3, anywhere 9 |
 | **Distance reported** for every placed building (`distance`, `fallbackPass`; summary `distanceStats`) | only for nearby moves | median 9.6 m, p90 151 m, max 1222 m; 9 over 400 m (University, Prison, Cargo Center, five Combustion Plants) |
-| **Districts in the web tool's shape** (`outlines`, no prefab; `cityPolicies`) | the mod could only read cs1conv-objects.json districts | 2 outlines → 2 districts, named, Heavy Traffic Ban + Recycling; Fire Safety Sprinkler System set city-wide |
+| **Districts in the web tool's shape** (`outlines`, no prefab; `cityPolicies`) | the mod could only read cs1conv-objects.json districts | 2 outlines → 2 districts, named, Heavy Traffic Ban + Recycling; a city-wide "Fire Safety Sprinkler System" reported as set, wrongly (no such CS2 policy; corrected, see A6) |
 | **Default depots** (`addDefaultDepots`, also called by the web tool) | station lines had 0 vehicles (F5) | Skibidi 3 km: SubwayYard01 added for Metro Line 3, placed in the acceptance run; rail yards flagged `needsTrackLink` |
 | **Frame budget** in the placer (F2) | 26.8 s main-thread stall | 0.94 s |
 
@@ -154,3 +154,28 @@ Problems found on the way, all fixed or explained:
 - **A3 (wording, mine):** the skipped steps said "no districts section in the plan or in cs1conv-objects.json"; now "none in this package" (`buildings/src/Steps.cs`; in the next mod build, not in this run).
 - **A4 (process):** two release builds failed while the web tree was mid-edit (`npm run build` typecheck). Not a release defect; the build gate did its job.
 - **Not in this release, by decision:** IMT junction fills on roads, TM:PE lane connections/arrows (Traffic mod limits), rail yard track links (reported per yard), CS1 park/industry areas.
+
+### Two more cities with the final 0.3.0 artefacts
+
+`node tools/release/acceptance.mjs --cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x` after 9211fe5 (Cs2ImporterMod 0.3.0 + `build.mjs`): fresh release build, the importer installed from `cs2-importer-0.3.0.zip` before each city, then the same user flow (Install Road Builder configs → restart → new city on Corral Riches → Check → Prepare map → 20 s → Import). Both **ok=true**; the dev mod in Mods was restored after each.
+
+| | CacaoCity (`20261121-103442`) | Westfield (`20261121-104220`) |
+| --- | --- | --- |
+| Package (web CLI, 3 km) | 684 roads, 42 RB types, 43 buildings, 12 260 trees, 44 IMT surfaces | 648 roads, 15 RB types, 13 buildings, no trees |
+| Check | "All 44 road types are available." Warns that the map's terrain differs by 421 m: Prepare map first | "All 16 road types are available." (451 m terrain warning) |
+| Prepare map | 15.5 s: 378 base roads/tracks + 18 buildings removed, terrain 95 % exact, sea 44.1 m, 29 sources | 15.4 s: same clearing, sea 40 m, 6 sources |
+| Import | 16.9 s; **684/684 roads** (2.75 s) | 11.7 s; **648/648 roads** (1.94 s) |
+| Traffic / Traffic mod | 4 lights added, 7 removed; 34 priority signs | 43 turn bans; 3 priority signs |
+| Lane connections (Traffic mod) | **0 of 0 junctions** (265 planned) → finding A5 | 36 of 37 junctions, 139 connections |
+| Zoning | 91.0 % | 99.99 % |
+| Buildings | **43 of 43** | **13 of 13** |
+| Trees and props | 10 813 of 12 260 (more than the e2e's 10 393: roadside trees are now moved aside) | none in the package |
+| IMT surfaces | **44 of 44** (now from the web plan, no cs1conv-objects.json) | none |
+| Districts | none | 0 of 0; the city-wide policy was not set → A6 |
+| Transit | none in either city (0 CS1 lines) | none |
+| Outside connections | 4 of 4 (road) | 22 of 22 (road) |
+| "Remove imported" can undo | 12 253 items | 1 392 items |
+
+- **Metro and train vehicles: pending.** Neither city has transit lines, and Skibidi's station lines wait for worker-4's crop-edge yard + track-link step (DECISIONS.md #83), which hadn't landed at this run. The prerequisite is done: placed buildings now get their sub-nets (station and yard tracks; buildings decision #34, verified with 0 missing).
+- **A5 (importer, worker-3), fixed in their next build:** CacaoCity is a **left-hand-traffic** CS1 city (477 of 684 segments inverted), so every lane flows the other way and all 265 lane connections were rejected ("source lane leaves the node" 373, "lane count differs" 212). Worker-3's lanes step now tries mirrored ordinals and says so in the status line. The exporter (1.2.1, mine) now records it: `manifest.traffic.leftHand` (verified: CacaoCity → `true`); worker-2 passes it into the plan.
+- **A6 (policy names, worker-2 + mine):** Westfield's city policy "Small Business Enthusiast" (from CS1 SmallBusiness) has no CS2 policy prefab of that name, so nothing was set and the status said only "0 of 0". The districts step now reports such names as `policiesMissing`; the CS2 policy names were listed from the game for worker-2's map: 18 PolicyTogglePrefab + 5 PolicySliderPrefab. Neither "Small Business Enthusiast" nor "Fire Safety Sprinkler System" is one. The latter had looked set in §5 because a name lookup returned a non-policy prefab; the districts step now accepts only real policy prefabs.

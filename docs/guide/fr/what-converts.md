@@ -50,8 +50,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 | Limites de vitesse, voies réservées aux bus | Variantes Road Builder avec cette vitesse / voie de bus | converti | CS2 a une seule vitesse par route. |
 | Feux, arrêts toutes directions, interdictions de tourner issues des flèches, passages piétons | Réglages de carrefour de CS2 | converti |   |
 | Panneaux de priorité | Mod Traffic | converti | Nécessite le mod Traffic dans CS2. |
-| Flèches de voie, connexions de voies | Connexions de voies du mod Traffic | converti, approché | Expérimental, désactivé par défaut : activez Connexions de voies (mod Traffic). La plupart des carrefours sortent comme dans CS1, certains diffèrent. |
-| Demi-tours | – | seulement dans le rapport | Pas encore appliqués ; listés dans le rapport d'import. |
+| Flèches de voie, connexions de voies, demi-tours | Connexions de voies et demi-tours du mod Traffic | converti, approché | Appliqués dans les villes qui roulent à droite, exactement aux carrefours (Connexions de voies (mod Traffic), activé par défaut) ; les divisions de voies là où une route se prolonge sans carrefour restent telles que CS2 les construit. Pas encore dans les villes qui roulent à gauche. |
 | Feux programmés, virage au rouge, carrefours encombrés, règles de stationnement | – | seulement dans le rapport | Les feux programmés deviennent des feux ordinaires. |
 
 ## Node Controller

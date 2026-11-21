@@ -36,7 +36,7 @@ Press **Prepare map** in a new city before importing: it replaces the map's terr
 
 ## Where are my TM:PE lane connections and lane arrows?
 
-They are experimental: turn on **Lane connections (Traffic mod)** before importing (it needs the Traffic mod). Most junctions come out as in CS1, some differ. U-turn rules aren't applied yet; the import report lists them.
+**Lane connections (Traffic mod)** recreates them, with the U-turn rules, at junctions; it is on by default and needs the Traffic mod. Where a road just continues into another without a junction, CS2 keeps its own lane continuation, and lane splits there can't be reproduced. In a city that drives on the left the step is skipped for now. The import summary says how many CS1 lane references were matched.
 
 ## How do I undo an import?
 
@@ -60,7 +60,7 @@ CS2 lines get their vehicles from a depot of their type, and CS1 metro and train
 
 ## Do I need the Traffic mod?
 
-Only for TM:PE priority signs and, experimentally, lane connections and lane arrows. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.
+Only for TM:PE priority signs, lane connections, lane arrows and U-turn rules. Speed limits, bus lanes, traffic lights, all-way stops, turn bans and crosswalks work without it.
 
 ## What happens to timed traffic lights and Node Controller tweaks?
 
