@@ -192,6 +192,7 @@ try {
   // TM:PE lane connections (docs/DECISIONS.md #126): re-measure what the mod wrote, read-only (op "lanes" checkOnly):
   // the geometric arm check (every connection's arms against CS1's directions), the written-vs-intended match, and the
   // junctions left to CS2 because they couldn't be mapped confidently. A wrong arm or turn fails the step.
+  // a failed lane check is recorded, the run goes on (the reload check and the rest still run)
   await step('lane-connections', async () => {
     const r = await b.exec(LIB, { phase: 'tool', pump: 'tool', args: { op: 'lanes', plan: path.join(S.package, 'cs1conv-plan.json'), checkOnly: true, diagnostics: 40 }, timeout: 900 });
     fs.writeFileSync(path.join(runDir, 'lanecheck.json'), JSON.stringify(r, null, 1));
@@ -201,7 +202,30 @@ try {
     const wrongTurns = tc.wrong ?? 0;
     if (wrongTurns > 0) throw new Error(`${wrongTurns} written lane connection(s) go to a different arm than in CS1: ${JSON.stringify(res).slice(0, 1500)}`);
     return res;
-  });
+  }).catch(() => {});
+  // The lane connections must survive a save and reload: the Traffic mod's loader drops a junction's data when it fails
+  // its checks ("couldn't load data from N of M intersections"). Predicted before saving (op lanedata), then measured
+  // after a real save + load: nodes with data, loader failures, and the turn check again.
+  await step('lane-connections-reload', async () => {
+    const before = await b.exec(LIB, { args: { op: 'lanedata' }, timeout: 300 });
+    if (before.skipped) return { skipped: before.skipped };
+    const name = `cs1conv-acceptance-${tag}-lanes`;
+    await b.saveWrite(name);
+    await b.load(name);
+    await b.pause();
+    await b.wait(120, 4, { timeout: 300 });
+    const after = await b.exec(LIB, { args: { op: 'lanedata' }, timeout: 300 });
+    const r = await b.exec(LIB, { phase: 'tool', pump: 'tool', args: { op: 'lanes', plan: path.join(S.package, 'cs1conv-plan.json'), checkOnly: true, diagnostics: 40 }, timeout: 900 });
+    fs.writeFileSync(path.join(runDir, 'lanecheck-after-reload.json'), JSON.stringify({ before, after, lanes: r }, null, 1));
+    const tc = r.turn_check ?? {};
+    const res = { before: { nodes: before.nodes_with_data, wouldFail: before.would_fail, reasons: before.reasons }, after: { nodes: after.nodes_with_data, wouldFail: after.would_fail }, turn_check: { checked: tc.checked, ok: tc.ok, wrong: tc.wrong } };
+    // per junction: roads whose lane layout changed on reload (the Traffic mod drops lane data that points at the old lanes)
+    const changed = (r.problem_sites ?? []).filter((x) => x.problem === 'lane_count_differs');
+    res.laneLayoutChangedOnReload = { junctions: [...new Set(changed.map((x) => x.node))], roads: changed.slice(0, 20).map((x) => `${x.node}/${x.segment} ${x.prefab} ${x.cs1_lanes}→${x.cs2_lanes}`) };
+    const lost = (before.nodes_with_data ?? 0) - (after.nodes_with_data ?? 0);
+    if ((before.would_fail ?? 0) > 0 || lost > 0 || (tc.wrong ?? 0) > 0) throw new Error(`lane connections don't survive a reload: ${JSON.stringify({ ...res, lost }).slice(0, 1500)}`);
+    return res;
+  }).catch(() => {});
   await step('simulate', async () => { await b.call('sim.set', { paused: false, speed: 3 }); await b.wait(1, Number(opt('simulate', '60')), { timeout: 600 }); await b.pause(); return { seconds: Number(opt('simulate', '60')) }; });
   // Public-transport vehicles after the simulation (read-only count from the transit exec library): are buses,
   // trams, metros and trains actually running? Lines without vehicles show up here, not in the import status.

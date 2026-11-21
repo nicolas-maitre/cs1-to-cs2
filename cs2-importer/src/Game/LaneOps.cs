@@ -110,6 +110,34 @@ namespace Cs2Importer
             var em = w.Em;
             var problems = new Dictionary<string, int>();
             Action<string> bad = k => { int n; problems.TryGetValue(k, out n); problems[k] = n + 1; };
+            var problemSites = new List<object>();
+            var problemSeen = new HashSet<string>();
+
+            // repair (the mod's last step, "lanesrepair"): steps after the lane connections (buildings' sub-nets, track links,
+            // outside connections) can split or replace road edges at a junction; its data then points at edges that are gone
+            // and the Traffic mod's loader drops it on reload. Such junctions are cleared and written again against the
+            // current edges; junctions whose data is still valid are left as they are.
+            bool repair = P.Bool(a, "repair", false);
+            int repairChecked = 0, repairReverted = 0;
+            var repairReasons = new Dictionary<string, int>();
+            if (repair)
+            {
+                var rq = em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly(mod.ModifiedConnections), ComponentType.ReadOnly<Node>() }, None = new[] { ComponentType.ReadOnly<Deleted>() } });
+                var withData = new List<Entity>();
+                using (var es = rq.ToEntityArray(Unity.Collections.Allocator.Temp)) foreach (var e in es) withData.Add(e);
+                rq.Dispose();
+                foreach (var n in withData)
+                {
+                    repairChecked++;
+                    string d;
+                    var why = LoaderFailure(w, mod, n, out d);
+                    if (why == null || !RevertNode(w, mod, n)) continue;
+                    repairReverted++;
+                    int c; repairReasons.TryGetValue(why, out c); repairReasons[why] = c + 1;
+                }
+                if (repairReverted > 0) for (int f = 0; f < 30; f++) yield return null;
+                res = M2Ops.Resolve(w, job); // the edges may have changed since the first lane step
+            }
 
             // independent checks (#60, DECISIONS.md #126), using geometry instead of our own segment → edge → lane mapping:
             // (1) arm: the CS2 edge's direction at the node must be the CS1 segment's (bezier tangent) within armTolerance;
@@ -191,7 +219,15 @@ namespace Cs2Importer
                 string problem;
                 int ordinal = (int)P.Num(lr, "ordinal", -1), cnt = (int)P.Num(lr, "count", -1);
                 var idx = LaneMatch.Pick(lanes, mirrored ? LaneMatch.Mirror(ordinal, cnt) : ordinal, cnt, inbound, out problem);
-                if (idx == null) { bad(problem); return null; }
+                if (idx == null)
+                {
+                    bad(problem);
+                    // per junction: which road's lanes didn't fit (lane_count_differs after a reload = the road's layout changed)
+                    var site = node + ":" + segment + ":" + problem;
+                    if (problemSeen.Add(site) && problemSites.Count < 200)
+                        problemSites.Add(new Dictionary<string, object> { { "node", node }, { "segment", segment }, { "problem", problem }, { "cs1_lanes", P.Num(lr, "count", -1) }, { "cs2_lanes", lanes.Count(x => true) }, { "prefab", w.Prefabs.GetPrefabName(em.GetComponentData<PrefabRef>(edge).m_Prefab) } });
+                    return null;
+                }
                 refsMatched++;
                 var seg = job.Segments.First(x => x.Id == segment);
                 {
@@ -297,6 +333,7 @@ namespace Cs2Importer
             object boxedComp = sys.GetComponentLookup<Composition>(true), boxedLanes = sys.GetBufferLookup<NetCompositionLane>(true);
             var byNode = sources.Values.GroupBy(s => s.Node).ToList();
             foreach (var g in byNode) lanesAt(g.Key);
+            var written = new HashSet<string>(); // "node:edge:lane" of the source lanes given Traffic mod data (the turn check looks only at those)
             int nodesDone = 0, nodesSkipped = 0, connections = 0, sourcesDone = 0, sourcesEmpty = 0, nodesPassThrough = 0, nodesUnsure = 0;
             var passThrough = new HashSet<Entity>(byNode.Where(g => w.IsReal(g.Key) && lanesAt(g.Key).Count == 0).Select(g => g.Key));
             if (!checkOnly)
@@ -305,7 +342,7 @@ namespace Cs2Importer
                     var node = g.Key;
                     if (!w.IsReal(node)) { nodesSkipped++; continue; }
                     if (g.Any(x => unsure.ContainsKey(x.PlanNode))) { nodesUnsure++; continue; } // arm check failed: leave CS2's lanes
-                    if (HasComp(em, node, mod.ModifiedConnections)) { nodesSkipped++; bad("node_already_has_lane_connections"); continue; }
+                    if (HasComp(em, node, mod.ModifiedConnections)) { nodesSkipped++; if (!repair) bad("node_already_has_lane_connections"); continue; }
                     // a node where one road just continues into another has no junction lanes: each lane runs on into the
                     // lane that starts where it ends, and there is nothing for the Traffic mod to connect
                     if (passThrough.Contains(node)) { nodesPassThrough++; continue; }
@@ -322,7 +359,9 @@ namespace Cs2Importer
                         if (s.Targets.Count > 0) targets.AddRange(s.Targets);
                         else if (s.Arrows != null)
                         {
-                            foreach (var l in fromHere.Where(l => LaneMatch.Allows(s.Arrows, TurnOf(l.Flags)) && l.TgtEdge != s.NoUTurnTo))
+                            // which arm a junction lane leads into decides its turn, by CS1's geometry and TM:PE's rule
+                            // (#126): CS2's own turn flags can call a 90° road "straight" at an irregular junction
+                            foreach (var l in fromHere.Where(l => LaneMatch.Allows(s.Arrows, GeoTurn(w, job, res, s, l)) && l.TgtEdge != s.NoUTurnTo))
                             {
                                 targets.Add(new KeyValuePair<Entity, int>(l.TgtEdge, l.TgtIndex));
                                 if ((l.Flags & CarLaneFlags.Unsafe) != 0) unsafeTargets.Add(l.TgtEdge.Index + ":" + l.TgtIndex);
@@ -352,6 +391,7 @@ namespace Cs2Importer
                         Set(el, "edgeEntity", s.Edge);
                         Set(el, "modifiedConnections", ce);
                         elements.Add(el);
+                        written.Add(node.Index + ":" + s.Edge.Index + ":" + s.LaneIndex);
                         connections += rows.Count;
                         sourcesDone++;
                     }
@@ -367,6 +407,7 @@ namespace Cs2Importer
 
             // check: after the mod regenerated the junction lanes, each explicit source lane leads exactly to its targets,
             // and each U-turn rule holds
+            if (checkOnly) foreach (var g in byNode) foreach (var k in WrittenKeys(w, mod, g.Key)) written.Add(k);
             var outcome = new Dictionary<string, int>();
             var diag = new List<object>();
             // turn check (#126): the CS2 junction lanes leaving each explicit source lane, by their own geometry, against
@@ -375,11 +416,19 @@ namespace Cs2Importer
             var turnDiag = new List<object>();
             var turnBad = new Dictionary<Entity, long>(); // CS2 node → plan node, junctions whose written lanes failed the turn check
             int nodesWithData = 0;
+            var withoutData = new List<object>();
             var after = new Dictionary<Entity, List<NodeLane>>();
             foreach (var g in byNode)
             {
                 if (!w.IsReal(g.Key)) continue;
                 if (HasComp(em, g.Key, mod.ModifiedConnections)) nodesWithData++;
+                else if (!passThrough.Contains(g.Key) && !g.Any(x => unsure.ContainsKey(x.PlanNode)) && g.Any(x => x.Targets.Count > 0 || x.Arrows != null) && withoutData.Count < 80)
+                {
+                    // a junction that should carry lane data but has none: not written, reverted, or dropped by the mod's loader
+                    var pn = g.First().PlanNode;
+                    var edgeNames = w.EdgesOf(g.Key).Select(e => w.Prefabs.GetPrefabName(em.GetComponentData<PrefabRef>(e).m_Prefab)).Cast<object>().ToList();
+                    withoutData.Add(new Dictionary<string, object> { { "node", pn }, { "edges", edgeNames } });
+                }
                 after[g.Key] = NodeCarLanes(w, g.Key);
                 foreach (var s in g)
                 {
@@ -387,7 +436,7 @@ namespace Cs2Importer
                     {
                         // a TM:PE arrow lane: the CS2 lanes written from it must leave towards an arm CS1 allows (TM:PE's
                         // turn rule by geometry); reaching only some of them is fine
-                        if (s.Arrows != null && s.Arrows.Count < 3 && s.Ref.IndexOf("u-turn", StringComparison.Ordinal) < 0 && !unsure.ContainsKey(s.PlanNode) && !passThrough.Contains(g.Key))
+                        if (s.Arrows != null && s.Arrows.Count < 3 && s.Ref.IndexOf("u-turn", StringComparison.Ordinal) < 0 && !unsure.ContainsKey(s.PlanNode) && !passThrough.Contains(g.Key) && written.Contains(g.Key.Index + ":" + s.Edge.Index + ":" + s.LaneIndex))
                         {
                             var allowed = ArrowArms(w, job, res, s);
                             var gotA = after[g.Key].Where(l => l.SrcEdge == s.Edge && l.SrcIndex == s.LaneIndex && l.TgtEdge != s.Edge).ToList();
@@ -420,7 +469,7 @@ namespace Cs2Importer
                         var gotLanes = after[g.Key].Where(l => l.SrcEdge == s.Edge && l.SrcIndex == s.LaneIndex).ToList();
                         got = gotLanes.Select(l => l.TgtEdge.Index + ":" + l.TgtIndex).ToList();
                         kind = LaneMatch.Compare(want, got);
-                        if (s.WantCurves.Count == s.Targets.Count && !unsure.ContainsKey(s.PlanNode)) // unsure junctions keep CS2's own lanes
+                        if (s.WantCurves.Count == s.Targets.Count && !unsure.ContainsKey(s.PlanNode) && written.Contains(g.Key.Index + ":" + s.Edge.Index + ":" + s.LaneIndex)) // unsure junctions keep CS2's own lanes
                         {
                             string why;
                             turnChecked++;
@@ -485,18 +534,19 @@ namespace Cs2Importer
             int checkedN = outcome.Values.Sum() - leftToCs2;
             yield return new Dictionary<string, object>
             {
-                { "op", "lanes" }, { "traffic_mod", mod.Version }, { "check_only", checkOnly },
+                { "op", repair ? "lanesrepair" : "lanes" }, { "traffic_mod", mod.Version }, { "check_only", checkOnly },
+                { "repair", repair ? (object)new Dictionary<string, object> { { "junctions_checked", repairChecked }, { "junctions_rewritten", repairReverted }, { "reasons", repairReasons.ToDictionary(kv => kv.Key, kv => (object)kv.Value) } } : null },
                 { "lane_refs", refsTotal }, { "lane_refs_matched", refsMatched }, { "lane_refs_fitting_plain", okPlain }, { "lane_refs_fitting_mirrored", okMirror },
                 { "handedness", mirrored ? "mirrored (the CS1 city drove on the other side)" : "same" }, { "handedness_from", handednessFrom },
                 { "cs1_left_hand_traffic", planLht }, { "cs2_left_hand_traffic", LeftHandTraffic(w) },
                 { "plan_connections", conns.Count }, { "plan_arrows", arrows.Count }, { "arrows_overridden_by_connections", arrowsOverridden },
-                { "nodes_planned", byNode.Count }, { "nodes_done", nodesDone }, { "nodes_with_lane_data", nodesWithData }, { "nodes_skipped", nodesSkipped },
+                { "nodes_planned", byNode.Count }, { "nodes_done", nodesDone }, { "nodes_with_lane_data", nodesWithData }, { "junctions_without_data", withoutData }, { "nodes_skipped", nodesSkipped },
                 { "nodes_pass_through", nodesPassThrough }, { "connections", connections }, { "source_lanes", sourcesDone }, { "source_lanes_without_connections", sourcesEmpty },
                 { "explicit_sources_checked", checkedN }, { "explicit_sources_matching", matching },
                 { "match_rate", checkedN == 0 ? 0 : Math.Round(100.0 * matching / checkedN, 1) }, { "outcomes", outcome.ToDictionary(kv => kv.Key, kv => (object)kv.Value) },
                 { "uturn_rules", uturnEnds.Count }, { "uturn_bans", uturnBans }, { "uturn_added", uturnAdds }, { "uturn_already_in_cs2", uturnAlready },
                 { "uturn_checked", uturnChecks.Count - uturnPassThrough }, { "uturn_holding", uturnOk }, { "uturn_at_nodes_without_junction", uturnPassThrough }, { "uturn_failures", uturnDiag },
-                { "problems", problems.ToDictionary(kv => kv.Key, kv => (object)kv.Value) }, { "mismatches", diag },
+                { "problems", problems.ToDictionary(kv => kv.Key, kv => (object)kv.Value) }, { "problem_sites", problemSites }, { "mismatches", diag },
                 { "arm_check", new Dictionary<string, object> {
                     { "tolerance_deg", armTol }, { "arms_ok", armOk }, { "arms_off", armOff }, { "arms_unknown", armUnknown },
                     { "junctions_off", unsure.Count }, { "junctions_left_to_cs2", nodesUnsure }, { "source_lanes_left_to_cs2", leftToCs2 },
@@ -767,6 +817,158 @@ namespace Cs2Importer
             if (!em.HasComponent<Updated>(node)) em.AddComponent<Updated>(node);
             foreach (var e in w.EdgesOf(node)) if (!em.HasComponent<Updated>(e)) em.AddComponent<Updated>(e);
             return true;
+        }
+
+        /// <summary>
+        /// op lanedata {}: every node with Traffic mod lane connections, checked the way the mod's loader checks them after a
+        /// save is loaded (TrafficDataMigrationSystem.ValidateLoadedDataJob, 0.2.x, read from its IL). A node that fails
+        /// loses its connections on load ("couldn't load data from N of M intersections"). Read-only.
+        /// </summary>
+        public static object LoaderCheck(Dictionary<string, object> a)
+        {
+            var mod = ModTypes.Find();
+            if (mod == null) return new Dictionary<string, object> { { "op", "lanedata" }, { "skipped", "Traffic mod not loaded" } };
+            var w = new GameWorld();
+            var em = w.Em;
+            var getBuf = typeof(EntityManager).GetMethods().First(x => x.Name == "GetBuffer" && x.IsGenericMethodDefinition && x.GetParameters().Length == 2);
+            Func<Entity, Type, List<object>> items = (e, t) =>
+            {
+                var r = new List<object>();
+                if (!HasBuf(em, e, t)) return null;
+                var buf = getBuf.MakeGenericMethod(t).Invoke(em, new object[] { e, true });
+                int n = (int)buf.GetType().GetProperty("Length").GetValue(buf);
+                var it = buf.GetType().GetMethod("get_Item");
+                for (int i = 0; i < n; i++) r.Add(it.Invoke(buf, new object[] { i }));
+                return r;
+            };
+            var q = em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly(mod.ModifiedConnections), ComponentType.ReadOnly<Node>() }, None = new[] { ComponentType.ReadOnly<Deleted>() } });
+            var nodes = new List<Entity>();
+            using (var es = q.ToEntityArray(Unity.Collections.Allocator.Temp)) foreach (var e in es) nodes.Add(e);
+            q.Dispose();
+            var reasons = new Dictionary<string, int>();
+            var failed = new List<object>();
+            int ok = 0;
+            foreach (var node in nodes)
+            {
+                string detail;
+                var why = LoaderFailure(w, mod, node, out detail);
+                if (why == null) { ok++; continue; }
+                int c; reasons.TryGetValue(why, out c); reasons[why] = c + 1;
+                if (failed.Count < 60)
+                {
+                    var p = em.GetComponentData<Node>(node).m_Position;
+                    failed.Add(new Dictionary<string, object> { { "node", node.Index }, { "x", Math.Round(p.x, 1) }, { "z", Math.Round(p.z, 1) }, { "why", why }, { "detail", detail }, { "edges", w.EdgesOf(node).Count } });
+                }
+            }
+            return new Dictionary<string, object> { { "op", "lanedata" }, { "nodes_with_data", nodes.Count }, { "would_load", ok }, { "would_fail", nodes.Count - ok }, { "reasons", reasons.ToDictionary(kv => kv.Key, kv => (object)kv.Value) }, { "failed", failed } };
+        }
+
+        /// <summary>Why the Traffic mod's loader would drop this node's lane connections after a reload (null = it keeps
+        /// them): TrafficDataMigrationSystem.ValidateLoadedDataJob's checks (see LoaderCheck).</summary>
+        static string LoaderFailure(GameWorld w, ModTypes mod, Entity node, out string detail)
+        {
+            var em = w.Em;
+            var getBuf = typeof(EntityManager).GetMethods().First(x => x.Name == "GetBuffer" && x.IsGenericMethodDefinition && x.GetParameters().Length == 2);
+            Func<Entity, Type, List<object>> items = (e, t) =>
+            {
+                var r = new List<object>();
+                if (!HasBuf(em, e, t)) return null;
+                var buf = getBuf.MakeGenericMethod(t).Invoke(em, new object[] { e, true });
+                int n = (int)buf.GetType().GetProperty("Length").GetValue(buf);
+                var it = buf.GetType().GetMethod("get_Item");
+                for (int i = 0; i < n; i++) r.Add(it.Invoke(buf, new object[] { i }));
+                return r;
+            };
+            string why = null; detail = null;
+            // FillEdgeCompositions: per connected edge its composition, no roundabout node, its road/track lanes by index
+            var lanesOf = new Dictionary<Entity, HashSet<int>>();
+            var isRoad = new Dictionary<Entity, bool>();
+            var hasTrack = new Dictionary<Entity, bool>();
+            foreach (var e in w.EdgesOf(node))
+            {
+                if (!em.HasComponent<Composition>(e)) { why = "edge_without_composition"; break; }
+                var comp = em.GetComponentData<Composition>(e);
+                var nc = em.GetComponentData<Edge>(e).m_End == node ? comp.m_EndNode : comp.m_StartNode;
+                if (em.HasComponent<NetCompositionData>(nc) && (em.GetComponentData<NetCompositionData>(nc).m_Flags.m_General & CompositionFlags.General.Roundabout) != 0) { why = "roundabout"; break; }
+                var set = new HashSet<int>();
+                if (em.HasBuffer<NetCompositionLane>(comp.m_Edge))
+                {
+                    var cl = em.GetBuffer<NetCompositionLane>(comp.m_Edge, true);
+                    for (int i = 0; i < cl.Length; i++) if (((int)cl[i].m_Flags & 33554506) != 0) set.Add(i);
+                }
+                lanesOf[e] = set;
+                isRoad[e] = em.HasComponent<RoadComposition>(comp.m_Edge);
+                hasTrack[e] = em.HasComponent<TrackComposition>(comp.m_Edge) && em.GetComponentData<TrackComposition>(comp.m_Edge).m_TrackType != 0;
+            }
+            var elements = why == null ? items(node, mod.ModifiedLaneConnections) : null;
+            if (why == null && elements != null)
+                foreach (var el in elements)
+                {
+                    var ce = (Entity)Get(el, "modifiedConnections");
+                    var src = (Entity)Get(el, "edgeEntity");
+                    int laneIndex = (int)Get(el, "laneIndex");
+                    if (ce == Entity.Null || !em.Exists(ce)) { why = "connections_entity_missing"; break; }
+                    if (!em.HasComponent<Edge>(src) || !lanesOf.ContainsKey(src)) { why = "source_edge_not_at_node"; break; }
+                    if (!lanesOf[src].Contains(laneIndex)) { why = "source_lane_index_unknown"; detail = "lane " + laneIndex + " of edge " + src.Index; break; }
+                    var rows = items(ce, mod.GeneratedConnection);
+                    if (rows == null) { why = "no_generated_connections"; break; }
+                    foreach (var row in rows)
+                    {
+                        var rs = (Entity)Get(row, "sourceEntity");
+                        var rt = (Entity)Get(row, "targetEntity");
+                        var map = (int2)Get(row, "laneIndexMap");
+                        int method = Convert.ToInt32(Get(row, "method"));
+                        bool unsafeLane = (bool)Get(row, "isUnsafe");
+                        if (rs != src || !em.Exists(rs)) { why = "row_source_differs"; break; }
+                        if (!lanesOf.ContainsKey(rt) || !em.Exists(rt)) { why = "target_edge_not_at_node"; break; }
+                        if (!lanesOf[rt].Contains(map.y)) { why = "target_lane_index_unknown"; detail = "lane " + map.y + " of edge " + rt.Index; break; }
+                        if ((method & 2) != 0 && !isRoad[rt]) { why = "road_method_target_not_road"; break; }
+                        if (!unsafeLane && (method & 16) != 0 && !hasTrack[rt]) { why = "track_method_target_without_track"; detail = "method " + method; break; }
+                    }
+                    if (why != null) break;
+                }
+            return why;
+        }
+
+        static bool HasBuf(EntityManager em, Entity e, Type t)
+        {
+            var m = typeof(EntityManager).GetMethods().First(x => x.Name == "HasBuffer" && x.IsGenericMethodDefinition && x.GetParameters().Length == 1 && x.GetParameters()[0].ParameterType == typeof(Entity)).MakeGenericMethod(t);
+            return (bool)m.Invoke(em, new object[] { e });
+        }
+
+        /// <summary>The turn of a junction lane from source lane s, by CS1 geometry: the plan segment whose CS2 edge the lane
+        /// leads into, its CS1 direction against the source's (LaneMatch.Cs1Turn). Back into the source edge = its U-turn
+        /// flag; a target that is no plan arm = CS2's turn flags.</summary>
+        static Turn GeoTurn(GameWorld w, ImportJob job, M2Ops.Resolved res, Source s, NodeLane l)
+        {
+            if (l.TgtEdge == s.Edge) return TurnOf(l.Flags);
+            var src = PlanArmDir(job, s.PlanNode, s.Segment);
+            foreach (var id in job.Segments.Where(x => x.Start.Id == s.PlanNode || x.End.Id == s.PlanNode).Select(x => x.Id).Distinct())
+            {
+                bool isEnd;
+                if (res.EdgeAt(w, id, s.PlanNode, out isEnd) != l.TgtEdge) continue;
+                var d = PlanArmDir(job, s.PlanNode, id);
+                if (src != null && d != null) return LaneMatch.Cs1Turn(src, d);
+            }
+            return TurnOf(l.Flags);
+        }
+
+        /// <summary>"node:edge:lane" of every source lane the node's Traffic mod data covers (ModifiedLaneConnections).</summary>
+        static List<string> WrittenKeys(GameWorld w, ModTypes mod, Entity node)
+        {
+            var r = new List<string>();
+            var em = w.Em;
+            if (!w.IsReal(node) || !HasBuf(em, node, mod.ModifiedLaneConnections)) return r;
+            var getBuf = typeof(EntityManager).GetMethods().First(x => x.Name == "GetBuffer" && x.IsGenericMethodDefinition && x.GetParameters().Length == 2).MakeGenericMethod(mod.ModifiedLaneConnections);
+            var buf = getBuf.Invoke(em, new object[] { node, true });
+            int n = (int)buf.GetType().GetProperty("Length").GetValue(buf);
+            var it = buf.GetType().GetMethod("get_Item");
+            for (int i = 0; i < n; i++)
+            {
+                var el = it.Invoke(buf, new object[] { i });
+                r.Add(node.Index + ":" + ((Entity)Get(el, "edgeEntity")).Index + ":" + (int)Get(el, "laneIndex"));
+            }
+            return r;
         }
 
         static void RemoveComponent(EntityManager em, Entity e, Type t)

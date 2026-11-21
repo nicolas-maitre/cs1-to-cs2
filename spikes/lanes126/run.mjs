@@ -15,7 +15,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
 const argv = process.argv.slice(2);
 const has = (k) => argv.includes(k);
-const pos = argv.filter((a) => !a.startsWith('--'));
+const pos = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--saveload');
 const out = path.resolve(pos[0]);
 const pkgs = pos.slice(1).map((p) => { const [tag, rest] = p.split('='); const [dir, nodes] = rest.split('@'); return { tag, dir: path.resolve(dir), nodes: nodes ? nodes.split(',').map(Number) : [] }; });
 const log = (...m) => console.error(`[lanes126 ${new Date().toISOString().slice(11, 19)}]`, ...m);
@@ -79,6 +79,21 @@ try {
     fs.writeFileSync(path.join(out, `${p.tag}-lanecheck.json`), JSON.stringify(chk, null, 1));
     row.acceptance = { match_rate: chk.match_rate, arms_off: chk.arm_check?.arms_off, turn_check: chk.turn_check && { checked: chk.turn_check.checked, ok: chk.turn_check.ok, wrong: chk.turn_check.wrong, arrows: [chk.turn_check.arrow_lanes_ok, chk.turn_check.arrow_lanes_checked], junctions: chk.turn_check.junctions } };
     log(p.tag, 'acceptance step', JSON.stringify(row.acceptance));
+    // the Traffic mod's own loader checks, predicted on the live city (op lanedata); with --saveload <tag>, a real save + load
+    const ld = await b.exec(LIB, { args: { op: 'lanedata' }, timeout: 300 });
+    fs.writeFileSync(path.join(out, `${p.tag}-lanedata.json`), JSON.stringify(ld, null, 1));
+    row.loader = { nodes_with_data: ld.nodes_with_data, would_fail: ld.would_fail, reasons: ld.reasons };
+    log(p.tag, 'loader check', JSON.stringify(row.loader));
+    if (argv.includes('--saveload') && argv[argv.indexOf('--saveload') + 1] === p.tag) {
+      await b.saveWrite('cs1conv-lanes126-saveload');
+      await b.load('cs1conv-lanes126-saveload');
+      await b.pause();
+      await b.wait(120, 4);
+      const ld2 = await b.exec(LIB, { args: { op: 'lanedata' }, timeout: 300 });
+      fs.writeFileSync(path.join(out, `${p.tag}-lanedata-after-load.json`), JSON.stringify(ld2, null, 1));
+      row.afterLoad = { nodes_with_data: ld2.nodes_with_data, would_fail: ld2.would_fail };
+      log(p.tag, 'after save/load', JSON.stringify(row.afterLoad));
+    }
     for (const id of p.nodes) row['after_' + id] = await view(id, 'imported');
     S.runs.push(row);
     save();

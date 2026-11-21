@@ -410,6 +410,9 @@ namespace Cs2ImporterMod
             steps.AddRange(ImportSteps.Registered);
             // last: the connections own the imported end nodes, and nothing may rebuild those nodes afterwards
             if (s.ApplyConnections) steps.Add(new KeyValuePair<string, Func<Dictionary<string, object>, IEnumerator>>("connections", MapSteps.Connections));
+            // after every step that may split or replace road edges: junctions whose lane connections now point at edges that
+            // are gone would be dropped by the Traffic mod on reload; they are written again (#126)
+            if (s.ApplyLaneConnections && !(MapSteps.CityLeftHand() && !LeftHandLanesReady)) steps.Add(Op("lanesrepair"));
             foreach (var st in steps)
             {
                 if (ImportSystem.CancelRequested) { all["cancelled"] = st.Key; break; }
@@ -515,6 +518,11 @@ namespace Cs2ImporterMod
                         if (d.TryGetValue("turn_check", out ac) && ac is Dictionary<string, object> tcd && tcd.ContainsKey("junctions_reverted_to_cs2")) left += Convert.ToInt32(tcd["junctions_reverted_to_cs2"]);
                         if (left > 0) unsure = T.S("line.lanesArmCheck", left);
                         return T.S("line.lanes", d["connections"], d["nodes_done"], d["nodes_planned"], d["lane_refs_matched"], d["lane_refs"], ((string)d["handedness"]).StartsWith("mirrored") ? T.S("line.lanesMirrored") : "") + unsure;
+                    }
+                case "lanesrepair":
+                    {
+                        var rp = d.TryGetValue("repair", out v) ? v as Dictionary<string, object> : null;
+                        return T.S("line.lanesRepair", rp != null ? rp["junctions_rewritten"] : 0, rp != null ? rp["junctions_checked"] : 0);
                     }
                 case "connections": return T.S("line.connections", d["placed"], d["items"], d["road"], d["train"], Convert.ToInt32(d["failed"]) > 0 ? T.S("line.connectionsFailed", d["failed"]) : "");
                 case "transit":
