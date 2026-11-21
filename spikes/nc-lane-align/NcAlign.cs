@@ -252,7 +252,7 @@ namespace NcAlign
                 float lateral = t0.x * d.y - t0.y * d.x; // + = to the left of the start direction
                 var t1 = math.normalizesafe(MathUtils.EndTangent(lc).xz);
                 float turn = math.degrees(math.atan2(t0.x * t1.y - t0.y * t1.x, math.dot(t0, t1)));
-                r.Add(new Dictionary<string, object> { { "a", V2(lc.a.xz) }, { "d", V2(lc.d.xz) }, { "lateral", R(lateral) }, { "turnDeg", R(turn) }, { "len", R(MathUtils.Length(lc)) } });
+                r.Add(new Dictionary<string, object> { { "a", V2(lc.a.xz) }, { "d", V2(lc.d.xz) }, { "lateral", R(lateral) }, { "turnDeg", R(turn) }, { "len", R(MathUtils.Length(lc)) }, { "flags", Em.GetComponentData<Game.Net.CarLane>(le).m_Flags.ToString() }, { "prefab", Em.HasComponent<PrefabRef>(le) ? Name(Em.GetComponentData<PrefabRef>(le).m_Prefab) : "?" }, { "delta", Em.HasComponent<EdgeLane>(le) ? (object)V2(Em.GetComponentData<EdgeLane>(le).m_EdgeDelta) : null }, { "slave", Em.HasComponent<SlaveLane>(le) } });
             }
             return r;
         }

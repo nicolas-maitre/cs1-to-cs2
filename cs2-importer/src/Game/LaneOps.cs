@@ -332,6 +332,22 @@ namespace Cs2Importer
             var sys = w.World.GetOrCreateSystemManaged<Game.Tools.ToolSystem>(); // lookups need a system in this Entities version
             object boxedComp = sys.GetComponentLookup<Composition>(true), boxedLanes = sys.GetBufferLookup<NetCompositionLane>(true);
             var byNode = sources.Values.GroupBy(s => s.Node).ToList();
+            // repair: a junction whose stored data no longer matches what the current lanes give (a later step changed an
+            // edge's lanes, e.g. a bus stop bay shifting lane indices: still valid indices, but other lanes) is rewritten
+            int repairChanged = 0;
+            if (repair && !checkOnly)
+            {
+                bool any = false;
+                foreach (var g in byNode)
+                {
+                    if (!w.IsReal(g.Key) || !HasComp(em, g.Key, mod.ModifiedConnections)) continue;
+                    var stored = StoredSignature(w, mod, g.Key);
+                    var desired = new HashSet<string>(g.Where(x => x.Targets.Count > 0).Select(x => x.Edge.Index + ":" + x.LaneIndex + ">" + string.Join(",", x.Targets.Select(t => t.Key.Index + ":" + t.Value).Distinct().OrderBy(z => z, StringComparer.Ordinal).ToArray())));
+                    if (desired.IsSubsetOf(stored)) continue;
+                    if (RevertNode(w, mod, g.Key)) { repairChanged++; any = true; }
+                }
+                if (any) for (int f = 0; f < 10; f++) yield return null;
+            }
             foreach (var g in byNode) lanesAt(g.Key);
             var written = new HashSet<string>(); // "node:edge:lane" of the source lanes given Traffic mod data (the turn check looks only at those)
             int nodesDone = 0, nodesSkipped = 0, connections = 0, sourcesDone = 0, sourcesEmpty = 0, nodesPassThrough = 0, nodesUnsure = 0;
@@ -535,7 +551,7 @@ namespace Cs2Importer
             yield return new Dictionary<string, object>
             {
                 { "op", repair ? "lanesrepair" : "lanes" }, { "traffic_mod", mod.Version }, { "check_only", checkOnly },
-                { "repair", repair ? (object)new Dictionary<string, object> { { "junctions_checked", repairChecked }, { "junctions_rewritten", repairReverted }, { "reasons", repairReasons.ToDictionary(kv => kv.Key, kv => (object)kv.Value) } } : null },
+                { "repair", repair ? (object)new Dictionary<string, object> { { "junctions_checked", repairChecked }, { "junctions_rewritten", repairReverted + repairChanged }, { "junctions_lanes_changed", repairChanged }, { "reasons", repairReasons.ToDictionary(kv => kv.Key, kv => (object)kv.Value) } } : null },
                 { "lane_refs", refsTotal }, { "lane_refs_matched", refsMatched }, { "lane_refs_fitting_plain", okPlain }, { "lane_refs_fitting_mirrored", okMirror },
                 { "handedness", mirrored ? "mirrored (the CS1 city drove on the other side)" : "same" }, { "handedness_from", handednessFrom },
                 { "cs1_left_hand_traffic", planLht }, { "cs2_left_hand_traffic", LeftHandTraffic(w) },
@@ -595,7 +611,7 @@ namespace Cs2Importer
             {
                 var le = subs[i].m_SubLane;
                 if ((subs[i].m_PathMethods & Game.Pathfind.PathMethod.Road) == 0) continue;
-                if (!em.HasComponent<Game.Net.CarLane>(le) || !em.HasComponent<EdgeLane>(le) || !em.HasComponent<Lane>(le) || em.HasComponent<Game.Net.SecondaryLane>(le) || em.HasComponent<MasterLane>(le)) continue;
+                if (!em.HasComponent<Game.Net.CarLane>(le) || !em.HasComponent<EdgeLane>(le) || !em.HasComponent<Lane>(le) || em.HasComponent<Game.Net.SecondaryLane>(le) || em.HasComponent<MasterLane>(le) || IsBayLane(w, le)) continue;
                 var delta = em.GetComponentData<EdgeLane>(le).m_EdgeDelta;
                 bool endsHere = math.abs(delta.y - t) < 0.001f, startsHere = math.abs(delta.x - t) < 0.001f;
                 if (!endsHere && !startsHere) continue;
@@ -760,7 +776,7 @@ namespace Cs2Importer
                 var sl = subs[i];
                 if ((sl.m_PathMethods & Game.Pathfind.PathMethod.Road) == 0) continue;
                 var le = sl.m_SubLane;
-                if (!em.HasComponent<Game.Net.CarLane>(le) || !em.HasComponent<EdgeLane>(le) || !em.HasComponent<Lane>(le) || em.HasComponent<Game.Net.SecondaryLane>(le) || em.HasComponent<MasterLane>(le)) continue;
+                if (!em.HasComponent<Game.Net.CarLane>(le) || !em.HasComponent<EdgeLane>(le) || !em.HasComponent<Lane>(le) || em.HasComponent<Game.Net.SecondaryLane>(le) || em.HasComponent<MasterLane>(le) || IsBayLane(w, le)) continue;
                 var delta = em.GetComponentData<EdgeLane>(le).m_EdgeDelta;
                 bool endsHere = math.abs(delta.y - t) < 0.001f, startsHere = math.abs(delta.x - t) < 0.001f;
                 if (!endsHere && !startsHere) continue;
@@ -969,6 +985,46 @@ namespace Cs2Importer
                 r.Add(node.Index + ":" + ((Entity)Get(el, "edgeEntity")).Index + ":" + (int)Get(el, "laneIndex"));
             }
             return r;
+        }
+
+        /// <summary>"edge:lane>target,target…" (targets sorted) of every source lane in a node's Traffic mod data.</summary>
+        static HashSet<string> StoredSignature(GameWorld w, ModTypes mod, Entity node)
+        {
+            var r = new HashSet<string>();
+            var em = w.Em;
+            var getBuf = typeof(EntityManager).GetMethods().First(x => x.Name == "GetBuffer" && x.IsGenericMethodDefinition && x.GetParameters().Length == 2);
+            Func<Entity, Type, List<object>> items = (e, t) =>
+            {
+                var l = new List<object>();
+                if (!HasBuf(em, e, t)) return l;
+                var buf = getBuf.MakeGenericMethod(t).Invoke(em, new object[] { e, true });
+                int n = (int)buf.GetType().GetProperty("Length").GetValue(buf);
+                var it = buf.GetType().GetMethod("get_Item");
+                for (int i = 0; i < n; i++) l.Add(it.Invoke(buf, new object[] { i }));
+                return l;
+            };
+            foreach (var el in items(node, mod.ModifiedLaneConnections))
+            {
+                var ce = (Entity)Get(el, "modifiedConnections");
+                var tg = (ce != Entity.Null && em.Exists(ce) ? items(ce, mod.GeneratedConnection) : new List<object>())
+                    .Select(row => ((Entity)Get(row, "targetEntity")).Index + ":" + ((int2)Get(row, "laneIndexMap")).y).OrderBy(z => z, StringComparer.Ordinal).ToArray();
+                r.Add(((Entity)Get(el, "edgeEntity")).Index + ":" + (int)Get(el, "laneIndex") + ">" + string.Join(",", tg));
+            }
+            return r;
+        }
+
+        static readonly Dictionary<Entity, bool> s_BayPrefabs = new Dictionary<Entity, bool>();
+
+        /// <summary>A bus-stop bay lane ("Car Bay Lane …"): CS2 adds it next to the driving lanes where a stop sits on a road
+        /// with parking (composition side PrimaryStop). It is no CS1 driving lane, so lane refs don't count it (#126);
+        /// CS2 has no lane flag for it, the lane prefab's name is what marks it.</summary>
+        static bool IsBayLane(GameWorld w, Entity lane)
+        {
+            if (!w.Em.HasComponent<PrefabRef>(lane)) return false;
+            var p = w.Em.GetComponentData<PrefabRef>(lane).m_Prefab;
+            bool bay;
+            if (!s_BayPrefabs.TryGetValue(p, out bay)) s_BayPrefabs[p] = bay = (w.Prefabs.GetPrefabName(p) ?? "").IndexOf("Bay Lane", StringComparison.OrdinalIgnoreCase) >= 0;
+            return bay;
         }
 
         static void RemoveComponent(EntityManager em, Entity e, Type t)
