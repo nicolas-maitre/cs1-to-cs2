@@ -394,3 +394,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
      - only `ground` segments burn; slope segments don't;
      - nodes touched by a tunnel or slope segment get no junction disc;
      - the importer builds conform-mode slopes as walls and deepens CS1 tunnels that are too shallow for CS2 (importer side, with worker-3).
+126. **Lane connections need an independent geometric check** (user report, 2026-11-21). At a six-arm junction (Myrtle St × Aspen St × Foggy Highway), connection lines visibly cross to the wrong arms, although our "as in CS1" metric (#89) said 92–99%. That metric compares what was written with what was intended, so it can't catch a systematic mapping error.
+     - **The check:** every written connection's target arm must match the CS1 target segment's direction at that node. It becomes part of acceptance.
+     - **Junctions that can't be mapped confidently** get no written connections and are reported.
+     - **The default (on) stays until the check's numbers are in;** if they're bad, it flips to off until fixed.
