@@ -36,6 +36,12 @@ export function summariseUtilities(r) {
     if (!c.buildings) continue;
     lines.push(`${cat}: ${c.buildings} buildings; electricity ${pct(c.electricitySupplied, c.electricityConsumers)} supplied (${pct(c.electricityConnected, c.electricityConsumers)} connected), water ${pct(c.waterSupplied, c.waterConsumers)} (${pct(c.waterConnected, c.waterConsumers)} connected), sewage ${pct(c.sewageServed, c.waterConsumers)} (${pct(c.sewageConnected, c.waterConsumers)} connected)`);
   }
+  // Households next to the residential building count (QA §12): CS2 sometimes stalls residential spawning in a fresh city
+  // (Skibidi: 7 homes in one run, 667 in the next, same build). Informational; it never fails the check.
+  if (r.households != null) {
+    const homes = cov.residential?.buildings ?? 0;
+    lines.push(`households: ${r.households} (${r.homelessHouseholds ?? 0} homeless) in ${homes} residential buildings${homes < 50 && r.households > 4 * homes ? ' – few homes for the households moving in: CS2 spawn variance, not a connection problem (see the supply above)' : ''}`);
+  }
   const e = r.totals?.electricity, w = r.totals?.water, t = r.totals?.electricityTrade;
   if (e) lines.push(`electricity: production ${e.production}, consumption ${e.consumption} (fulfilled ${e.fulfilledConsumption})${t ? `, import ${t.import}, export ${t.export}` : ''}`);
   if (w) lines.push(`water: capacity ${w.freshCapacity}, consumption ${w.freshConsumption} (fulfilled ${w.fulfilledFreshConsumption}); sewage: capacity ${w.sewageCapacity}, consumption ${w.sewageConsumption} (fulfilled ${w.fulfilledSewageConsumption})`);

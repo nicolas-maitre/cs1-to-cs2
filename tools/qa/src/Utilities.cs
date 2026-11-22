@@ -245,12 +245,21 @@ namespace Cs1ConvQa
                 { "all", Count<Game.Objects.OutsideConnection>() },
             };
 
+            // households (QA §12): CS2 sometimes stalls residential spawning in a fresh city, so a low residential building
+            // count with households moving in is CS2's growth, not a missing connection
+            int households, homeless = 0;
+            using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Citizens.Household>()))
+                households = q.CalculateEntityCount();
+            using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Citizens.Household>(), ComponentType.ReadOnly<Game.Citizens.HomelessHousehold>()))
+                homeless = q.CalculateEntityCount();
+
             object Cap(List<Dictionary<string, object>> l) => l.Take(listLimit).ToList();
             return new Dictionary<string, object>
             {
                 { "op", "utilities" },
                 { "coverage", cov.ToDictionary(kv => kv.Key, kv => (object)kv.Value) },
                 { "abandonedBuildings", abandoned },
+                { "households", households }, { "homelessHouseholds", homeless },
                 { "buildingNotifications", noteCount },
                 { "totals", totals },
                 { "facilities", new Dictionary<string, object> { { "power", power.Count }, { "pumps", pumps.Count }, { "outlets", outlets.Count }, { "towers", towers.Count } } },
