@@ -867,6 +867,39 @@ Rail stays off by default; nothing here is in the release.
 
 Rail stays off by default; nothing here is in the release.
 
+### 5i. Rail in the mod, round 5 (1 load-only run + 2 acceptance runs on a2a71dc + working copy; opt-in `ConnectRail`; `.gamectl/tracklink/yard-diag-1.json`, `.gamectl/acceptance/20261122-101454`, `-102633`)
+
+**Result (run 2, `20261122-102633`, Skibidi 6 km): ok=true, and Train Line 1 runs a train from its yard.**
+- **Train Line 1:** `movingVehicles` 1, path 180 elements.
+- **Metro:** paths 200 / 68 / 68 elements; still no vehicles (no yard, #83).
+- **Gates, every one green:**
+  - roads-reload 0 of 3403 changed;
+  - lane connections after reload 468 / 468;
+  - heights 0 unexplained (21 missing track: 17 trimmed, 9 merged);
+  - lane directions 2096 / 1005 / 24 all the same;
+  - utility stubs 8 ok, 0 split;
+  - placer's road guard 3263 road edges, 0 gone, 0 rewired.
+- **Bus lines:** 10 of 16 with 19 buses running; the rest wait for depot capacity.
+
+**Diagnosis** (load-only run on round 4's `cs1conv-acceptance-20261122-093831`, `transit/tools/yard-diag.mjs`):
+- **The yard is fine:** the RailYard02 has a train available, its own lanes join the link, and Train Line 1 is complete station to station.
+- **But no path to the line:** Train Line 1's vehicle request failed again and again (failCount 9, then 8 again 150 s after a reset).
+- **The yard link's landing is a dead-end node beside its target node,** never joined to it. Round 3's yard bridge had the same unjoined landing.
+
+**Cause, found in run 1:** `guardRoads` gives every top-level two-edge node near the links a temporary `Game.Net.Fixed` for the apply, so CS2's node reduction leaves them alone.
+- A yard link targets a two-edge node on a through track, so its own target was guarded, and a `Fixed` node takes no new edge. CS2 built a dead-end landing beside it.
+- In run 1 the landing repair guarded it again, and the target's two track segments (7908, 11317) were gone after a save and reload.
+- The mid-air diamond crossing seen in the diagnosis was a side issue.
+
+**Fixes (behind `frontOnly`, which only the mod's rail step passes):**
+1. **The guard skips the links' own end nodes.** This is the fix: in run 2 the yard link joined directly, with 0 landing repairs.
+2. **Landing repair:** if a link ends on a dead-end node within 2 m of its target, its last piece is rebuilt on its own between the real node before it and the target, with the same curve. Result: `landingRepaired`, per link and in total. Not needed in run 2; kept as insurance.
+3. **Yard level crossings only over ground track:** an elevated track at the course's height counts as an obstacle.
+
+**Also seen:** besides the passenger train, the RailYard02 holds 2 parked `NA_TrainCargoEngine01` cars (`ownedVehicles` 2). Probably harmless.
+
+Rail stays off by default; nothing here is in the release.
+
 ## 15. Final release acceptance, 0.3.1 with running bus lines (buildings worker)
 
 Decision 168: a `git archive` of **66558c8** in `%LOCALAPPDATA%\cs1-to-cs2\final\66558c8` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).

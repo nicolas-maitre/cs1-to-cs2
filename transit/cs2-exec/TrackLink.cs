@@ -789,7 +789,8 @@ namespace Cs1ConvTransit
         }
 
         /// <summary>frontOnly yard level crossings: does the straight course cross (in plan view, within 5 m of height) a
-        /// top-level edge that is not a track (a road, pipe, power line…)? Tracks may be crossed at grade.</summary>
+        /// top-level edge that is not ground track (a road, pipe, power line…, or elevated track)? Ground track may be
+        /// crossed at grade.</summary>
         static bool CrossesNonTrack(float3 a, float3 b, Entity na, Entity nb, out string what)
         {
             what = null;
@@ -808,7 +809,10 @@ namespace Cs1ConvTransit
                     foreach (var e in es)
                     {
                         var pf = Em.GetComponentData<PrefabRef>(e).m_Prefab;
-                        if (skip.Contains(e) || Em.HasComponent<TrackData>(pf)) continue;
+                        // ground track may be crossed at grade; an elevated track at the course's height gives a diamond
+                        // crossing in mid-air that splits the link (round 4 run 4), so it counts as an obstacle (rail round 5)
+                        bool elevatedTrack = Em.HasComponent<Game.Net.Elevation>(e) && math.cmax(math.abs(Em.GetComponentData<Game.Net.Elevation>(e).m_Elevation)) >= 2f;
+                        if (skip.Contains(e) || (Em.HasComponent<TrackData>(pf) && !elevatedTrack)) continue;
                         var c = Em.GetComponentData<Curve>(e).m_Bezier;
                         if (!MathUtils.Intersect(MathUtils.Bounds(c.xz), sb)) continue;
                         float3 p0 = c.a;
@@ -992,6 +996,7 @@ namespace Cs1ConvTransit
             var usedTargets = new HashSet<Entity>();
             var linkEnds = new List<Entity>(); // both end nodes of every link built (touchEnds)
             tangentMode = a != null && a.TryGetValue("tangentLinks", out var tl) && tl is bool tlb && tlb;
+            linkTargets.Clear();
             bool avoidRoads = a != null && a.TryGetValue("avoidRoads", out var ar) && ar is bool arb && arb;
             frontOnly = a != null && a.TryGetValue("frontOnly", out var fo) && fo is bool fob && fob;
             int trimmedEdges = 0;
@@ -1238,6 +1243,7 @@ namespace Cs1ConvTransit
                             CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0f, f)), ep.y, p1.y), en, Entity.Null, e0, h, true, false);
                             CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(f, 1f - fB)), p1.y, p2.y), Entity.Null, Entity.Null, h, h, false, false);
                             CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(1f - fB, 1f)), p2.y, t.Pos.y), Entity.Null, t.Node, h, e1, false, true);
+                            linkTargets.Add(new LinkTarget { Item = item, Node = t.Node, Pos = t.Pos });
                             pendingTemp.Add(item);
                         }
                         item["status"] = dry ? "planned" : "linked";
@@ -1248,7 +1254,7 @@ namespace Cs1ConvTransit
                 if (!done) { item["status"] = "blocked"; item["reason"] = "every candidate course crosses another edge"; }
                 if (tried.Count > 0) item["rejected"] = tried;
             }
-            bool applied = false; int touchedCount = 0, touchedB = 0;
+            bool applied = false; int touchedCount = 0, touchedB = 0, landingRepaired = 0;
             var linkEndPos = new List<float3>();
             foreach (var n in linkEnds) if (Em.Exists(n) && Em.HasComponent<Node>(n)) linkEndPos.Add(Em.GetComponentData<Node>(n).m_Position);
             var guarded = new List<Entity>();
@@ -1271,6 +1277,10 @@ namespace Cs1ConvTransit
                             // two-edge nodes only: also fixing the link ends themselves made it worse (#161 round 2, run 8:
                             // 33 track segments missing instead of 15 and the metro lines lost their paths)
                             if (ce.Count != 2) continue;
+                            // frontOnly (rail round 5): never a link's own end node. A yard link targets a two-edge node on a
+                            // through track; Fixed there kept the link from attaching (a dead-end landing beside it) and
+                            // the target's two edges were gone after a save and reload
+                            if (frontOnly && linkEnds.Contains(n)) continue;
                             // imported roads and tracks alike (a reduced track node merges two plan track segments too);
                             // never building-owned edges (stations, yards)
                             bool top = true; foreach (var e in ce) if (Em.HasComponent<Owner>(e)) top = false;
@@ -1285,6 +1295,67 @@ namespace Cs1ConvTransit
                 for (int i = 0; i < 30; i++) yield return null;
                 foreach (var n in guarded) if (Em.Exists(n) && Em.HasComponent<Game.Net.Fixed>(n)) Em.RemoveComponent<Game.Net.Fixed>(n);
                 foreach (var it in pendingTemp) it["status"] = applied ? "linked" : "not-applied";
+                // frontOnly (rail round 5): landing repair. A link the apply split at a crossing can end on a new dead-end
+                // node beside its target instead of on it (the yard link's landing, round 4 run 4; the yard bridge, round 3
+                // run 5). Rebuild that last piece on its own, from the real node before it to the target node, with the
+                // same curve: a course with no crossing has always attached. Station links too (cheap insurance).
+                if (applied && frontOnly && linkTargets.Count > 0)
+                {
+                    var hd = W.GetOrCreateSystemManaged<TerrainSystem>().GetHeightData(true);
+                    var rebuilt = new List<LinkTarget>();
+                    foreach (var lt in linkTargets)
+                    {
+                        Entity landing = Entity.Null, target = Entity.Null; float lbest = 2f, tbest = 2f;
+                        foreach (var nt in NearNodes(lt.Pos, 2f))
+                        {
+                            float dd = math.distance(Em.GetComponentData<Node>(nt).m_Position, lt.Pos);
+                            var ce = ConnectedEdges(nt);
+                            bool deadLink = ce.Count == 1 && EdgeTrack(ce[0]) != TrackTypes.None && !Em.HasComponent<Owner>(ce[0]) && nt != lt.Node;
+                            if (deadLink) { if (dd < lbest) { lbest = dd; landing = nt; } }
+                            else if (ce.Count >= 1 && dd < tbest) { tbest = dd; target = nt; }
+                        }
+                        if (IsReal(lt.Node) && ConnectedEdges(lt.Node).Count >= 1) target = lt.Node;
+                        if (landing == Entity.Null || target == Entity.Null || landing == target) continue;
+                        var piece = ConnectedEdges(landing)[0];
+                        var ed = Em.GetComponentData<Edge>(piece);
+                        Entity prev = ed.m_Start == landing ? ed.m_End : ed.m_Start;
+                        if (!IsReal(prev)) continue;
+                        var bz = Em.GetComponentData<Curve>(piece).m_Bezier;
+                        if (ed.m_Start == landing) bz = MathUtils.Invert(bz); // prev -> landing
+                        float3 tp = Em.GetComponentData<Node>(target).m_Position, delta = tp - bz.d;
+                        bz.c += delta; bz.d = tp;
+                        var pf = Em.GetComponentData<PrefabRef>(piece).m_Prefab;
+                        float e0 = bz.a.y - TerrainUtils.SampleHeight(ref hd, bz.a), e1 = tp.y - TerrainUtils.SampleHeight(ref hd, tp);
+                        DeleteNet(piece);
+                        rebuilt.Add(new LinkTarget { Item = lt.Item, Node = target, Pos = tp, Prev = prev, Landing = landing, Curve = bz, Prefab = pf, E0 = e0, E1 = e1 });
+                    }
+                    if (rebuilt.Count > 0)
+                    {
+                        yield return null;
+                        foreach (var r in rebuilt) if (IsReal(r.Landing) && ConnectedEdges(r.Landing).Count == 0) DeleteNet(r.Landing);
+                        for (int i = 0; i < 5; i++) yield return null;
+                        foreach (var r in rebuilt) CreateChainCourse(r.Prefab, r.Curve, r.Prev, r.Node, r.E0, r.E1, true, true);
+                        var guarded2 = new List<Entity>();
+                        if (a != null && a.TryGetValue("guardRoads", out var gr2) && gr2 is bool grb2 && grb2) guarded2 = GuardTwoEdgeNodes(rebuilt.ConvertAll(r => r.Pos), F(a, "guardRadius", 600f), RepairEnds(rebuilt));
+                        yield return null;
+                        bool ok2 = Ops.SetApply();
+                        for (int i = 0; i < 30; i++) yield return null;
+                        foreach (var n in guarded2) if (Em.Exists(n) && Em.HasComponent<Game.Net.Fixed>(n)) Em.RemoveComponent<Game.Net.Fixed>(n);
+                        foreach (var r in rebuilt)
+                        {
+                            bool joined = false;
+                            float3 pp = r.Curve.a;
+                            foreach (var tn in NearNodes(r.Pos, 0.5f))
+                                foreach (var e in ConnectedEdges(tn))
+                                {
+                                    var ed2 = Em.GetComponentData<Edge>(e); var on = ed2.m_Start == tn ? ed2.m_End : ed2.m_Start;
+                                    if (math.distance(Em.GetComponentData<Node>(on).m_Position, pp) < 0.5f) joined = true;
+                                }
+                            r.Item["landingRepaired"] = ok2 && joined ? "joined" : ok2 ? "rebuilt, not joined" : "not-applied";
+                        }
+                        landingRepaired = rebuilt.Count;
+                    }
+                }
                 // touchEnds (passed with --interior-yards, opt-in, #159): CS2 doesn't rebuild the lanes of a building's own
                 // track when a link joins its end node, so the yard's track lanes keep their dead-end flags
                 // (StartingLane / EndingLane) and no train can leave the yard. Mark both link ends and every edge at
@@ -1311,7 +1382,7 @@ namespace Cs1ConvTransit
                     touchedCount = touched; touchedB = touchedBuildings;
                 }
             }
-            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "touched", touchedCount }, { "touchedBuildings", touchedB }, { "trimmedEdges", trimmedEdges }, { "guardedNodes", guarded.Count }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
+            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "touched", touchedCount }, { "touchedBuildings", touchedB }, { "trimmedEdges", trimmedEdges }, { "guardedNodes", guarded.Count }, { "landingRepaired", landingRepaired }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
         }
 
         /// <summary>From an imported dead end lying under a station platform, the chain of imported track edges up to
@@ -1458,6 +1529,46 @@ namespace Cs1ConvTransit
             return best;
         }
 
+        class LinkTarget { public Dictionary<string, object> Item; public Entity Node; public float3 Pos; public Entity Prev, Landing, Prefab; public Bezier4x3 Curve; public float E0, E1; }
+
+        /// <summary>Every link built in this tracklink call, with its target node and position (landing repair).</summary>
+        static readonly List<LinkTarget> linkTargets = new List<LinkTarget>();
+
+        /// <summary>Real nodes within r (3D) of p.</summary>
+        static List<Entity> NearNodes(float3 p, float r)
+        {
+            var res = new List<Entity>();
+            var q = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Node>(), ComponentType.ReadOnly<ConnectedEdge>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+            using (var ns = q.ToEntityArray(Allocator.Temp)) foreach (var n in ns) if (math.distance(Em.GetComponentData<Node>(n).m_Position, p) <= r) res.Add(n);
+            q.Dispose();
+            return res;
+        }
+
+        /// <summary>guardRoads for a later apply (landing repair): a temporary Fixed on top-level two-edge nodes near the
+        /// given points (the same rule as the main apply's guard).</summary>
+        static HashSet<Entity> RepairEnds(List<LinkTarget> rs) { var h = new HashSet<Entity>(); foreach (var r in rs) { h.Add(r.Node); h.Add(r.Prev); } return h; }
+
+        static List<Entity> GuardTwoEdgeNodes(List<float3> pts, float radius, HashSet<Entity> except)
+        {
+            var guarded = new List<Entity>();
+            var gq = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Node>(), ComponentType.ReadOnly<ConnectedEdge>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>(), ComponentType.ReadOnly<Owner>(), ComponentType.ReadOnly<Game.Net.Fixed>() } });
+            using (var gn = gq.ToEntityArray(Allocator.Temp))
+                foreach (var n in gn)
+                {
+                    float3 np = Em.GetComponentData<Node>(n).m_Position;
+                    bool near = false; foreach (var p0 in pts) if (math.distance(p0.xz, np.xz) < radius) { near = true; break; }
+                    if (!near) continue;
+                    var ce = ConnectedEdges(n);
+                    if (ce.Count != 2 || except.Contains(n)) continue;
+                    bool top = true; foreach (var e in ce) if (Em.HasComponent<Owner>(e)) top = false;
+                    if (!top) continue;
+                    Em.AddComponentData(n, new Game.Net.Fixed { m_Index = -1 });
+                    guarded.Add(n);
+                }
+            gq.Dispose();
+            return guarded;
+        }
+
         static bool InFront(float3 ep, Entity en, float3 tp)
         {
             var oa = OutDir(en); if (oa == null) return true;
@@ -1524,7 +1635,7 @@ namespace Cs1ConvTransit
             };
             float2 dA = default, arrive = default; bool tan = false;
             if (tangentMode && TangentOk(ep, en, t, out dA, out arrive)) { tan = true; ((Dictionary<string, object>)item["link"])["tangent"] = true; }
-            if (!dry) CreateCourse(prefab, ep, t.Pos, en, t.Node, e0, e1, permanent, tan, dA, arrive);
+            if (!dry) { CreateCourse(prefab, ep, t.Pos, en, t.Node, e0, e1, permanent, tan, dA, arrive); linkTargets.Add(new LinkTarget { Item = item, Node = t.Node, Pos = t.Pos }); }
             item["status"] = dry ? "planned" : "linked";
         }
 

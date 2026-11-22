@@ -89,3 +89,9 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
       - bridge pieces are checked along their curves against roads and track, with ramps sized per end.
     - **The heights gate** counts a missing plan track segment as merged when an imported track of its kind still runs through its midpoint.
     - **Still open:** the yard is linked but no train left it in 300 s (unverified why). Rail stays opt-in.
+
+19. **A link's own end nodes are never guarded (rail round 5, QA §5i): Train Line 1 runs a train from its yard.**
+    - `guardRoads` put a temporary `Fixed` on the yard link's target, a two-edge node on a through track. CS2 then left the landing as a dead end beside it, and the target's segments were lost on reload.
+    - With `frontOnly`, the guard skips every link end node. The mod's rail acceptance on Skibidi 6 km is ok=true, with a moving train on Train Line 1.
+    - **Also added:** landing repair (insurance; it rebuilds a link's last piece if it ends beside its target), and yard level crossings only over ground track.
+    - **Still opt-in:** metro has no yard on this crop (#83).

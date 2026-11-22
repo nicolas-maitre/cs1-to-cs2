@@ -228,7 +228,7 @@ namespace Cs2ImporterMod
                         if (lk != null && P.Bool(lk, "tangent", false)) tangent++;
                     }
                 }
-            r["links"] = new Dictionary<string, object> { { "stations", stations }, { "linked", linked }, { "tangent", tangent }, { "noTarget", noTarget }, { "bridges", P.List(ld, "bridges")?.Count ?? 0 }, { "trimmedEdges", P.Num(ld, "trimmedEdges", 0) }, { "applied", P.Bool(ld, "applied", false) } };
+            r["links"] = new Dictionary<string, object> { { "stations", stations }, { "linked", linked }, { "tangent", tangent }, { "noTarget", noTarget }, { "bridges", P.List(ld, "bridges")?.Count ?? 0 }, { "trimmedEdges", P.Num(ld, "trimmedEdges", 0) }, { "landingRepaired", P.Num(ld, "landingRepaired", 0) }, { "applied", P.Bool(ld, "applied", false) } };
             var yl = P.List(ld, "yards");
             var yardLinks = new List<object>();
             if (yl != null) foreach (var o in yl) { var y = o as Dictionary<string, object>; yardLinks.Add(new Dictionary<string, object> { { "prefab", P.Str(y, "prefab", "") }, { "status", P.Str(y, "status", "") } }); if (P.Str(y, "status", "") == "blocked" || P.Str(y, "status", "") == "too-far" || P.Str(y, "status", "") == "no-network") warnings.Add(P.Str(y, "prefab", "yard") + ": its track could not be joined to the line (" + P.Str(y, "status", "") + "); connect it yourself."); }
