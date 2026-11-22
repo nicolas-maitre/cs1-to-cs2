@@ -937,3 +937,40 @@ Decision 168: a `git archive` of **66558c8** in `%LOCALAPPDATA%\cs1-to-cs2\final
 - **Capacity limit:** Skibidi's 2 idle lines are a capacity limit of the CS1 city's single depot, not a fault. The acceptance reports them as "wait for capacity, not failed".
 
 **Not covered:** imported metro and train lines (rail is opt-in, #99).
+
+## 16. Rail on, evaluation (worker-4)
+
+Three acceptances from main at **fda160a**, run on the working tree after a fresh release build:
+- **Command:** `acceptance.mjs --simulate 300 --mod-set '{"ConnectRail":true}'`, on the standard crops, on Corral Riches.
+- **Settings:** ConnectRail turns on the transit step's rail part and the placer's `alignStations`. The mod's Options were restored exactly after each run (`ConnectRail: false` on disk).
+- **Result:** **all three ok=true**, every gate passed. CS2 was stopped before the lock was released.
+
+| Gate | Skibidi 3 km (`20261122-103852`) | CacaoCity, left-hand (`20261122-104832`) | Westfield (`20261122-105730`) |
+| --- | --- | --- | --- |
+| Roads built | 2035 / 2035 | 684 / 684 | 648 / 648 |
+| **Placer's road guard** | 2015 road edges, **0 gone, 0 rewired** | 583, 0, 0 | 691, 0, 0 |
+| **Heights** | 2032 found; 3 track segments missing, all explained (5 trimmed under stations, 1 merged); **0 unexplained** | 684, 0 missing | 648, 0 missing |
+| **Roads after reload** | **0 of 2032 differ** | 0 of 684 | 0 of 648 |
+| **Lane connections after reload** | 71 junctions, 0 loader failures, 120 / 120 | 68, 0, 167 / 167 | 35, 0, 83 / 83 |
+| Lane directions / turns | 1949 the same / 120 of 120 | 554 the same (left-hand) / 167 of 167 | 647 the same / 83 of 83 |
+| Utility stubs | 8 markers, 8 ok, 0 split | 8, 8 ok, 0 split | 4, 4 ok, 0 split |
+| Report complete | ok | ok | ok |
+| **Bus lines** | **7 of 8 with 22 buses running**; the 8th waits for capacity (the one Bus Depot's 24 buses are all out) | no lines in the city | no lines in the city |
+| **Rail lines** | Metro Line 3: **0 moving**, no path (0 elements, as with rail off in §15) | none | none |
+| **Yards** | none placed. Report: "Metro Line 3: its track does not leave the converted area, so no depot was placed: place a subway yard yourself and connect its track to the line." | – (transit skipped: no lines) | – (transit skipped: no lines) |
+| Station links | 3 elevated metro stations: 5 links (4 smooth, 5 trims), 1 gap bridge (train, 176 m), 0 landing repairs | – | – |
+| Stations aligned | 0 (the 3 elevated metro stations: "the anchored lot overlaps a road; placed at its CS1 spot as before") | – | – |
+| Buildings | 79 / 108 | 26 / 43 | 7 / 13 |
+| Homes supplied | electricity 98.2 %, water 98.3 % | 88.9 / 88.9 % of 9 homes (spawn-variance note, as in §15) | 100 / 100 %; 3 incinerators need a transformer (as in §15) |
+
+**Against §15 (rail off, same crops):**
+- **CacaoCity and Westfield:** no transit lines, so the rail setting changes nothing; the same numbers to the digit.
+- **Skibidi 3 km:**
+  - the same roads, buildings and utilities;
+  - 3 imported track segments are trimmed under the elevated metro stations or merged into the gap bridge, and the heights gate explains all 3;
+  - bus lines 7 of 8 running (6 of 8 in §15; depot capacity, run to run).
+
+**What rail on gives on these crops:** nothing visible.
+- **Metro Line 3** (Skibidi 3 km) still has no path and no vehicles. Its stations are linked, but its track stays inside the crop, so no yard is placed, and the report asks the player to place one.
+- **Trains run only on a crop that a train line leaves:** Skibidi 6 km (§5i, `20261122-102633`) runs Train Line 1 from its edge yard.
+- **Not checked here:** why Metro Line 3 has 0 path elements on the 3 km crop (with rail off too).
