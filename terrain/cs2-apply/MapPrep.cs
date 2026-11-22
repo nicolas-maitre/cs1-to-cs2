@@ -731,8 +731,22 @@ namespace Cs1ConvTerrain
                 if (!IsReal(owner) || !Em.HasBuffer<ConnectedEdge>(owner)) { item["error"] = "owner is not a net node"; continue; }
                 var ce = Em.GetBuffer<ConnectedEdge>(owner, true);
                 item["ownerEdges"] = ce.Length;
-                if (ce.Length != 1) { item["note"] = "owner node has " + ce.Length + " edges (not a stub end)"; continue; }
-                var stub = ce[0].m_Edge;
+                // The owner (the stub's far node) lists its own line or pipe edge, and possibly others: a road or another
+                // line it is locally connected to (in the middle), or a line joined to it. Only edges it really ends (Edge
+                // m_Start / m_End) count, as everywhere in this check; the stub is the line or pipe edge it ends.
+                Entity stub = Entity.Null;
+                var ownerDesc = new List<object>();
+                for (int i = 0; i < ce.Length; i++)
+                {
+                    var e = ce[i].m_Edge;
+                    var pr = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                    var eg = Em.GetComponentData<Edge>(e);
+                    bool endpoint = eg.m_Start == owner || eg.m_End == owner, road = Em.HasComponent<RoadData>(pr);
+                    ownerDesc.Add((road ? "road" : PrefabName(pr)) + (endpoint ? "" : " (middle)"));
+                    if (endpoint && !road && stub == Entity.Null) stub = e;
+                }
+                item["ownerEdgeList"] = ownerDesc;
+                if (stub == Entity.Null) { item["note"] = "the owner node ends no line or pipe edge (not a stub end)"; continue; }
                 var stubPrefab = Em.GetComponentData<PrefabRef>(stub).m_Prefab;
                 // follow the stub's chain (CS2 may cut a stub into several edges where it crosses something) to the first
                 // node that touches a road edge; at most 8 hops
@@ -745,6 +759,7 @@ namespace Cs1ConvTerrain
                     for (int i = 0; i < cb.Length; i++)
                     {
                         var e = cb[i].m_Edge;
+                        if (hops == 0 && e != stub) continue; // first step: along the stub edge itself
                         if (e == via || Em.GetComponentData<PrefabRef>(e).m_Prefab != stubPrefab) continue;
                         var eg = Em.GetComponentData<Edge>(e);
                         if (eg.m_Start != cur && eg.m_End != cur) continue;
