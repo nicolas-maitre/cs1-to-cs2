@@ -747,6 +747,7 @@ namespace Cs1ConvTransit
             var pendingTemp = new List<Dictionary<string, object>>();
             var usedTargets = new HashSet<Entity>();
             var linkEnds = new List<Entity>(); // both end nodes of every link built (touchEnds)
+            tangentMode = a != null && a.TryGetValue("tangentLinks", out var tl) && tl is bool tlb && tlb;
             float maxDist = F(a, "maxDistance", 2500f);
             float gradeLimit = F(a, "maxGrade", 0f); // 0 = no grade limit (default); --interior-yards passes 0.06
             int candidates = (int)F(a, "candidates", 40f);
@@ -775,7 +776,10 @@ namespace Cs1ConvTransit
                     {
                         float3 ep = Em.GetComponentData<Node>(en).m_Position;
                         Target best = default; float bd = F(a, "stationReach", 200f);
-                        foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f) { bd = dd; best = t; } }
+                        float reach0 = bd;
+                        foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f && (!tangentMode || TangentOk(ep, en, t, out _, out _))) { bd = dd; best = t; } }
+                        // tangent mode: no smooth target -> the nearest one, straight, as before
+                        if (tangentMode && best.Node == Entity.Null) { bd = reach0; foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f) { bd = dd; best = t; } } }
                         if (best.Node == Entity.Null) { links.Add(new Dictionary<string, object> { { "from", Id(en) }, { "status", "no-track-end-near" } }); continue; }
                         usedTargets.Add(best.Node);
                         var li = new Dictionary<string, object>();
@@ -866,7 +870,9 @@ namespace Cs1ConvTransit
                         // it can build without a word (run 12: an 8 m link climbing 1.8 m was never built), so only
                         // candidates within that grade and at least 20 m long
                         bool ok = gradeLimit > 0f ? dd <= maxDist && dd >= 20f && math.abs(t.Pos.y - ep.y) <= gradeLimit * dd : dd <= maxDist && dd > 1f;
-                        if (ok) pairs.Add(new KeyValuePair<float, KeyValuePair<Entity, Target>>(dd, new KeyValuePair<Entity, Target>(en, t)));
+                        // tangent mode: smooth candidates sort first (a straight one only when no smooth one exists)
+                        float key = dd + (tangentMode && !TangentOk(ep, en, t, out _, out _) ? 100000f : 0f);
+                        if (ok) pairs.Add(new KeyValuePair<float, KeyValuePair<Entity, Target>>(key, new KeyValuePair<Entity, Target>(en, t)));
                     }
                 }
                 pairs.Sort((p, q) => p.Key.CompareTo(q.Key));
@@ -925,9 +931,8 @@ namespace Cs1ConvTransit
                             if (!hit) continue;
                             if (!Em.HasComponent<Updated>(n)) { Em.AddComponent<Updated>(n); touched++; }
                             foreach (var e in ConnectedEdges(n)) if (!Em.HasComponent<Updated>(e)) { Em.AddComponent<Updated>(e); touched++; }
-                            // and the building owning the joint node (yard / station): its sub-nets and lanes are rebuilt
-                            var ob = TopOwner(n);
-                            if (ob != n && Em.Exists(ob) && Em.HasComponent<Building>(ob) && !Em.HasComponent<Updated>(ob)) { Em.AddComponent<Updated>(ob); touched++; touchedBuildings++; }
+                            // (not the owning building: Updated on a station rebuilds its sub-nets and stops, and the lines
+                            // lost every path in #159 round 3 run 2)
                         }
                     nq.Dispose();
                     for (int i = 0; i < 30; i++) yield return null;
@@ -1047,6 +1052,46 @@ namespace Cs1ConvTransit
             foreach (var s in subs) if (IsReal(s)) Em.AddComponent<Deleted>(s);
         }
 
+        /// <summary>tangentLinks (passed with --interior-yards, opt-in, #159 round 3).</summary>
+        static bool tangentMode;
+
+        /// <summary>The direction a track points out of a node it ends at (its only track edge), or null at a through node.</summary>
+        static float2? OutDir(Entity node)
+        {
+            Entity only = Entity.Null; int k = 0;
+            foreach (var e in ConnectedEdges(node)) if (EdgeTrack(e) != TrackTypes.None) { only = e; k++; }
+            if (k != 1 || !Em.HasComponent<Curve>(only)) return null;
+            var bz = Em.GetComponentData<Curve>(only).m_Bezier; var ed = Em.GetComponentData<Edge>(only);
+            float2 d = ed.m_Start == node ? (bz.a.xz - bz.b.xz) : (bz.d.xz - bz.c.xz);
+            if (math.lengthsq(d) < 1e-6f) d = ed.m_Start == node ? (bz.a.xz - bz.d.xz) : (bz.d.xz - bz.a.xz);
+            return math.normalizesafe(d);
+        }
+
+        /// <summary>Can a smooth link leave `en` along its own track and arrive at t (a dead end: against its outward
+        /// direction; a through node: along the line, either way) within 45° of the straight course on both ends?
+        /// dirA = leaving direction, arrive = arriving direction (both unit, x/z).</summary>
+        static bool TangentOk(float3 ep, Entity en, Target t, out float2 dirA, out float2 arrive)
+        {
+            dirA = default; arrive = default;
+            float2 u = t.Pos.xz - ep.xz; float len = math.length(u); if (len < 1f) return false; u /= len;
+            var oa = OutDir(en); if (oa == null) return false;
+            dirA = oa.Value;
+            float cos45 = 0.7071f;
+            if (math.dot(dirA, u) < cos45) return false;
+            var ob = OutDir(t.Node);
+            if (ob != null) arrive = -ob.Value;
+            else
+            {
+                if (!Em.HasComponent<Curve>(t.Edge)) return false;
+                var bz = Em.GetComponentData<Curve>(t.Edge).m_Bezier; var ed = Em.GetComponentData<Edge>(t.Edge);
+                float2 tg = math.normalizesafe(ed.m_Start == t.Node ? (bz.b.xz - bz.a.xz) : (bz.d.xz - bz.c.xz));
+                // a one-way track only takes a train merging in its travel direction (start -> end); a double track either way
+                string pn = PrefabName(Em.GetComponentData<PrefabRef>(t.Edge).m_Prefab) ?? "";
+                arrive = pn.IndexOf("Oneway", StringComparison.OrdinalIgnoreCase) >= 0 ? tg : (math.dot(tg, u) >= 0 ? tg : -tg);
+            }
+            return math.dot(arrive, u) >= cos45;
+        }
+
         /// <summary>yardLinkPrefab "yard" (passed with --interior-yards, opt-in, #159): build the yard link with the yard's own
         /// track prefab (its "Twoway … Track" exit) instead of the line's double track. A double-track course on the yard's
         /// single two-way exit gets no lane connection at that node, so the yard's trains can't leave it (lanes.reach).</summary>
@@ -1065,18 +1110,30 @@ namespace Cs1ConvTransit
             float e0 = ep.y - TerrainUtils.SampleHeight(ref data, ep), e1 = t.Pos.y - TerrainUtils.SampleHeight(ref data, t.Pos);
             item["link"] = new Dictionary<string, object>
             {
-                { "from", Id(en) }, { "fromPos", V(ep) }, { "to", Id(t.Node) }, { "toPos", V(t.Pos) }, { "distance", distance },
+                { "from", Id(en) }, { "fromPos", V(ep) }, { "to", Id(t.Node) }, { "toPos", V(t.Pos) }, { "distance", math.distance(ep.xz, t.Pos.xz) },
                 { "prefab", PrefabName(prefab) }, { "elevation", new List<object> { e0, e1 } }, { "permanent", permanent },
             };
-            if (!dry) CreateCourse(prefab, ep, t.Pos, en, t.Node, e0, e1, permanent);
+            float2 dA = default, arrive = default; bool tan = false;
+            if (tangentMode && TangentOk(ep, en, t, out dA, out arrive)) { tan = true; ((Dictionary<string, object>)item["link"])["tangent"] = true; }
+            if (!dry) CreateCourse(prefab, ep, t.Pos, en, t.Node, e0, e1, permanent, tan, dA, arrive);
             item["status"] = dry ? "planned" : "linked";
         }
 
         /// <summary>One permanent course between two existing nodes (the importer's / Spike 1b recipe), with end elevations
         /// above the terrain so an elevated network node gets a ramp or bridge.</summary>
-        static void CreateCourse(Entity prefab, float3 a, float3 b, Entity na, Entity nb, float e0, float e1, bool permanent)
+        static void CreateCourse(Entity prefab, float3 a, float3 b, Entity na, Entity nb, float e0, float e1, bool permanent, bool tangent = false, float2 dirA = default, float2 arrive = default)
         {
             Bezier4x3 curve = NetUtils.StraightCurve(a, b);
+            if (tangent)
+            {
+                // leave `a` along its own track's outward direction and arrive at `b` along the target track, so the
+                // joint is a shallow switch CS2 builds lanes for (a sharp joint gets none: #159 round 3)
+                float k = math.distance(a.xz, b.xz) / 3f;
+                curve = new Bezier4x3(a,
+                    new float3(a.x + dirA.x * k, math.lerp(a.y, b.y, 1f / 3f), a.z + dirA.y * k),
+                    new float3(b.x - arrive.x * k, math.lerp(a.y, b.y, 2f / 3f), b.z - arrive.y * k),
+                    b);
+            }
             var def = new CreationDefinition { m_Prefab = prefab, m_RandomSeed = UnityEngine.Random.Range(0, int.MaxValue), m_Flags = (permanent ? CreationFlags.Permanent : 0) | CreationFlags.SubElevation };
             var course = new NetCourse
             {

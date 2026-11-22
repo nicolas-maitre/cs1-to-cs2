@@ -57,7 +57,7 @@ try {
   await step('inspectBefore', () => x({ op: 'yards.inspect' }));
   if (opt('--plan')) {
     // the DECISIONS.md #83 flow: yards.plan (crop edge) → buildings placer → tracklink, or report entries
-    await step('depots', () => transit(['depots', '--plan', resolve(opt('--plan')), '--work-dir', out, ...(flag('--recreate') ? ['--recreate'] : []), ...(flag('--interior-yards') ? ['--interior-yards'] : [])]));
+    await step('depots', () => transit(['depots', '--plan', resolve(opt('--plan')), '--work-dir', out, ...(flag('--recreate') ? ['--recreate'] : []), ...(flag('--interior-yards') ? ['--interior-yards'] : []), ...(flag('--touch-ends') ? ['--touch-ends'] : []), ...(flag('--no-tangent-links') ? ['--no-tangent-links'] : [])]));
   } else {
     await step('tracklink', () => x({ op: 'tracklink', maxDistance: Number(opt('--max-distance', 2500)) }, { phase: 'tool', pump: 'tool' }));
     await b.wait(60);

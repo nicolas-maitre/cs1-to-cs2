@@ -64,3 +64,10 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
 15. **Rail hunt round 2 (#159): the yard and some station joints have no lane connection.** The directed lane graph (`lanes.reach`, validated against CS2's own computed paths) shows the yards' track lanes reach nothing outside the yard. `lanes.joint` shows a building-owned joint node without switch node lanes and with dead-end lane flags on both sides (QA §5d).
     - **Tried, all opt-in behind `--interior-yards`, none fixed it:** the link in the yard's own two-way track prefab (`yardLinkPrefab: "yard"`); Updated on the joint nodes, their edges and the owning building after the apply (`touchEnds`).
     - **Next lead:** build the link with CS2's own net tool, and compare with the one working station joint.
+
+16. **Smooth links (#160, opt-in): a train leaves its yard.** Track links must leave their end along the end's own track and arrive along the target's track (`tangentLinks`, a cubic curve). Sharp joints get no switch lanes in CS2, so nothing can drive through them.
+    - **On Skibidi 6 km:** the rail yard connects to the network (246 lanes reachable from the yard), and a Train Line 1 train runs to its station.
+    - **Opt-in with `--interior-yards`:** `tangentLinks` is on there; `--no-tangent-links` turns it off.
+    - **`touchEnds` breaks line paths:** it's off unless `--touch-ends` is passed, as a diagnostic only.
+    - **Metro needs the yard aligned with the line** (QA §5e).
+    - **Worth considering as a default for station links:** after an acceptance run.

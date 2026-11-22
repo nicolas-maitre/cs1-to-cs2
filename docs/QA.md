@@ -659,3 +659,30 @@ Same procedure as §11 and §12: a `git archive` of **693ba8a** in `%LOCALAPPDAT
 - Check whether `ApplyNetSystem` / `LaneSystem` skip lane generation at a building-owned node joined by a non-owned edge, unless the building's sub-net is re-created.
 
 Everything stays opt-in (`--interior-yards`: interior yards, `maxGrade`, `yardLinkPrefab`, `touchEnds`); trains and metros remain a known limit (#99).
+
+### 5e. Train/metro hunt, round 3 (#160, 6 game runs, `.gamectl/tracklink/r160-run*`): a train runs
+
+**Cause:** a link that meets a track end at a sharp angle gets no lane connection. CS2 only builds switch lanes where tracks meet at a shallow angle.
+- **Game-free diff of the round-2 joints:**
+  - the working station link at (2500, −422) and the one at (1762, −410) leave the platform end along the station axis;
+  - the failing one at (1938, −398) leaves it about 73° off the axis (and climbs 4 m in 23 m);
+  - the yard link leaves the yard's track at about 90°.
+
+**Fix, opt-in with `--interior-yards`:** `tangentLinks`. A link is a cubic curve that leaves its end along that end's own track, and arrives at the target:
+- **at a dead end:** against the target track's outward direction;
+- **at a through node:** along the line. On a one-way track that means its travel direction; on a double track either way.
+
+Smooth targets are preferred, within 45° of the chord at both ends; otherwise the old straight link is used.
+
+**Result** (run 4, fresh `cs1conv-train6k-st3`):
+- the RailYard02's track lanes reach 246 lanes outside the yard (0 in every earlier run);
+- Train Line 1 gets a vehicle;
+- **the train leaves the yard:** it's EnRoute and Boarding at TrainStation03 (2358, 432), about 600 m away, in the saved state of run 5 (`vehicles-r160.json`);
+- metro lines keep their paths (75 and 26 elements).
+
+**Also found:** marking the link ends Updated afterwards (`touchEnds`, round 2) *breaks* the lines. With it, every line lost its paths (runs 2–3). It's now off unless asked for (`--touch-ends`). Marking the owning buildings Updated is removed.
+
+**Metro is still blocked:** the interior SubwayYard02's track ends point south and sit right beside the east–west line, at a right angle. No smooth link fits, so the straight fallback leaves the yard isolated, and its trains stay parked.
+- **Next:** place the yard with its tracks parallel to the line (buildings placer orientation), or give the link a lead-out curve longer than one cubic.
+
+Trains run with the opt-in; metros remain a known limit until the yard can be aligned.
