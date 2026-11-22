@@ -562,3 +562,12 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **What's known:** the depot is on the same road graph as all 145 stops, so the failure is in the directed path (traffic rules, one-way access, or the depot's lot side after the #152 move) or in the line setup.
     - **Next:** worker-4 bisects with directed lane reach and the traffic steps turned off (up to ~6 runs).
     - **Rule for the release:** it waits until bus lines run, or until the store texts and changelogs stop claiming they do. Acceptance must fail when an imported bus line has no vehicle.
+165. **Bus dispatch: the network and traffic rules are ruled out. The release texts are corrected now, and the hunt goes on** (Claude, from worker-4's ~6 runs).
+    - **It never worked:** imported bus lines have never got vehicles in the mod flow; RC2's save shows the same.
+    - **Ruled out:**
+      - the depot's lanes reach every line's first waypoint (directed lane reach);
+      - turning off lane connections, traffic settings and the Traffic mod changes nothing;
+      - lane sizes and the vehicle model are fine;
+      - a fresh test line fails too, and reset requests fail again.
+    - **Next leads:** the depot as our placer builds it (spawn locations and their connected lanes), compared with a depot the game places itself in the same save, then a vanilla test city.
+    - **Meanwhile:** worker-3 corrects every release text (changelogs, Paradox Mods change log and known limits, RELEASE.md, a QA correction note, the guide) so nothing claims bus lines run. The acceptance run fails when an imported bus or tram line has no vehicle (buildings worker).
