@@ -614,3 +614,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Changes:** the guard now skips link ends; a landing repair stays as insurance; yard crossings go over ground track only.
     - **Still missing:** metro has no vehicles, because no yard is invented inside the city (#83).
     - **Next:** an evaluation with rail on, on the standard acceptance crops of all three cities and Skibidi 6 km, to decide whether `ConnectRail` can default to on in the next version. Release 0.3.1 stays 66558c8 with rail opt-in (#169). Changing the default after release is the user's call, since it changes what an import builds.
+172. **Rail on is safe on the standard crops, but stays opt-in until the user decides** (Claude, from worker-4's evaluation, docs/QA.md §16).
+    - **Result:** with `ConnectRail` on, Skibidi 3 km, CacaoCity and Westfield pass every gate. The results are the same as with rail off apart from Skibidi's 3 explained track trims and merges.
+    - **Effect:** none visible on these crops. None has a train line that leaves the area, and Skibidi's metro line gets no yard (#83: a yard is never invented inside the city). Trains run only where a train line leaves the area (Skibidi 6 km, §5i).
+    - **Decision:** the default stays off for release 0.3.1. Turning it on for the next version is a small change once the user agrees.
+    - **Open question:** Skibidi 3 km's Metro Line 3 has no path even with rail off; for a later round.
