@@ -1,6 +1,7 @@
 {
   "name": "cs1conv-terrain",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "CS1 heightmap (.cs1x) to CS2 terrain, and a hot-loaded CS2 exec library that applies it",
   "engines": { "node": ">=20" },

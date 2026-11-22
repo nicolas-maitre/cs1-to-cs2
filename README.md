@@ -122,3 +122,7 @@ node tools/e2e/run.mjs --apply-terrain --cs1x $env:LOCALAPPDATA\cs1-to-cs2\sampl
 
   `terrain/` and `tools/gamectl/` have their own `npm test`, and `cs2-importer/tests/` has the importer's core tests.
 - **Sample data:** scripts read and write under `%LOCALAPPDATA%\cs1-to-cs2\samples\`: `skibidi.cs1x`, `cs2-catalogue.json` and the sample packages.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Cities: Skylines and Cities: Skylines II are trademarks of Paradox Interactive; this project isn't affiliated with Paradox Interactive or Colossal Order. Third-party libraries bundled in the web tool are listed in [web/public/THIRD-PARTY-NOTICES.txt](web/public/THIRD-PARTY-NOTICES.txt).

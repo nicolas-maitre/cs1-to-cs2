@@ -2,6 +2,7 @@
   "name": "gamectl",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Start, stop and drive Cities: Skylines 1/2 through their bridge mods (tools/PROTOCOL.md)",
   "type": "module",
   "bin": {

@@ -1,6 +1,7 @@
 {
   "name": "cs1conv-transit",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "CS1 transit lines (plan.transit) to CS2 stops and lines, through a hot-loaded exec library",
   "engines": { "node": ">=20" },
