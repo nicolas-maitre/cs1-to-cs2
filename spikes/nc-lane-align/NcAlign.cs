@@ -43,6 +43,7 @@ namespace NcAlign
                 case "apply": return new Dictionary<string, object> { { "op", "apply" }, { "applied", SetApply() } };
                 case "inspect": return Delay((int)F(a, "frames", 0), () => Inspect(F(a, "x"), F(a, "z"), F(a, "r", 150)));
                 case "clear": return Clear(F(a, "x"), F(a, "z"), F(a, "r", 150));
+                case "jlanes": return JLanes(a);
                 default: throw new ArgumentException("unknown op " + op);
             }
         }
@@ -169,6 +170,54 @@ namespace NcAlign
                 m_Entity = node, m_Position = nodePos, m_Rotation = NetUtils.GetNodeRotation(MathUtils.Tangent(curve, t)),
                 m_CourseDelta = t, m_ParentMesh = -1, m_Flags = flags,
             };
+        }
+
+        /// <summary>
+        /// jlanes {points:[[id,x,z]...], r=12}: at each point the nearest node with 3+ edges; for each car lane through it
+        /// (node lanes, no master lanes): length, the straight chord between its ends, its largest sideways deviation from
+        /// that chord ("bulge", m) and whether it crosses the chord (an S: it swings out one way and back the other).
+        /// A smooth taper has a small bulge and no crossing; an overshooting curve has a large one.
+        /// </summary>
+        static object JLanes(Dictionary<string, object> a)
+        {
+            float r = F(a, "r", 12);
+            var nodes = All(ComponentType.ReadOnly<Node>(), ComponentType.ReadOnly<ConnectedEdge>());
+            var res = new List<object>();
+            foreach (var po in (IList<object>)a["points"])
+            {
+                var pl = (IList<object>)po;
+                var id = Convert.ToInt64(pl[0]); var p = new float2(Convert.ToSingle(pl[1]), Convert.ToSingle(pl[2]));
+                Entity best = Entity.Null; float bd = r;
+                foreach (var n in nodes)
+                {
+                    if (Em.GetBuffer<ConnectedEdge>(n, true).Length < 3) continue;
+                    float d = math.distance(Em.GetComponentData<Node>(n).m_Position.xz, p);
+                    if (d < bd) { bd = d; best = n; }
+                }
+                if (best == Entity.Null) { res.Add(new Dictionary<string, object> { { "id", id }, { "found", false } }); continue; }
+                var lanes = new List<object>();
+                double maxBulge = 0, sumBulge = 0; int cross = 0, count = 0;
+                var subs = Em.GetBuffer<Game.Net.SubLane>(best, true);
+                for (int i = 0; i < subs.Length; i++)
+                {
+                    var le = subs[i].m_SubLane;
+                    if (!Em.HasComponent<Game.Net.CarLane>(le) || Em.HasComponent<MasterLane>(le) || !Em.HasComponent<Curve>(le)) continue;
+                    var c = Em.GetComponentData<Curve>(le).m_Bezier;
+                    float2 A = c.a.xz, D = c.d.xz, ch = D - A; float cl = math.length(ch);
+                    if (cl < 1f) continue;
+                    var nrm = new float2(-ch.y, ch.x) / cl;
+                    float mx = 0, mn = 0;
+                    for (int k = 1; k < 32; k++) { float t = k / 32f; float dv = math.dot(MathUtils.Position(c, t).xz - A, nrm); mx = math.max(mx, dv); mn = math.min(mn, dv); }
+                    float bulge = math.max(mx, -mn);
+                    bool s = mx > 0.25f && mn < -0.25f;
+                    maxBulge = Math.Max(maxBulge, bulge); sumBulge += bulge; count++; if (s) cross++;
+                    lanes.Add(new Dictionary<string, object> { { "len", R(MathUtils.Length(c)) }, { "chord", R(cl) }, { "bulge", R(bulge) }, { "s", s }, { "a", V2(A) }, { "d", V2(D) } });
+                }
+                var np = Em.GetComponentData<Node>(best).m_Position;
+                res.Add(new Dictionary<string, object> { { "id", id }, { "found", true }, { "node", Id(best) }, { "pos", V(np) }, { "edges", Em.GetBuffer<ConnectedEdge>(best, true).Length },
+                    { "lanes", count }, { "maxBulge", Math.Round(maxBulge, 2) }, { "meanBulge", count == 0 ? 0 : Math.Round(sumBulge / count, 2) }, { "sLanes", cross }, { "detail", lanes } });
+            }
+            return new Dictionary<string, object> { { "op", "jlanes" }, { "junctions", res } };
         }
 
         static object Clear(float x, float z, float r)

@@ -419,6 +419,11 @@ The plan is already in CS2 coordinates, so the importer makes no mapping decisio
   - **Selection:** only ends with |shift| > 5 cm on nodes that aren't free-form.
   - **Importer:** it keeps an `offNode` segment's bezier end points instead of snapping them to the node (CS2 road prefabs have no `StrictNodes`, so an edge may end off its node); nodes stay at the CS1 centres. An importer that doesn't know `offNode` snaps the ends, which is the pre-0.9.0 result.
   - Terrain conform and `utilities` read the shifted beziers.
+- **Node Controller offsets at junctions** (web 0.9.5, docs/DECISIONS.md #157): at a plan node with 3 or more segments, an end whose Node Controller offset is more than 5 m above NC's default for the node type (Custom/Bend/Stretch 8 m, Crossing 2 m, Middle/End 0, at least `minOffset`) has its `bezier` cut back along itself by that offset, at most 45 % of the segment's length, after the shift.
+  - **`ncOffset`:** `[start, end]`, the cut in metres (0 = not cut); the segment also carries `offNode: true`.
+  - Never at 2-segment nodes.
+  - **Importer:** builds it like a shift: the curve ends where the cut is, and CS2 places the node at about the mean of its edges' ends and fills the junction.
+  - Option `ncOffsets` (default on; CLI `--no-nc-offsets`). Terrain conform reads the cut curves.
   - Node Controller offsets, slopes, twists and `deltaHeight` have no CS2 counterpart and stay report-only.
 - **Elevation:** `elevationStart` / `elevationEnd` is the height above terrain at each end, passed to CS2 as the course elevation. It's > 0 for elevated roads and bridges and < 0 for tunnels; ground segments are 0, values under 5 cm are 0.
 - **`kind`:** `ground`, `elevated`, `bridge`, `slope` or `tunnel`.

@@ -4,9 +4,9 @@
 import type { PackageReportItem } from '../types.ts';
 import { plural, tally } from './context.ts';
 import type { PlanContext, SectionResult } from './context.ts';
-import type { NcAlignStats } from './ncalign.ts';
+import type { NcAlignStats, NcOffsetStats } from './ncalign.ts';
 
-export function buildNodeController(ctx: PlanContext, align?: NcAlignStats | null): SectionResult<never> {
+export function buildNodeController(ctx: PlanContext, align?: (NcAlignStats & { offsets?: NcOffsetStats | null }) | null): SectionResult<never> {
   const nc = ctx.city.nodeController;
   const items: PackageReportItem[] = [];
   const tr = ctx.t, label = tr('cat.nodecontroller');
@@ -28,9 +28,9 @@ export function buildNodeController(ctx: PlanContext, align?: NcAlignStats | nul
   return {
     items,
     summary: {
-      id: 'nodecontroller', label, status: !inPlan.length ? 'none' : align?.ends ? 'partial' : 'report-only',
+      id: 'nodecontroller', label, status: !inPlan.length ? 'none' : align?.ends || align?.offsets?.ends ? 'partial' : 'report-only',
       summary: inPlan.length ? tr('sum.nc', { n: inPlan.length, changed: typeChanges }) : tr('sum.nc.none'),
-      details: [...(align?.ends ? [tr('sum.nc.shifts', { n: align.ends, segments: align.segments })] : []), tr('sum.nc.d1'), tr('sum.nc.d2')],
+      details: [...(align?.ends ? [tr('sum.nc.shifts', { n: align.ends, segments: align.segments })] : []), ...(align?.offsets?.junctions ? [tr('sum.nc.offsets', { n: align.offsets.junctions, ends: align.offsets.ends })] : []), tr('sum.nc.d1'), tr('sum.nc.d2')],
     },
   };
 }

@@ -88,7 +88,8 @@ describe.skipIf(!fs.existsSync(SAMPLE))('Skibidi: same terrain, water and connec
     const t = theirsWithPlan(SAMPLE, planFile, 'skibidi-conform');
     const ours = JSON.parse(new TextDecoder().decode(files.find(f => f.path === 'terrain/terrain.json')!.data));
     expect(ours.roadConformed).toBe(true);
-    expect(ours.conform).toMatchObject({ segments: 786, nodes: 659, pixelsChanged: 108500 });
+    // 108500 before NC offsets at junctions (#157): the cut-back curves burn a little less
+    expect(ours.conform).toMatchObject({ segments: 786, nodes: 659, pixelsChanged: 107954 });
     expect(t.meta.conform).toEqual(ours.conform);
     expect(ours.walls?.segments).toBeGreaterThan(0);
     expect(t.meta.walls).toEqual(ours.walls);

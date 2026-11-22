@@ -4,11 +4,12 @@ The CS1 → CS2 converter as a whole. The version is in [`VERSION`](VERSION); th
 
 ## 0.3.1 (2026-11-22)
 
-RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), **importer 0.4.0**, **web tool 0.9.4**, **buildings 0.4.0** (RC3 tested importer 0.3.4, web tool 0.9.3 and buildings 0.3.3; the changes since are listed below).
+RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), **importer 0.4.0**, **web tool 0.9.5**, **buildings 0.4.0** (RC3 tested importer 0.3.4, web tool 0.9.3 and buildings 0.3.3; the changes since are listed below).
 
 **What works now**
 - **Roads at their CS1 heights:** the ground follows zoneable roads; highways and ramps keep their CS1 height with retaining walls or embankments; paths lie on the ground. Each road type's mode can be changed in the web tool. CS1 tunnels stay tunnels.
 - **Roads as in CS1:** vanilla CS2 roads when they match, Road Builder roads otherwise, no invented medians, Node Controller shifts kept, the driving side enforced.
+- **Stretched junctions kept** (web tool 0.9.5, #157): Node Controller offsets at junctions give long, smooth splits and merges instead of kinks and crossing lane lines.
 - **Lane connections and arrows** as in CS1, and they survive a save and reload, like the roads themselves.
 - **Power and water:** electricity and water outside connections at the edge of the imported area, CS1's own power lines and pipes rebuilt, low-voltage power plants linked to the roads. About 99–100 % of homes were supplied in RC3.
 - **Buildings, trees, districts, zoning, bus and tram lines** as in 0.3.0, with a report that names everything left to do by hand.

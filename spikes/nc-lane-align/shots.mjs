@@ -52,6 +52,10 @@ try {
   for (const p of pkgs) {
     const planFile = path.join(p.dir, 'cs1conv-plan.json');
     const plan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
+    if (plan.source?.leftHandTraffic === true) { // a left-hand CS1 city: a fresh left-hand city first
+      await b.newGame('Corral Riches', { name: 'cs1conv-nc-shots-lht' }); await b.pause();
+      await b.exec(LIB, { args: { op: 'drivingside', plan: planFile }, timeout: 120 });
+    }
     log(p.tag, 'import');
     const imp = await b.exec(LIB, { args: { op: 'import', plan: planFile, clear: true, heights: 'flat', offNode: true, ...OFF }, phase: 'tool', pump: 'tool', timeout: 3600 });
     await b.wait(90, 3);

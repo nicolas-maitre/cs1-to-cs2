@@ -177,7 +177,7 @@ export function App() {
   const check = useMemo(() => (loaded ? sectionCheck(loaded.city) : null), [loaded]);
   const opts: BuildOptions | null = useMemo(() => (loaded ? {
     crop: committed, overrides, roads, preferVanilla: conv.preferVanilla !== false, utilitiesNearby: conv.utilitiesNearby === true, zoning: conv.zoning, traffic: conv.traffic, transit: conv.transit, water: conv.water,
-    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, depotMode: conv.depotMode, assetOverrides, assetFallbacks, heightModes, lang,
+    buildings: conv.buildings, districts: conv.districts, objects: conv.objects, surfaces: conv.surfaces, ncOffsets: conv.ncOffsets !== false, depotMode: conv.depotMode, assetOverrides, assetFallbacks, heightModes, lang,
   } : null), [loaded, committed, overrides, roads, conv, assetOverrides, assetFallbacks, heightModes, lang]);
   const { pkg, busy: building, ms, error: buildError, zip: buildZip } = usePackage(loaded, opts, catalogue);
   const [zipping, setZipping] = useState(false);

@@ -15,7 +15,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
 const argv = process.argv.slice(2);
 const has = (k) => argv.includes(k);
-const pos = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--saveload');
+const pos = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--saveload' && argv[i - 1] !== '--splits');
 const out = path.resolve(pos[0]);
 const pkgs = pos.slice(1).map((p) => { const [tag, rest] = p.split('='); const [dir, nodes] = rest.split('@'); return { tag, dir: path.resolve(dir), nodes: nodes ? nodes.split(',').map(Number) : [] }; });
 const log = (...m) => console.error(`[lanes126 ${new Date().toISOString().slice(11, 19)}]`, ...m);
@@ -24,6 +24,10 @@ const OFF = { offsetX: 2000, offsetZ: -4000 };
 fs.mkdirSync(out, { recursive: true });
 execFileSync('dotnet', ['build', '-c', 'Release', '--nologo', '-v', 'q', path.join(repo, 'cs2-importer')], { stdio: ['ignore', 'ignore', 'inherit'] });
 const LIB = path.join(repo, 'cs2-importer', 'bin', 'Release', 'net48', 'Cs2Importer.dll');
+execFileSync('dotnet', ['build', '-c', 'Release', '--nologo', '-v', 'q', path.join(repo, 'spikes', 'nc-lane-align')], { stdio: ['ignore', 'ignore', 'inherit'] });
+const SPIKE = path.join(repo, 'spikes', 'nc-lane-align', 'bin', 'Release', 'net48', 'NcAlign.dll');
+// --splits <dir>: junction lane overshoot (NcAlign jlanes) at the small-angle junctions in <dir>/splits-<city>.json, city = tag before '-'
+const splitsDir = argv.includes('--splits') ? path.resolve(argv[argv.indexOf('--splits') + 1]) : null;
 
 let started = false;
 const S = { started: new Date().toISOString(), runs: [] };
@@ -65,6 +69,17 @@ try {
     const imp = await ex({ op: 'import', plan, clear: true, heights: 'flat', offNode: true, ...OFF }, 3600);
     await b.wait(60, 2);
     const row = { tag: p.tag, built: imp.result?.segments_built, planned: imp.result?.segments_planned, failures: imp.failures_by_reason };
+    if (splitsDir) {
+      const sf = path.join(splitsDir, `splits-${p.tag.split('-')[0]}.json`);
+      if (fs.existsSync(sf)) {
+        const sp = JSON.parse(fs.readFileSync(sf, 'utf8'));
+        const jl = await b.exec(SPIKE, { args: { op: 'jlanes', points: sp.map((x) => [x.node, x.x + OFF.offsetX, x.z + OFF.offsetZ]), r: 35 }, timeout: 300 });
+        fs.writeFileSync(path.join(out, `${p.tag}-jlanes.json`), JSON.stringify(jl, null, 1));
+        const js = jl.junctions.filter((j) => j.found);
+        row.jlanes = { junctions: js.length, of: sp.length, maxBulge: Math.max(0, ...js.map((j) => j.maxBulge)), meanMaxBulge: js.length ? +(js.reduce((a, j) => a + j.maxBulge, 0) / js.length).toFixed(2) : 0, sLanes: js.reduce((a, j) => a + j.sLanes, 0), lanes: js.reduce((a, j) => a + j.lanes, 0) };
+        log(p.tag, 'junction lanes', JSON.stringify(row.jlanes));
+      }
+    }
     for (const id of p.nodes) {
       // CS2's own lanes first, for the before shot
       row['before_' + id] = await view(id, 'cs2-default');

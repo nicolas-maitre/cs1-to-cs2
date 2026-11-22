@@ -9,7 +9,7 @@ import type { Cs1City } from '../core/types.ts';
 import { useI18n } from './i18n.tsx';
 import { Rich } from './Rich.tsx';
 
-export interface ConvOptions { preferVanilla?: boolean; utilitiesNearby?: boolean; zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean; depotMode?: Partial<Record<(typeof RAIL_DEPOT_TYPES)[number], RailDepotMode>> }
+export interface ConvOptions { preferVanilla?: boolean; utilitiesNearby?: boolean; zoning: ZoningOptions; traffic: boolean; transit: boolean; water: boolean; buildings: boolean; districts: boolean; objects: boolean; surfaces: boolean; ncOffsets?: boolean; depotMode?: Partial<Record<(typeof RAIL_DEPOT_TYPES)[number], RailDepotMode>> }
 
 /** Which sections to convert and how zones map. */
 export function ConversionOptions({ value, onChange, city }: { value: ConvOptions; onChange: (v: ConvOptions) => void; city: Cs1City }) {
@@ -60,6 +60,7 @@ export function ConversionOptions({ value, onChange, city }: { value: ConvOption
       {check('districts', t('opt.districts'), !city.districts)}
       {check('objects', t('opt.objects'), !city.trees && !city.props)}
       {check('surfaces', t('opt.surfaces'), !city.imtFillers.some(f => f.markingType === 'Node'))}
+      {check('ncOffsets', t('opt.ncOffsets'), !city.nodeController)}
     </div>
   );
 }

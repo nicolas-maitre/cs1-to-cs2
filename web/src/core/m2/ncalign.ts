@@ -12,11 +12,24 @@
 // CS2 stores no per-end offset, but its road prefabs lack GeometryFlags.StrictNodes, so GenerateEdge keeps a course
 // curve's own end points: an edge may end off its node's centre. The plan therefore carries the shifted curve
 // (`bezier`, ends off the node) and `offNode: true`, and the importer keeps those ends (nodes stay at the CS1 centres).
-// Offsets, slopes, twists and deltaHeight have no CS2 counterpart and stay report-only (nodecontroller.ts).
+//
+// Offsets (docs/DECISIONS.md #157): NC's per-end `offset` is where the segment mesh stops and the node mesh starts, so a
+// large offset spreads a junction out (a long, smooth split or merge). At junctions (3+ plan segments) whose end offset
+// is more than OFFSET_MIN_EXTRA m above NC's default for the node type, the plan curve is cut back along itself by the
+// offset (at most OFFSET_CAP of the segment), off the node like a shift: CS2 then builds a longer junction with gentler
+// lane curves. Not at 2-road nodes: there an offset only moves where two meshes meet, and a pulled-back end makes CS2
+// bend the road through the moved node. Slopes, twists and deltaHeight stay report-only (nodecontroller.ts).
 
 import type { Bezier, NodeControllerSection, PackageReportItem, PlanSegment, Vec3 } from '../types.ts';
 import { plural } from './context.ts';
 import type { PlanContext } from './context.ts';
+
+/** NC's default end offset per node type (NodeStyle.DefaultOffset, read from NC Renewal's IL); clamped to ≥ minOffset. */
+export const NC_DEFAULT_OFFSET: Record<string, number> = { Custom: 8, Bend: 8, Stretch: 8, UTurn: 8, Crossing: 2, Middle: 0, End: 0 };
+/** An end offset counts as the player's when it is more than this (m) above NC's default. */
+export const OFFSET_MIN_EXTRA = 5;
+/** A cut never takes more than this share of the segment's length (a short segment between two stretched junctions). */
+export const OFFSET_CAP = 0.45;
 
 /** Shifts smaller than this (m) are ignored: NC rounding noise. */
 export const MIN_SHIFT = 0.05;
@@ -128,12 +141,104 @@ export function applyNodeControllerShifts(nc: NodeControllerSection | null | und
   return stats;
 }
 
+export interface NcOffsetStats {
+  /** junctions (plan nodes) with at least one end pulled back */
+  junctions: number;
+  /** segment ends pulled back */
+  ends: number;
+  /** ends whose cut was capped at OFFSET_CAP of the segment */
+  capped: number;
+  /** largest cut (m) */
+  maxCut: number;
+  sample: number[];
+}
+
+/** (node id, segment id) → the NC offset of that end, for the ends the player stretched (offset > default + extra). */
+export function stretchedOffsets(nc: NodeControllerSection | null | undefined): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const n of nc?.nodes ?? []) {
+    for (const e of n.segmentEnds ?? []) {
+      const offset = Number(e.offset), min = Number(e.minOffset) || 0;
+      if (e.offset == null || !Number.isFinite(offset) || e.mode === 'FreeForm') continue;
+      const def = Math.max(NC_DEFAULT_OFFSET[n.type] ?? 8, min);
+      if (offset - def > OFFSET_MIN_EXTRA) m.set(`${n.id}:${e.segment}`, offset);
+    }
+  }
+  return m;
+}
+
+const at = (b: Bezier, t: number): Vec3 => { const u = 1 - t; return [0, 1, 2].map(k => u * u * u * b[0][k] + 3 * u * u * t * b[1][k] + 3 * u * t * t * b[2][k] + t * t * t * b[3][k]) as Vec3; };
+const lerp3 = (a: Vec3, b: Vec3, t: number): Vec3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+function splitAt(c: Bezier, t: number): [Bezier, Bezier] {
+  const p01 = lerp3(c[0], c[1], t), p12 = lerp3(c[1], c[2], t), p23 = lerp3(c[2], c[3], t);
+  const a = lerp3(p01, p12, t), b = lerp3(p12, p23, t), m = lerp3(a, b, t);
+  return [[c[0], p01, a, m], [m, b, p23, c[3]]];
+}
+/** The part of b between parameters t0 < t1 (de Casteljau). */
+export function subCurve(b: Bezier, t0: number, t1: number): Bezier {
+  const right = t0 > 0 ? splitAt(b, t0)[1] : b;
+  const t = t0 > 0 ? (t1 - t0) / (1 - t0) : t1;
+  return t >= 1 ? right : splitAt(right, t)[0];
+}
+/** Horizontal arc length of b. */
+export function lengthXZ(b: Bezier, n = 100): number {
+  let acc = 0, prev = at(b, 0);
+  for (let i = 1; i <= n; i++) { const p = at(b, i / n); acc += Math.hypot(p[0] - prev[0], p[2] - prev[2]); prev = p; }
+  return acc;
+}
+/** The parameter at horizontal arc length `dist` from the start (or from the end). */
+export function paramAt(b: Bezier, dist: number, fromEnd: boolean, n = 200): number {
+  let acc = 0, prev = at(b, fromEnd ? 1 : 0);
+  for (let i = 1; i <= n; i++) {
+    const t = fromEnd ? 1 - i / n : i / n, p = at(b, t);
+    acc += Math.hypot(p[0] - prev[0], p[2] - prev[2]); prev = p;
+    if (acc >= dist) return t;
+  }
+  return fromEnd ? 0 : 1;
+}
+
+/**
+ * Applies the Node Controller offsets at junctions to the plan segments in place: `bezier` is cut back at the
+ * stretched ends, `offNode` and `ncOffset` ([start, end] cut in m) are set. Call after the shifts.
+ */
+export function applyNodeControllerOffsets(nc: NodeControllerSection | null | undefined, segments: PlanSegment[]): NcOffsetStats {
+  const stats: NcOffsetStats = { junctions: 0, ends: 0, capped: 0, maxCut: 0, sample: [] };
+  const offsets = stretchedOffsets(nc);
+  if (!offsets.size) return stats;
+  const degree = new Map<number, number>();
+  for (const s of segments) for (const id of [s.start, s.end]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  const junctions = new Set<number>();
+  for (const s of segments) {
+    const want = (node: number) => ((degree.get(node) ?? 0) >= 3 ? offsets.get(`${node}:${s.id}`) : undefined);
+    const o0 = want(s.start), o1 = want(s.end);
+    if (!o0 && !o1) continue;
+    const L = lengthXZ(s.bezier);
+    let c0 = o0 ?? 0, c1 = o1 ?? 0;
+    if (c0 > OFFSET_CAP * L) { c0 = OFFSET_CAP * L; stats.capped++; }
+    if (c1 > OFFSET_CAP * L) { c1 = OFFSET_CAP * L; stats.capped++; }
+    const t0 = c0 ? paramAt(s.bezier, c0, false) : 0, t1 = c1 ? paramAt(s.bezier, c1, true) : 1;
+    if (t1 - t0 < 0.05) continue;
+    s.bezier = subCurve(s.bezier, t0, t1).map(p => [r3(p[0]), r3(p[1]), r3(p[2])]) as Bezier;
+    s.offNode = true;
+    s.ncOffset = [r3(c0), r3(c1)];
+    if (c0) junctions.add(s.start);
+    if (c1) junctions.add(s.end);
+    stats.ends += (c0 ? 1 : 0) + (c1 ? 1 : 0);
+    stats.maxCut = Math.max(stats.maxCut, c0, c1);
+    if (stats.sample.length < 30) stats.sample.push(s.id);
+  }
+  stats.junctions = junctions.size;
+  stats.maxCut = r3(stats.maxCut);
+  return stats;
+}
+
 /**
  * buildPackage's entry point: applies the shifts to the plan segments in place (see applyNodeControllerShifts) and
  * returns the counts plus the report items. Call it right after planSegments / planNodes are built.
  */
-export function alignNcShifts(planSegments: PlanSegment[], ctx: PlanContext): NcAlignStats & { items: PackageReportItem[] } {
+export function alignNcShifts(planSegments: PlanSegment[], ctx: PlanContext, opts: { offsets?: boolean } = {}): NcAlignStats & { items: PackageReportItem[]; offsets: NcOffsetStats | null } {
   const stats = applyNodeControllerShifts(ctx.city.nodeController, planSegments);
+  const off = opts.offsets === false ? null : applyNodeControllerOffsets(ctx.city.nodeController, planSegments);
   const items: PackageReportItem[] = [];
   if (stats.ends) {
     items.push({
@@ -144,5 +249,12 @@ export function alignNcShifts(planSegments: PlanSegment[], ctx: PlanContext): Nc
   }
   if (stats.freeForm) items.push({ level: 'info', kind: 'node-controller', message: `${plural(stats.freeForm, 'free-form road end')} with a Node Controller shift: free-form corners have no CS2 equivalent, the road meets the node centre`, count: stats.freeForm });
   if (stats.clamped) items.push({ level: 'warning', kind: 'node-controller', message: `${plural(stats.clamped, 'short segment')} with a Node Controller shift larger than the segment: the shifted curve was flattened, check it in CS2`, count: stats.clamped });
-  return { ...stats, items };
+  if (off?.ends) {
+    items.push({
+      level: 'info', kind: 'node-controller',
+      message: `${plural(off.junctions, 'junction')} stretched as Node Controller had them: ${plural(off.ends, 'road end')} pulled back by the CS1 offset (up to ${off.maxCut} m${off.capped ? `; ${off.capped} capped at ${Math.round(OFFSET_CAP * 100)} % of their segment` : ''}), so CS2 builds longer junctions with smoother lane curves`,
+      count: off.junctions, cs1: { segments: off.sample },
+    });
+  }
+  return { ...stats, items, offsets: off };
 }

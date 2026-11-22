@@ -86,6 +86,8 @@ export interface BuildOptions {
   heightMode?: HeightMode;
   /** Burn the conform roads into the heightmap when the package is written (default on; #110). */
   roadConform?: boolean;
+  /** Node Controller offsets at junctions: stretched junctions keep their length (default on; #157). */
+  ncOffsets?: boolean;
   /** M3 (#115): the player's power lines and pipes away from the converted roads → plan.utilities (default on). */
   utilities?: boolean;
   /** M3 (#128): power plants, pumps and sewage buildings may move up to 400 m if they don't fit (default off). */
@@ -372,8 +374,9 @@ export function buildPackage(city: Cs1City, opts: BuildOptions): BuiltPackage {
     medianLanes,
     t: translator(opts.lang ?? 'en'), lang: opts.lang ?? 'en',
   };
-  // Node Controller shifts (#107): segment ends off the node centre, as in CS1 (m2/ncalign.ts, worker-5)
-  const ncAlign = alignNcShifts(planSegments, ctx);
+  // Node Controller shifts (#107) and offsets at junctions (#157): segment ends off the node centre, as in CS1
+  // (m2/ncalign.ts, worker-5)
+  const ncAlign = alignNcShifts(planSegments, ctx, { offsets: opts.ncOffsets !== false });
   items.push(...ncAlign.items);
   const zoning = buildZoning(ctx, opts.zoning ?? DEFAULT_ZONING);
   const water = buildWater(ctx, opts.water !== false);

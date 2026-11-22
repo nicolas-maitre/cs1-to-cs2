@@ -301,6 +301,8 @@ export interface PlanSegment {
   offNode?: boolean;
   /** the Node Controller shifts applied at [start, end] (m, + = left looking from the node into the segment). */
   ncShift?: [number, number];
+  /** the Node Controller offsets applied at [start, end] (m): how far the curve was cut back from that junction (#157). */
+  ncOffset?: [number, number];
 }
 
 export interface Plan {

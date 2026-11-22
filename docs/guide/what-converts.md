@@ -59,7 +59,8 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
 | Segment-end shifts (lanes lined up across junctions and lane drops) | Road ends off the node centre, as in CS1 | converts | Not on free-form nodes, which CS2 has no equivalent for. |
-| Node types, offsets, slopes, twists, hidden markings | – | listed in the report only | CS2 builds junction geometry itself. |
+| Offsets at junctions (stretched junctions) | Road ends pulled back, a longer junction | converts | At junctions of 3+ roads, where the offset is more than 5 m above Node Controller's default (at most 45 % of the segment); option "Node Controller offsets at junctions". |
+| Node types, offsets between 2 roads, slopes, twists, hidden markings | – | listed in the report only | CS2 builds junction geometry itself. |
 
 ## Transit
 

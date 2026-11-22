@@ -2,6 +2,10 @@
 
 The web tool (https://nicolas-maitre.github.io/cs1-to-cs2/): it turns a CS1 export (`.cs1x`) into an import package for the CS2 mod. The version is `version` in `web/package.json`. Decision numbers refer to [docs/DECISIONS.md](../docs/DECISIONS.md).
 
+## 0.9.5 (2026-11-22)
+
+- **Node Controller offsets at junctions** (#157): where a player stretched a junction with Node Controller (an end offset more than 5 m above its default, at junctions of 3 or more roads), the roads are pulled back from the node by that offset, at most 45 % of the segment. CS2 then builds a longer junction: splits and merges at small angles taper smoothly instead of kinking, and lane lines no longer overshoot or cross. Not at 2-road nodes. On by default; option "Node Controller offsets at junctions", CLI `--no-nc-offsets`. Plan: `segments[].ncOffset` [start, end] in m, with `offNode`.
+
 ## 0.9.4 (2026-11-22)
 
 - **Phone layout:** the tabs wrap instead of hiding behind a sideways scroll, and the feature table's status badges no longer break mid-word.

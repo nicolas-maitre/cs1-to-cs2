@@ -59,7 +59,8 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
 | Décalages latéraux des extrémités de segment (voies alignées aux carrefours et aux réductions de voies) | Extrémités de route à côté du centre du nœud, comme dans CS1 | converti | Pas sur les nœuds en forme libre, sans équivalent CS2. |
-| Types de nœud, décalages longitudinaux, pentes, torsions, marquages masqués | – | seulement dans le rapport | CS2 construit lui-même la géométrie des carrefours. |
+| Décalages longitudinaux aux carrefours (carrefours allongés) | Extrémités de route reculées, carrefour plus long | converti | Aux carrefours de 3 routes ou plus, quand le décalage dépasse le défaut de Node Controller de plus de 5 m (au plus 45 % du segment) ; option « Décalages Node Controller aux carrefours ». |
+| Types de nœud, décalages entre 2 routes, pentes, torsions, marquages masqués | – | seulement dans le rapport | CS2 construit lui-même la géométrie des carrefours. |
 
 ## Transports
 
