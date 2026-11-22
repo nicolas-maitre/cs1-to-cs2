@@ -542,3 +542,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
       2. build the link with CS2's own net tool flow (as a player would) and compare the joint;
       3. check whether lane generation skips node lanes at a building-owned node joined by a foreign edge.
     - Still opt-in, and outside release 0.3.1 (#158).
+161. **Trains run: tangent track links; next, bring rail linking into the mod for the next release** (Claude, from worker-4's #160 round 3).
+    - **Cause and fix:** CS2 builds switch lanes only where tracks meet at a shallow angle. Our links left yards and some platforms at 73–90°. With `tangentLinks` (a link leaves along its own track and meets the line along it), Skibidi's rail yard reaches the network, and Train Line 1 gets a train that runs and boards at its station (344ae1b, opt-in).
+    - **Mod flow:** the mod's transit step doesn't link station platforms or place crop-edge yards at all today; that only exists in `transit.mjs` (#99). So the next release brings it into the mod: crop-edge rail and subway yards (#83, never invented inside the city), tangent station and yard links, and a line repath. It's on by default, with a setting to turn it off, and needs a mod-flow acceptance on a crop where a train line leaves the area.
+    - **Release 0.3.1 (#158) stays as tested.** This goes into the next version. Metro is still blocked where an interior yard faces the line at a right angle; interior yards stay opt-in.
