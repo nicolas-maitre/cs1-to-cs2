@@ -23,6 +23,8 @@ try {
     catch (e) { out.laneReach[l.name] = { error: e.message }; }
   }
   out.depots = await x({ op: 'depots.check' });
+  // DRYLINK=1: the mod's tracklink as a dry run on yards only (no change to the city): which bridge candidates and why not
+  if (process.env.DRYLINK) out.dryLink = await x({ op: 'tracklink', dryRun: true, stations: false, bridge: false, maxDistance: 2500, tangentLinks: true, yardLinkPrefab: 'yard', avoidRoads: true, guardRoads: true, bridgeYard: true, frontOnly: true }, { phase: 'tool', pump: 'tool' });
   // the yard's joints (its sub-net nodes with a link) and the edges around it (the bridge pieces)
   out.yardJoints = await x({ op: 'lanes.joint' });
   const yard = (out.depots.depots ?? []).find(d => /RailYard|SubwayYard/.test(d.prefab));

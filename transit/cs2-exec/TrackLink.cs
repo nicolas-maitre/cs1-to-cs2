@@ -723,7 +723,35 @@ namespace Cs1ConvTransit
         /// <summary>Does the straight course a→b cross (in plan view) any real edge other than those at its two ends?</summary>
         /// <summary>avoidRoads (the mod's rail step, #161): would the straight course meet a top-level road at grade (within
         /// 5 m of height)? Such a link becomes a level crossing, which splits the imported road into new edges.</summary>
-        static bool CrossesRoad(float3 a, float3 b, Entity na, Entity nb)
+        static bool CrossesRoad(float3 a, float3 b, Entity na, Entity nb) => CrossesNet(a, b, na, nb, false);
+
+        static string lastCross;
+
+        /// <summary>Diagnostic (rail round 4): why bridge candidates were skipped (first 12, then a count).</summary>
+        static void BridgeWhy(Dictionary<string, object> item, Target t, float len, string why)
+        {
+            if (!item.TryGetValue("bridgeRejected", out var o)) item["bridgeRejected"] = o = new List<object>();
+            var l = (List<object>)o;
+            if (l.Count < 12) l.Add(new Dictionary<string, object> { { "to", V(t.Pos) }, { "length", len }, { "why", why } });
+            item["bridgeRejectedCount"] = (item.TryGetValue("bridgeRejectedCount", out var c) ? Convert.ToInt32(c) : 0) + 1;
+        }
+
+        /// <summary>frontOnly yard bridges (rail round 4): does the curve, sampled in 12 pieces, meet a top-level road, or
+        /// any top-level track, within 5 m of height? Run 5's bridge met the elevated one-way track at its own height:
+        /// CS2 made a junction there, split three imported segments and left the bridge's landing unjoined.</summary>
+        static bool CrossesAlong(Bezier4x3 c, Entity na, Entity nb, bool tracks)
+        {
+            float3 p0 = c.a;
+            for (int i = 1; i <= 12; i++)
+            {
+                float3 p1 = MathUtils.Position(c, i / 12f);
+                if (CrossesNet(p0, p1, i == 1 ? na : Entity.Null, i == 12 ? nb : Entity.Null, tracks)) return true;
+                p0 = p1;
+            }
+            return false;
+        }
+
+        static bool CrossesNet(float3 a, float3 b, Entity na, Entity nb, bool tracks)
         {
             var skip = new HashSet<Entity>(ConnectedEdges(na));
             foreach (var e in ConnectedEdges(nb)) skip.Add(e);
@@ -739,7 +767,8 @@ namespace Cs1ConvTransit
                 using (var es = q.ToEntityArray(Allocator.Temp))
                     foreach (var e in es)
                     {
-                        if (skip.Contains(e) || !Em.HasComponent<RoadData>(Em.GetComponentData<PrefabRef>(e).m_Prefab)) continue;
+                        var epf = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                        if (skip.Contains(e) || !(Em.HasComponent<RoadData>(epf) || (tracks && Em.HasComponent<TrackData>(epf)))) continue;
                         var c = Em.GetComponentData<Curve>(e).m_Bezier;
                         if (!MathUtils.Intersect(MathUtils.Bounds(c.xz), sb)) continue;
                         float3 p0 = c.a;
@@ -749,7 +778,47 @@ namespace Cs1ConvTransit
                             if (MathUtils.Intersect(seg, new Line2.Segment(p0.xz, p1.xz), out float2 t) && t.x > 0.01f && t.x < 0.99f)
                             {
                                 float ly = math.lerp(a.y, b.y, t.x), ry = math.lerp(p0.y, p1.y, t.y);
-                                if (math.abs(ly - ry) < 5f) return true;
+                                if (math.abs(ly - ry) < 5f) { lastCross = PrefabName(Em.GetComponentData<PrefabRef>(e).m_Prefab) + " at " + (int)p0.x + "," + (int)p0.z + " y " + (int)ry + " vs " + (int)ly; return true; }
+                            }
+                            p0 = p1;
+                        }
+                    }
+            }
+            finally { q.Dispose(); }
+            return false;
+        }
+
+        /// <summary>frontOnly yard level crossings: does the straight course cross (in plan view, within 5 m of height) a
+        /// top-level edge that is not a track (a road, pipe, power line…)? Tracks may be crossed at grade.</summary>
+        static bool CrossesNonTrack(float3 a, float3 b, Entity na, Entity nb, out string what)
+        {
+            what = null;
+            var skip = new HashSet<Entity>(ConnectedEdges(na));
+            foreach (var e in ConnectedEdges(nb)) skip.Add(e);
+            var seg = new Line2.Segment(a.xz, b.xz);
+            var sb = new Bounds2(math.min(a.xz, b.xz) - 2f, math.max(a.xz, b.xz) + 2f);
+            var q = Em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Curve>(), ComponentType.ReadOnly<PrefabRef>() },
+                None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>(), ComponentType.ReadOnly<Owner>() },
+            });
+            try
+            {
+                using (var es = q.ToEntityArray(Allocator.Temp))
+                    foreach (var e in es)
+                    {
+                        var pf = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                        if (skip.Contains(e) || Em.HasComponent<TrackData>(pf)) continue;
+                        var c = Em.GetComponentData<Curve>(e).m_Bezier;
+                        if (!MathUtils.Intersect(MathUtils.Bounds(c.xz), sb)) continue;
+                        float3 p0 = c.a;
+                        for (int i = 1; i <= 8; i++)
+                        {
+                            float3 p1 = MathUtils.Position(c, i / 8f);
+                            if (MathUtils.Intersect(seg, new Line2.Segment(p0.xz, p1.xz), out float2 t) && t.x > 0.01f && t.x < 0.99f)
+                            {
+                                float ly = math.lerp(a.y, b.y, t.x), ry = math.lerp(p0.y, p1.y, t.y);
+                                if (math.abs(ly - ry) < 5f) { what = Id(e) + " " + PrefabName(pf); return true; }
                             }
                             p0 = p1;
                         }
@@ -979,6 +1048,20 @@ namespace Cs1ConvTransit
                                 li["trim"] = new Dictionary<string, object> { { "edges", ce.Count }, { "deadEnd", V(best.Pos) }, { "to", V(beyondT.Pos) }, { "overlap", -along } };
                                 trimEdges.AddRange(ce); trimNodes.AddRange(cn); trimTo.Add(beyondT.Node); trimmedEdges += ce.Count;
                                 usedTargets.Add(beyondT.Node);
+                                // frontOnly (rail round 4): other dead ends under this platform whose chain ends at the same
+                                // node are trimmed too. Otherwise that node keeps two edges, CS2's node reduction merges them
+                                // and the node (the link's target) is gone: the terminus link was lost (run 2)
+                                if (frontOnly)
+                                    foreach (var d2 in deadEnds)
+                                    {
+                                        if (d2.Node == best.Node || usedTargets.Contains(d2.Node) || !UnderPlatform(ep, en, d2.Pos, a)) continue;
+                                        var ce2 = new List<Entity>(); var cn2 = new List<Entity>();
+                                        if (TrimChain(d2, y.Track, ep, dir, F(a, "beyond", 8f), ce2, cn2, out Target to2, out string _) && to2.Node == beyondT.Node)
+                                        {
+                                            trimEdges.AddRange(ce2); trimNodes.AddRange(cn2); trimmedEdges += ce2.Count; usedTargets.Add(d2.Node);
+                                            li["trimSiblings"] = (li.TryGetValue("trimSiblings", out var ts) ? Convert.ToInt32(ts) : 0) + 1;
+                                        }
+                                    }
                                 best = beyondT; bd = math.distance(ep.xz, beyondT.Pos.xz);
                             }
                             else li["overlap"] = new Dictionary<string, object> { { "deadEnd", V(best.Pos) }, { "behind", -along }, { "notTrimmed", why } };
@@ -1028,6 +1111,7 @@ namespace Cs1ConvTransit
             {
                 var li = kv.Key; var en = kv.Value.Key; var t = kv.Value.Value;
                 if (!IsReal(en) || !IsReal(t.Node)) { li["status"] = "node-gone"; continue; }
+                if (frontOnly && !IsReal(t.Edge)) { var re = AwayEdge(t.Node, Em.GetComponentData<Node>(en).m_Position); if (re != Entity.Null) t.Edge = re; }
                 Make(li, en, t, math.distance(Em.GetComponentData<Node>(en).m_Position.xz, t.Pos.xz), ref data, dry, false);
                 linkEnds.Add(en); linkEnds.Add(t.Node);
                 if (!dry) pendingTemp.Add(li);
@@ -1091,6 +1175,22 @@ namespace Cs1ConvTransit
                     if (!dry) pendingTemp.Add(item);
                     done = true;
                 }
+                // frontOnly (rail round 4): a smooth course that crosses only track at grade (never a road: those pairs are
+                // already out) becomes a rail level crossing, built the player's way (Temp + apply); CS2 makes a crossing
+                // node there. Tried before a bridge: every bridge met the elevated one-way track at its height (run 3)
+                if (!done && frontOnly && avoidRoads)
+                    for (int i = 0; i < pairs.Count && i < candidates && !done; i++)
+                    {
+                        if (pairs[i].Key >= 100000f) break; // smooth candidates sort first
+                        var en = pairs[i].Value.Key; var t = pairs[i].Value.Value;
+                        float3 ep = Em.GetComponentData<Node>(en).m_Position;
+                        if (CrossesNonTrack(ep, t.Pos, en, t.Node, out string what)) { BridgeWhy(item, t, pairs[i].Key, "level crossing: crosses " + what); continue; }
+                        Make(item, en, YardPrefab(a, t, en), pairs[i].Key, ref data, dry, false);
+                        linkEnds.Add(en); linkEnds.Add(t.Node);
+                        item["crossing"] = "track";
+                        if (!dry) pendingTemp.Add(item);
+                        done = true;
+                    }
                 // bridgeYard (the mod's rail step, #161 round 2): every course crosses a road at grade, so try a bridge:
                 // ramp up to `bridgeHeight` above the terrain, an elevated span, ramp down, each piece clear of every
                 // road by 5 m in height; ramps at most maxGrade (default 6 %), so only long enough candidates qualify
@@ -1107,27 +1207,37 @@ namespace Cs1ConvTransit
                         // frontOnly (rail round 2026-11-22): each ramp just long enough for the height at maxGrade (at
                         // most 40 % of the course each), and only smooth candidates: a straight course from the yard's
                         // far end doubled back over the yard (run 3), and a joint that sharp gets no lanes (#160)
-                        float f = frontOnly ? h / (g * math.max(len, 1f)) : 0.25f;
-                        if (frontOnly ? f > 0.4f : len * 0.25f * g < h) continue; // ramps too steep for this length
+                        // frontOnly: each ramp sized to the height it climbs at that end (a target on elevated track
+                        // needs less), together at most 90 % of the course (rail round 4)
+                        float eA = math.max(0f, ep.y - TerrainUtils.SampleHeight(ref data2, ep)), eB = math.max(0f, t.Pos.y - TerrainUtils.SampleHeight(ref data2, t.Pos));
+                        float f = frontOnly ? math.max(0.05f, (h - math.min(eA, h)) / (g * math.max(len, 1f))) : 0.25f;
+                        float fB = frontOnly ? math.max(0.05f, (h - math.min(eB, h)) / (g * math.max(len, 1f))) : 0.25f;
+                        if (frontOnly ? f + fB > 0.9f : len * 0.25f * g < h) { BridgeWhy(item, t, len, "ramps too steep"); continue; } // ramps too steep for this length
                         float2 dA, arr; bool tan = TangentOk(ep, en, t, out dA, out arr);
-                        if (!tan && frontOnly) continue;
+                        if (!tan && frontOnly) { BridgeWhy(item, t, len, "not smooth"); continue; }
                         if (!tan) { dA = math.normalizesafe(t.Pos.xz - ep.xz); arr = dA; }
                         float k = len / 3f;
                         var curve = new Bezier4x3(ep, new float3(ep.x + dA.x * k, math.lerp(ep.y, t.Pos.y, 1f / 3f), ep.z + dA.y * k), new float3(t.Pos.x - arr.x * k, math.lerp(ep.y, t.Pos.y, 2f / 3f), t.Pos.z - arr.y * k), t.Pos);
-                        float3 p1 = MathUtils.Position(curve, f), p2 = MathUtils.Position(curve, 1f - f);
+                        float3 p1 = MathUtils.Position(curve, f), p2 = MathUtils.Position(curve, 1f - fB);
                         p1.y = TerrainUtils.SampleHeight(ref data2, p1) + h; p2.y = TerrainUtils.SampleHeight(ref data2, p2) + h;
-                        if (CrossesRoad(ep, p1, en, Entity.Null) || CrossesRoad(p1, p2, Entity.Null, Entity.Null) || CrossesRoad(p2, t.Pos, Entity.Null, t.Node)) continue;
+                        if (frontOnly)
+                        {
+                            if (CrossesAlong(Lift(MathUtils.Cut(curve, new float2(0f, f)), ep.y, p1.y), en, Entity.Null, true)
+                                || CrossesAlong(Lift(MathUtils.Cut(curve, new float2(f, 1f - fB)), p1.y, p2.y), Entity.Null, Entity.Null, true)
+                                || CrossesAlong(Lift(MathUtils.Cut(curve, new float2(1f - fB, 1f)), p2.y, t.Pos.y), Entity.Null, t.Node, true)) { BridgeWhy(item, t, len, "crosses " + lastCross); continue; }
+                        }
+                        else if (CrossesRoad(ep, p1, en, Entity.Null) || CrossesRoad(p1, p2, Entity.Null, Entity.Null) || CrossesRoad(p2, t.Pos, Entity.Null, t.Node)) continue;
                         var yt = YardPrefab(a, t, en);
                         var prefab = yt.Prefab != Entity.Null ? yt.Prefab : Em.GetComponentData<PrefabRef>(t.Edge).m_Prefab;
                         float e0 = ep.y - TerrainUtils.SampleHeight(ref data2, ep), e1 = t.Pos.y - TerrainUtils.SampleHeight(ref data2, t.Pos);
-                        item["link"] = new Dictionary<string, object> { { "from", Id(en) }, { "fromPos", V(ep) }, { "to", Id(t.Node) }, { "toPos", V(t.Pos) }, { "distance", len }, { "prefab", PrefabName(prefab) }, { "bridge", new List<object> { V(p1), V(p2) } }, { "bridgeHeight", h }, { "ramp", f }, { "smooth", tan } };
+                        item["link"] = new Dictionary<string, object> { { "from", Id(en) }, { "fromPos", V(ep) }, { "to", Id(t.Node) }, { "toPos", V(t.Pos) }, { "distance", len }, { "prefab", PrefabName(prefab) }, { "bridge", new List<object> { V(p1), V(p2) } }, { "bridgeHeight", h }, { "ramp", f }, { "rampEnd", fB }, { "smooth", tan } };
                         if (!dry)
                         {
                             // pieces of the one smooth curve (MathUtils.Cut), so each joint keeps the tangent: a straight
                             // ramp would leave the yard track at an angle, which gets no lanes (#160)
                             CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0f, f)), ep.y, p1.y), en, Entity.Null, e0, h, true, false);
-                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(f, 1f - f)), p1.y, p2.y), Entity.Null, Entity.Null, h, h, false, false);
-                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(1f - f, 1f)), p2.y, t.Pos.y), Entity.Null, t.Node, h, e1, false, true);
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(f, 1f - fB)), p1.y, p2.y), Entity.Null, Entity.Null, h, h, false, false);
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(1f - fB, 1f)), p2.y, t.Pos.y), Entity.Null, t.Node, h, e1, false, true);
                             pendingTemp.Add(item);
                         }
                         item["status"] = dry ? "planned" : "linked";
@@ -1329,6 +1439,23 @@ namespace Cs1ConvTransit
             var oa = OutDir(en); if (oa == null) return false;
             float2 rel = (tp - ep).xz; float along = math.dot(rel, oa.Value), lateral = math.abs(math.dot(rel, new float2(-oa.Value.y, oa.Value.x)));
             return along < -1f && along > -F(a, "overlapAlong", 80f) && lateral < F(a, "overlapLateral", 16f);
+        }
+
+        /// <summary>After a trim (rail round 4): the target node's remaining top-level track edge whose far end lies most
+        /// away from `from`, for the link's arriving tangent (the trimmed edge is gone, so the link was built straight).</summary>
+        static Entity AwayEdge(Entity node, float3 from)
+        {
+            Entity best = Entity.Null; float bd = float.MinValue;
+            float3 np = Em.GetComponentData<Node>(node).m_Position;
+            foreach (var e in ConnectedEdges(node))
+            {
+                if (EdgeTrack(e) == TrackTypes.None || Em.HasComponent<Owner>(e) || !Em.HasComponent<Curve>(e)) continue;
+                var ed = Em.GetComponentData<Edge>(e);
+                float3 op = Em.GetComponentData<Node>(ed.m_Start == node ? ed.m_End : ed.m_Start).m_Position;
+                float sc = math.dot(math.normalizesafe((op - np).xz), math.normalizesafe((np - from).xz));
+                if (sc > bd) { bd = sc; best = e; }
+            }
+            return best;
         }
 
         static bool InFront(float3 ep, Entity en, float3 tp)

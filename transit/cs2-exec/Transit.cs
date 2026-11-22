@@ -695,7 +695,10 @@ namespace Cs1ConvTransit
                 {
                     var c = Em.GetComponentData<Curve>(e).m_Bezier;
                     float best = float.MaxValue; float bt = 0;
-                    for (int i = 0; i <= 16; i++) { float d = math.distance(MathUtils.Position(c, i / 16f).xz, q); if (d < best) { best = d; bt = i / 16f; } }
+                    // sampled by length (every ~1 m, at least 16 pieces): a long edge merged by CS2's node reduction was missed
+                    // at 17 samples (rail round 4)
+                    int ns = math.clamp((int)(MathUtils.Length(c.xz) / 1f), 16, 1024);
+                    for (int i = 0; i <= ns; i++) { float d = math.distance(MathUtils.Position(c, i / (float)ns).xz, q); if (d < best) { best = d; bt = i / (float)ns; } }
                     if (best > r) continue;
                     var pf = Em.GetComponentData<PrefabRef>(e).m_Prefab;
                     var ed = Em.GetComponentData<Edge>(e);

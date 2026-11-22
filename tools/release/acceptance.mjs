@@ -223,9 +223,25 @@ try {
     const trimmed = Number(report.transit?.rail?.links?.trimmedEdges ?? 0);
     const missingTrack = missingSegs.filter(isTrack).length, missingOther = missingSegs.length - missingTrack;
     res.missingTrack = missingTrack; res.missingOther = missingOther; res.railTrimmed = trimmed;
-    // the op's own count (it skips zero-length segments), less the track segments trimmed under stations
-    const unexplained = (h.missing ?? missingSegs.length) - Math.min(trimmed, missingTrack);
-    if (unexplained > (imp.segments_failed ?? 0)) bad.push(`heights: ${unexplained} plan segments without a CS2 road (${missingOther} road, ${missingTrack} track of which ${trimmed} trimmed under stations), the import failed ${imp.segments_failed ?? 0}`);
+    // rail round 4: a missing plan track segment whose course still carries an imported (unowned) CS2 track of its kind
+    // was merged into a longer edge (CS2's node reduction at a link's end) or split by a junction: the track is there,
+    // only the plan's endpoints are gone. Checked at the segment's midpoint (2 m across, 3 m in height).
+    const merged = [];
+    if (missingTrack > 0 && fs.existsSync(TRANSIT_LIB)) {
+      const mt = missingSegs.filter(isTrack).filter((sg) => Array.isArray(sg.bezier) && sg.bezier.length === 4);
+      const mid = (bz) => [0, 1, 2].map((k) => 0.125 * bz[0][k] + 0.375 * bz[1][k] + 0.375 * bz[2][k] + 0.125 * bz[3][k]);
+      const at = await b.exec(TRANSIT_LIB, { type: TRANSIT_TYPE, args: { op: 'edges.at', points: mt.map((sg) => { const m = mid(sg.bezier); return [m[0], m[2]]; }), r: 2 }, timeout: 300 }).catch(() => null);
+      (at ?? []).forEach((p, i) => {
+        const sg = mt[i], m = mid(sg.bezier), subway = /Subway/i.test(plan.prefabs[sg.prefab]?.name ?? sg.prefab);
+        const hit = (p.edges ?? []).find((e) => e.track && !e.owner && Math.abs(e.y - m[1]) < 3 && /Subway/i.test(e.prefab) === subway);
+        if (hit) merged.push({ id: sg.id, edge: hit.edge, prefab: hit.prefab });
+      });
+    }
+    res.mergedTrack = merged.length; if (merged.length) res.mergedTrackIds = merged.map((x) => x.id);
+    const goneTrack = missingTrack - merged.length;
+    // the op's own count (it skips zero-length segments), less the merged track and the track trimmed under stations
+    const unexplained = (h.missing ?? missingSegs.length) - merged.length - Math.min(trimmed, goneTrack);
+    if (unexplained > (imp.segments_failed ?? 0)) bad.push(`heights: ${unexplained} plan segments without a CS2 road (${missingOther} road, ${missingTrack} track of which ${merged.length} merged into a longer track edge and ${trimmed} trimmed under stations), the import failed ${imp.segments_failed ?? 0}`);
     if (imp.tunnel_planned != null && imp.cs1_tunnel_segments_built !== imp.tunnel_planned) bad.push(`tunnels: ${imp.cs1_tunnel_segments_built} of ${imp.tunnel_planned} CS1 tunnel segments built as tunnels`);
     if (bad.length) throw new Error(bad.join('; ') + ` (${JSON.stringify(res)})`);
     return res;

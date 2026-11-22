@@ -79,3 +79,13 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
     - **Result:** on Skibidi 6 km, the yard's train leaves the yard and runs on Train Line 1 (1 of 1), and every road gate stays green.
     - **Still open:** the bridge descent meets the elevated one-way track at the same height, and its landing isn't joined (heights: 6 unexplained missing segments). Train Line 1 still has no path, because the west terminus sits 14–30 m off CS1's tracks and its link stays straight.
     - **Why opt-in:** the heights gate fails, and the train runs only through an accidental junction.
+
+18. **Rail round 4 (QA §5h): Train Line 1 gets its own path, and the opt-in rail acceptance passes every gate.**
+    - **With `ConnectRail`:**
+      - the placer anchors train stations on CS1's track (buildings decision 170);
+      - `frontOnly` also trims every dead end under a platform that ends at the same node, so CS2's node reduction can't remove the link's target;
+      - links after a trim arrive along the remaining track;
+      - yard courses may cross track at grade (a rail level crossing, never a road), tried before a bridge;
+      - bridge pieces are checked along their curves against roads and track, with ramps sized per end.
+    - **The heights gate** counts a missing plan track segment as merged when an imported track of its kind still runs through its midpoint.
+    - **Still open:** the yard is linked but no train left it in 300 s (unverified why). Rail stays opt-in.

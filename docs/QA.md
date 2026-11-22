@@ -819,6 +819,54 @@ Rail stays off by default.
 
 Rail stays off by default; nothing here is in the release.
 
+### 5h. Rail in the mod, round 4 (4 game runs on a1f3e34 + working copy; opt-in `ConnectRail`, which now also turns on the placer's `alignStations` (buildings decision 170); `.gamectl/acceptance/20261122-091216`, `-092623`, `-093831`, `.gamectl/tracklink/rail-reach-r5-2.json`)
+
+**Result (run 4, `20261122-093831`, Skibidi 6 km): ok=true, every gate passes with rail on.**
+- **Train Line 1 has its own path: 180 elements** (0 in every earlier run).
+- **Heights:** 24 track segments missing, 0 unexplained:
+  - 17 are trimmed under stations;
+  - 10 are merged into a longer track edge or split by a junction (the track is still there; only the plan's endpoints are gone).
+- **Road gates:**
+  - placer's road guard 3263 road edges, 0 gone, 0 rewired;
+  - roads-reload 0 of 3400 changed;
+  - lane connections after reload 468 / 468;
+  - lane directions all the same (2096 two-way, 1005 one-way, 24 asymmetric);
+  - utility stubs 8 ok, 0 split.
+- **Not yet: no train runs.** The RailYard02 now links, by a smooth course with a level crossing over a train track, but no train left it within 300 s. Run 5 of §5g had a train only through the accidental junction with the elevated one-way track. Unverified: the yard's lane reach in this save (the runs were used up).
+- **Bus lines:** 9 of 16 with 21 buses running; the depot is out of vehicles (capacity, not failed). Metro 0 of 3 (no yard, #83).
+
+**What changed, opt-in only:**
+1. **Stations on the CS1 track** (buildings worker, `alignStations`): both train stations are anchored on CS1's track, shifted 6.0 m and 12.8 m across.
+   - When the anchored lot overlaps a road, the station is placed at its CS1 spot as before (`stationsAnchorBlocked` 4, the 3 elevated metro stations among them).
+   - Run 1 had no such fallback, so those 3 failed and the gap bridges joined across their stops.
+2. **Sibling trims** (`frontOnly`): every dead end under a platform whose chain ends at the same node is trimmed. Otherwise that node keeps 2 edges, CS2's node reduction merges them, and the terminus link's target is gone (run 2: the link was lost).
+3. **After a trim,** the link takes the target's remaining track edge leading away from the platform, so it's built smooth.
+4. **Yard bridges:**
+   - each piece is checked along its curve against roads and top-level track (5 m in height);
+   - each ramp is sized to the height it climbs at that end;
+   - the rejection reasons go to the report (`bridgeRejected`).
+   - Every bridge candidate met the elevated one-way track at its own height (runs 1–3).
+5. **Yard level crossings:** a smooth yard course that crosses only track at grade, never a road, is built the player's way, and CS2 makes the crossing node. It's tried before a bridge.
+6. **Heights gate** (`acceptance.mjs`): a missing plan track segment whose midpoint still carries an imported track of its kind counts as merged, not gone.
+   - `edges.at` now samples an edge about every metre; at 17 samples, a long merged edge looked 8 m away.
+   - The merged ids are in the result (`mergedTrackIds`).
+   - **Caveat:** a segment split by an unwanted junction also counts as merged.
+
+**Runs:**
+
+| Run | Train Line 1 path | Unexplained missing track | Yard | Train running |
+| --- | --- | --- | --- | --- |
+| 1 (align) | 0 | 3 | blocked | 0 |
+| 2 (load-only diagnostics) | – | – | – | – |
+| 3 (+ sibling trims, ramp sizing) | **180** | 1 (counting) | blocked | 0 |
+| 4 (+ level crossing, length sampling) | **180** | **0** | linked | 0 |
+
+**Next:**
+- With the yard linked, check why no train leaves: `lanes.reach` from the yard on `cs1conv-acceptance-20261122-093831`, the yard's own lanes vs the crossing node.
+- Check the joint at the elevated one-way track the course lands on, (2546, 518) at 10.75 m.
+
+Rail stays off by default; nothing here is in the release.
+
 ## 15. Final release acceptance, 0.3.1 with running bus lines (buildings worker)
 
 Decision 168: a `git archive` of **66558c8** in `%LOCALAPPDATA%\cs1-to-cs2\final\66558c8` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).
