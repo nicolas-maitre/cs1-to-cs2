@@ -9,8 +9,10 @@
   <!-- Paradox Mods id: empty until the first upload, then fill it in so later uploads update the same mod -->
   <ModId Value="" />
   <DisplayName Value="CS1 → CS2 Importer" />
-  <ShortDescription Value="Rebuild your Cities: Skylines city in Cities: Skylines II: roads, terrain, water, zones, traffic rules, buildings, trees and transit lines." />
+  <ShortDescription Value="Rebuild your Cities: Skylines city in Cities: Skylines II: roads, terrain, zones, buildings and transit. Made with AI coding assistance." />
   <LongDescription>
+**Made with AI:** the code of this mod was written with AI coding assistance (Anthropic's Claude) and tested in game by its author. Please report any problem you find.
+
 Brings a city from **Cities: Skylines** into **Cities: Skylines II**.
 
 How it works:

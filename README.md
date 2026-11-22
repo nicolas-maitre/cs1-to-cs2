@@ -2,6 +2,8 @@
 
 Rebuild a **Cities: Skylines** (CS1) city as a working **Cities: Skylines II** (CS2) city.
 
+> **Made with AI:** the code of this project (both mods and the web tool) was written with AI coding assistance (Anthropic's Claude) and tested in game by its author. Please report any problem you find.
+
 ```
 CS1 + Exporter mod ──▶ city.cs1x ──▶ web tool (crop, mapping, checks) ──▶ import package ──▶ CS2 + Importer mod ──▶ CS2 city
 ```

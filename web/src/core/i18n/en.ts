@@ -88,6 +88,7 @@ export const EN = {
 
   // ---------------------------------------------------------------- landing
   'landing.title': 'Bring your Cities: Skylines city to Cities: Skylines II',
+  'landing.ai': 'Made with AI: the code of this tool and of its two mods was written with AI coding assistance (Anthropic\'s Claude) and tested in game by its author. Please report any problem you find.',
   'landing.lead': 'cs1conv reads an export of your CS1 city and turns it into an import package for CS2: the road network with its road types, bridges and tunnels, rail and metro, the terrain and water, zoning, traffic rules, transit lines, service buildings, districts and trees, as far as CS2 can express them.',
   'landing.dropBefore': 'Drop a',
   'landing.dropAfter': 'file here',

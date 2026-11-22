@@ -1,5 +1,7 @@
 [h1]CS1 → CS2 Exporter[/h1]
 
+[b]Made with AI:[/b] the code of this mod was written with AI coding assistance (Anthropic's Claude) and tested in game by its author. Please report any problem you find.
+
 Export your Cities: Skylines city to a single [b].cs1x[/b] file, so it can be rebuilt in [b]Cities: Skylines II[/b] with the CS1 → CS2 converter.
 
 The mod only [b]reads[/b] your city. It never saves or changes it.

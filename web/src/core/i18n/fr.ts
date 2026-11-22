@@ -90,6 +90,7 @@ export const FR: Record<MessageKey, string> = {
 
   // ---------------------------------------------------------------- landing
   'landing.title': 'Faites passer votre ville de Cities: Skylines à Cities: Skylines II',
+  'landing.ai': 'Fait avec l\'IA : le code de cet outil et de ses deux mods a été écrit avec l\'aide d\'une IA de programmation (Claude, d\'Anthropic) et testé en jeu par son auteur. Merci de signaler tout problème.',
   'landing.lead': 'cs1conv lit un export de votre ville CS1 et en fait un paquet d\'import pour CS2 : le réseau routier avec ses types de route, ponts et tunnels, le train et le métro, le terrain et l\'eau, le zonage, les règles de circulation, les lignes de transport, les bâtiments de service, les quartiers et les arbres, dans la mesure où CS2 sait les représenter.',
   'landing.dropBefore': 'Déposez un fichier',
   'landing.dropAfter': 'ici',

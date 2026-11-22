@@ -23,6 +23,7 @@ export function Landing({ busy, error, onPick, onHelp }: Props) {
       <section className="hero">
         <h1>{t('landing.title')}</h1>
         <p className="lead">{t('landing.lead')}</p>
+        <p className="notice ai-notice" role="note">{t('landing.ai')}</p>
         <div className="drop" role="group" aria-labelledby="drop-title">
           <h2 id="drop-title">{t('landing.dropBefore')} <code>.cs1x</code> {t('landing.dropAfter')}</h2>
           <p className="muted">{t('landing.or')}</p>
