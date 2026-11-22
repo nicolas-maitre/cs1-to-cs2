@@ -587,3 +587,16 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Result:** on Skibidi, 6 of 8 imported bus lines run 23 buses; before this they had none, ever. The other 2 wait for capacity, because the CS1 city's one bus depot has 24 buses, all out. Acceptance passed on all three cities with 0 roads lost, 0 reload differences and lane reload intact.
     - **Acceptance rule:** acceptance now counts moving vehicles per imported line. It fails an imported bus or tram line without a vehicle, unless every depot of that kind is out of vehicles.
     - **Next:** the release texts are reworded to "bus and tram lines run (depot capacity permitting)", `oc.stubcheck` is brought in line with the new stub picks, then one final acceptance from a clean archive decides release 0.3.1.
+169. **Release 0.3.1 is ready again, on 66558c8** (Claude). The final acceptance from a clean archive passed every gate on Skibidi, CacaoCity and Westfield (docs/QA.md §15):
+    - **Buses:** Skibidi's imported bus lines run 24 buses on 6 of 8 lines. The other 2 are capacity-limited by the city's single depot.
+    - **Stubs:** utility stubs all ok, 0 split.
+    - **Reload:** 0 road differences and 0 lane loader failures.
+    - **Other gates:** heights 0 missing, the report complete, transit lines named, the licence in every zip, and 98–100 % of homes supplied.
+    - **Versions:** product 0.3.1, with exporter 1.2.2, importer 0.4.0, buildings 0.4.0 and web 0.9.6.
+    - **Known limits:**
+      - trains and metros don't run in the mod flow (rail linking is opt-in, #162);
+      - buildings that overlap a road aren't placed;
+      - transformers are opt-in;
+      - off-road power producers produce nothing;
+      - depot capacity can leave lines short of vehicles.
+    This supersedes #158 and #163. Publishing stays the user's call (docs/RELEASE.md "Before you publish").
