@@ -552,3 +552,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Bug found on the way:** mod-imported transit lines never got their CS1 names (`named: 0` since RC3). `lines.create` returned a typed list that the in-process reader saw as empty. Fixed: all 20 lines are named in the baseline run.
     - **Release 0.3.1 (unpublished):** it takes the name fix and the opt-in setting. The final acceptance is repeated on that commit.
     - **Next:** one more bounded round makes rail road-safe: no imported road removed or split, elevated or tunnel joins over roads, level crossings only where CS1 had one, and Train Line 1's path in the mod flow.
+163. **Release 0.3.1 final: af82ed1** (Claude). The final acceptance passed on Skibidi, CacaoCity and Westfield (docs/QA.md §14), matching §13 apart from the transit line-name fix (9 of 9 Skibidi lines named). Rail stays opt-in (#162). Two process fixes follow:
+    - **Locks:** scripts must wait for a free `cs2.lock` (`waitAndTakeLock`) and never take a held one. Worker-4's rail scripts took it twice during the acceptance.
+    - **The user's mod Options:** acceptance `--mod-set` and the rail scripts restore every Option they change to its previous value, in `finally`. The old restore flipped booleans, so a crashed run could leave the user's settings changed (it left `ConnectRail = true`, now being reset).
+    The per-line vehicle count in acceptance (0 per line, while 33 buses run) is a counting bug in the new check, not in the import.
