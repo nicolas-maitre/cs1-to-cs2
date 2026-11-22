@@ -60,6 +60,31 @@ export function samplePoints(bz: number[][]): V3[] {
   return out;
 }
 
+/**
+ * A segment's burn polyline (#157, schema §2 "Cut junction ends"): its sample points, extended at an end the NC
+ * alignment cut back (`ncOffset[i] > 0`) by a straight run from that end's node to the cut end, so the gap between a
+ * stretched junction's node and the road gets the road's own width and mode. The run has n = max(1, ceil(L)) steps
+ * (L = its 3-D length), points node + (end − node) · (k / n) for k = 0…n−1; the cut end itself is the curve's own
+ * first or last point.
+ */
+export function segmentPoints(s: PlanSegment, nodeById: Map<number, PlanNode>): V3[] {
+  const P = samplePoints(s.bezier as unknown as number[][]);
+  const off = s.ncOffset;
+  if (!off) return P;
+  const run = (n0: PlanNode, e: V3): V3[] => {
+    const a: V3 = [n0.x, n0.y, n0.z];
+    const ex = e[0] - a[0], ey = e[1] - a[1], ez = e[2] - a[2];
+    const n = Math.max(1, Math.ceil(Math.sqrt(ex * ex + ey * ey + ez * ez)));
+    const out: V3[] = [];
+    for (let k = 0; k < n; k++) { const t = k / n; out.push([a[0] + ex * t, a[1] + ey * t, a[2] + ez * t]); }
+    return out;
+  };
+  const ns = off[0] > 0 ? nodeById.get(s.start) : undefined, ne = off[1] > 0 ? nodeById.get(s.end) : undefined;
+  const head = ns ? run(ns, P[0]) : [];
+  const tail = ne ? run(ne, P[P.length - 1]).reverse() : [];
+  return head.length || tail.length ? [...head, ...P, ...tail] : P;
+}
+
 interface Acc { core: boolean; coreH: number; coreAbsD: number; sumW4: number; sumW4H: number; maxW: number }
 
 /**
@@ -117,6 +142,7 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
     r0: Math.max(0, Math.floor((minZ - R + half) / cell)), r1: Math.min(N - 1, Math.floor((maxZ + R + half) / cell)),
   });
 
+  const nodeById = new Map(input.nodes.map(n => [n.id, n]));
   const segs = input.segments
     // only ground segments (#124): a burned slope (tunnel approach) would cut the ground at the portal down to the
     // road, and CS2 then builds the first tunnel segment as an open cut (it needs ≥ 8 m of ground above a road tunnel)
@@ -127,7 +153,7 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
   const skippedIds: number[] = [];
   for (const s of segs) {
     const w = s.halfWidth ?? 0;
-    const P = samplePoints(s.bezier as unknown as number[][]);
+    const P = segmentPoints(s, nodeById);
     if (P.some(p => Math.abs(p[1] - H0[pix(p[2]) * N + pix(p[0])]) > CONFORM.maxDifference)) { skipped++; if (skippedIds.length < 50) skippedIds.push(s.id); continue; }
     burned++;
     for (const nid of [s.start, s.end]) burnedAtNode.set(nid, Math.max(burnedAtNode.get(nid) ?? 0, w));
@@ -155,7 +181,6 @@ export function conformTerrain(grid: Float32Array, N: number, size: number, inpu
       }
     }
   }
-  const nodeById = new Map(input.nodes.map(n => [n.id, n]));
   // no junction disc where a tunnel or slope segment meets the node (#124): keep the ground around portals natural
   const tunnelNodes = new Set(input.segments.filter(s => s.kind === 'tunnel' || s.kind === 'slope').flatMap(s => [s.start, s.end]));
   for (const nid of tunnelNodes) burnedAtNode.delete(nid);
@@ -240,12 +265,13 @@ export function wallsTerrain(grid: Float32Array, N: number, size: number, input:
   };
   const target = (n: number, h: number) => { const lo = h - WALLS.below, hi = h + WALLS.above; return n < lo ? lo : n > hi ? hi : n; };
   const acc = new Map<number, Acc>();
+  const nodeById = new Map(input.nodes.map(n => [n.id, n]));
   const segs = input.segments.filter(s => s.kind === 'ground' && input.prefabs[s.prefab]?.heightMode === 'walls').sort((a, b) => a.id - b.id);
   let burned = 0, skipped = 0;
   const skippedIds: number[] = [];
   for (const s of segs) {
     const wc = (s.halfWidth ?? 0) + WALLS.footprint;
-    const P = samplePoints(s.bezier as unknown as number[][]);
+    const P = segmentPoints(s, nodeById);
     if (P.some(p => { const n = grid[pix(p[2]) * N + pix(p[0])]; return Math.abs(target(n, p[1]) - n) > WALLS.maxDifference; })) { skipped++; if (skippedIds.length < 50) skippedIds.push(s.id); continue; }
     burned++;
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;

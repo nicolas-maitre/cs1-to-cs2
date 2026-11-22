@@ -32,6 +32,30 @@ export function samplePoints(bz) {
   return out;
 }
 
+/**
+ * A segment's burn polyline (#157, schema §2 "Cut junction ends"), the web core's segmentPoints: its sample points,
+ * extended at an end the NC alignment cut back (`ncOffset[i] > 0`) by a straight run from that end's node to the cut
+ * end (n = max(1, ceil(L)) steps, points node + (end − node) · (k / n), k = 0…n−1), so the gap between a stretched
+ * junction's node and the road gets the road's own width and mode.
+ */
+export function segmentPoints(s, nodeById) {
+  const P = samplePoints(s.bezier);
+  const off = s.ncOffset;
+  if (!off) return P;
+  const run = (n0, e) => {
+    const a = [n0.x, n0.y, n0.z];
+    const ex = e[0] - a[0], ey = e[1] - a[1], ez = e[2] - a[2];
+    const n = Math.max(1, Math.ceil(Math.sqrt(ex * ex + ey * ey + ez * ez)));
+    const out = [];
+    for (let k = 0; k < n; k++) { const t = k / n; out.push([a[0] + ex * t, a[1] + ey * t, a[2] + ez * t]); }
+    return out;
+  };
+  const ns = off[0] > 0 ? nodeById.get(s.start) : undefined, ne = off[1] > 0 ? nodeById.get(s.end) : undefined;
+  const head = ns ? run(ns, P[0]) : [];
+  const tail = ne ? run(ne, P[P.length - 1]).reverse() : [];
+  return head.length || tail.length ? [...head, ...P, ...tail] : P;
+}
+
 /** §2 step 3: [d, h_road] of the nearest polyline point (x/z), strict `<` so the lowest k wins a tie. */
 function nearest(P, px, pz) {
   let best = Infinity, bestH = 0;
@@ -72,11 +96,12 @@ export function conformTerrain(grid, N, size, { segments = [], nodes = [], prefa
   // contributions in processing order: burned segments by id, then discs by node id
   // ground segments only: slopes (tunnel approaches) keep the natural terrain so the portal stays a tunnel (#124)
   const segs = segments.filter(s => s.kind === 'ground' && prefabs[s.prefab]?.heightMode === 'conform').sort((a, b) => a.id - b.id);
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
   const items = [], burnedAtNode = new Map(), skippedIds = [];
   let burned = 0, skipped = 0;
   for (const s of segs) {
     const w = s.halfWidth ?? 0;
-    const P = samplePoints(s.bezier);
+    const P = segmentPoints(s, nodeById);
     if (P.some(p => Math.abs(p[1] - H0[pix(p[2]) * N + pix(p[0])]) > CONFORM.maxDifference)) { skipped++; if (skippedIds.length < 50) skippedIds.push(s.id); continue; }
     burned++;
     for (const nid of [s.start, s.end]) burnedAtNode.set(nid, Math.max(burnedAtNode.get(nid) ?? 0, w));
@@ -85,7 +110,6 @@ export function conformTerrain(grid, N, size, { segments = [], nodes = [], prefa
     items.push({ P, w, ...win(minX, maxX, minZ, maxZ, w + CONFORM.maxBlend + cell) });
   }
   if (!burned) return null;
-  const nodeById = new Map(nodes.map(n => [n.id, n]));
   // no junction disc where a tunnel or slope segment meets the node (#124): keep the ground around portals natural
   for (const s of segments) if (s.kind === 'tunnel' || s.kind === 'slope') { burnedAtNode.delete(s.start); burnedAtNode.delete(s.end); }
   let discs = 0;
@@ -213,12 +237,13 @@ export function wallsTerrain(grid, N, size, input, natural, cores) {
   const wetOf = (idx, x, z) => { const h0 = natural[idx], dep = depthAt(x, z); return { wet: dep > 0 || (sea != null && h0 < sea), surface: Math.max(sea ?? -Infinity, h0 + dep) }; };
   const target = (n, h) => { const lo = h - WALLS.below, hi = h + WALLS.above; return n < lo ? lo : n > hi ? hi : n; };
   const acc = new Map();
+  const nodeById = new Map((input.nodes || []).map(n => [n.id, n]));
   const segs = (input.segments || []).filter(s => s.kind === 'ground' && input.prefabs[s.prefab]?.heightMode === 'walls').sort((a, b) => a.id - b.id);
   let burned = 0, skipped = 0;
   const skippedIds = [];
   for (const s of segs) {
     const wc = (s.halfWidth ?? 0) + WALLS.footprint;
-    const P = samplePoints(s.bezier);
+    const P = segmentPoints(s, nodeById);
     if (P.some(p => { const n = grid[pix(p[2]) * N + pix(p[0])]; return Math.abs(target(n, p[1]) - n) > WALLS.maxDifference; })) { skipped++; if (skippedIds.length < 50) skippedIds.push(s.id); continue; }
     burned++;
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;

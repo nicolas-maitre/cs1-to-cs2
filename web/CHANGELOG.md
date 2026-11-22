@@ -5,6 +5,7 @@ The web tool (https://nicolas-maitre.github.io/cs1-to-cs2/): it turns a CS1 expo
 ## 0.9.5 (2026-11-22)
 
 - **Node Controller offsets at junctions** (#157): where a player stretched a junction with Node Controller (an end offset more than 5 m above its default, at junctions of 3 or more roads), the roads are pulled back from the node by that offset, at most 45 % of the segment. CS2 then builds a longer junction: splits and merges at small angles taper smoothly instead of kinking, and lane lines no longer overshoot or cross. Not at 2-road nodes. On by default; option "Node Controller offsets at junctions", CLI `--no-nc-offsets`. Plan: `segments[].ncOffset` [start, end] in m, with `offNode`.
+- **The ground under a stretched junction** follows the road: the gap between the node and each pulled-back road end is shaped with the road's width and height mode, like the road itself (terrain parity with `terrain/convert.mjs` kept).
 
 ## 0.9.4 (2026-11-22)
 

@@ -535,6 +535,10 @@ The ground follows the road instead of the road following the ground. Agreed by 
    - A pixel is wet when `depth > 0` or `H0 < sea`. On a wet pixel `b` is 3.5 m, and a blend-only result is capped at `surface = max(sea, H0 + depth)`.
    - Cores are not capped.
 
+**Cut junction ends** (#157, web 0.9.5): a segment whose end was cut back from its node (`ncOffset[i] > 0`) burns the gap too, with its own `halfWidth` and mode (conform and walls).
+- Its sample points (step 2) are extended by a straight run from that end's node to the cut end: `L` = the run's 3-D length, `n = max(1, ceil(L))`, points `node + (end − node) × (k / n)` for `k = 0…n−1`, each coordinate as `a + e × t` with `t = k / n`. The start run goes before `P_0`; the end run, built from the end node the same way, is reversed and goes after `P_n`. The cut end itself stays the curve's own point.
+- Everything else uses the extended list: the nearest point, the window, and the 30 m safety test.
+
 **Junction discs:** radius `r` = the largest `halfWidth` among the burned segments at the node, height = the node's `y`, centre = the node's `x, z`, and `d` = the distance to the centre. It's a core within `r` and a blend beyond it, with the same `b`, `t`, weight and wet rules as a segment.
 
 **Combining contributions per pixel** (a sparse map of touched pixels is enough):

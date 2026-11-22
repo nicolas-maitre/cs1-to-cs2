@@ -130,3 +130,19 @@ test('walls burn (#129): ground brought within 7 m below / 11 m above the road; 
   assert.deepEqual([s3.segments, s3.skipped], [0, 1]);
   assert.equal(g3[at(0, 1.75)], 100);
 });
+
+test('cut junction ends (#157): the gap from the node to the cut road end burns with the road\'s width', async () => {
+  const { segmentPoints, samplePoints: sp } = await import('../lib/conform.mjs');
+  const bz = line(-60, 105, 0, 100, 105, 0);
+  const s = { ...seg(1, bz), start: 10, end: 11, offNode: true, ncOffset: [40, 0] };
+  const nodes = [{ id: 10, x: -100, z: 0, y: 105 }, { id: 11, x: 100, z: 0, y: 105 }];
+  const P = segmentPoints(s, new Map(nodes.map(n => [n.id, n])));
+  assert.deepEqual(P[0], [-100, 105, 0]);
+  assert.equal(P.length, sp(bz).length + 40);
+  const g = flat(100);
+  burn(g, [s], nodes);
+  assert.equal(g[at(-80.25, 1.75)], 105);          // in the gap, beyond the node disc
+  const g0 = flat(100);
+  burn(g0, [{ ...s, ncOffset: undefined }], nodes);
+  assert.ok(g0[at(-80.25, 1.75)] < 105);           // without the gap rule only the disc and the blend reach it
+});

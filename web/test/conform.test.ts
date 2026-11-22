@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPackage } from '../src/core/plan.ts';
 import { BASIC, HIGHWAY } from '../src/core/synthetic.ts';
-import { adjustWaterSources, conformTerrain, samplePoints, wallsTerrain } from '../src/core/terrain/conform.ts';
+import { adjustWaterSources, conformTerrain, samplePoints, segmentPoints, wallsTerrain } from '../src/core/terrain/conform.ts';
 import type { ConformInput } from '../src/core/terrain/conform.ts';
 import type { NetInfo, PlanNode, PlanPrefab, PlanSegment } from '../src/core/types.ts';
 import { city, lane, node, straight } from './fixtures.ts';
@@ -191,5 +191,38 @@ describe('plan height modes (#110–113)', () => {
     expect(all.plan.segments.map(s => all.plan.prefabs[s.prefab].heightMode)).toEqual(['walls', 'walls', 'walls']);
     const used = new Set(all.plan.segments.map(s => s.prefab));
     expect(Object.keys(all.plan.prefabs).every(k => used.has(k))).toBe(true);
+  });
+});
+
+describe('cut junction ends (#157)', () => {
+  // a road cut back 40 m from its start node (NC offset): the curve starts at x = −60, the node is at x = −100
+  const cut = (o: Partial<PlanSegment> = {}) => seg(1, 105, 105, 0, {
+    bezier: [[-60, 105, 0], [-20, 105, 0], [20, 105, 0], [60, 105, 0]], offNode: true, ncOffset: [40, 0], ...o,
+  });
+  const nodes: PlanNode[] = [
+    { id: 10, x: -100, z: 0, y: 105, heightAboveTerrain: 0, elevation: 0 },
+    { id: 11, x: 60, z: 0, y: 105, heightAboveTerrain: 0, elevation: 0 },
+  ];
+
+  it('extends the burn polyline from the node to the cut end', () => {
+    const byId = new Map(nodes.map(n => [n.id, n]));
+    const P = segmentPoints(cut(), byId);
+    expect(P[0]).toEqual([-100, 105, 0]);
+    expect(P.length).toBe(samplePoints(cut().bezier as unknown as number[][]).length + 40);
+    expect(segmentPoints(cut({ ncOffset: [0, 0] }), byId).length).toBe(samplePoints(cut().bezier as unknown as number[][]).length);
+  });
+
+  it('burns the gap between a stretched junction\'s node and the cut road with the road\'s width (conform and walls)', () => {
+    const g = flat();
+    conformTerrain(g, N, SIZE, input([cut()], { nodes }));
+    expect(at(g, -80, 1.75)).toBe(105);     // in the gap: 20 m from the node and the cut end, beyond the disc
+    expect(at(g, -80, 5.25)).toBe(105);     // within the road's half-width (8 m)
+    const g0 = flat();
+    conformTerrain(g0, N, SIZE, input([cut({ ncOffset: undefined })], { nodes }));
+    expect(at(g0, -80, 1.75)).toBeLessThan(105); // without the gap rule, only the disc and the blend reach it
+    // walls: a ramp 20 m up keeps the gap's ground within 7 m below the road
+    const gw = flat();
+    wallsTerrain(gw, N, SIZE, input([cut({ bezier: [[-60, 120, 0], [-20, 120, 0], [20, 120, 0], [60, 120, 0]] })], { nodes: nodes.map(n => ({ ...n, y: 120 })), prefabs: prefabs('walls') }), flat(), new Set());
+    expect(at(gw, -80, 1.75)).toBe(113);
   });
 });
