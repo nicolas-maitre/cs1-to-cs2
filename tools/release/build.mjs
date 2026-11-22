@@ -207,6 +207,8 @@ async function main() {
   // One zip per component (named with the component's own version), then checksums and notes.
   const zips = [];
   for (const b of built) {
+    // the project's MIT licence goes with every component (decision 154)
+    fs.copyFileSync(path.join(REPO, 'LICENSE'), path.join(b.dir, 'LICENSE.txt'));
     const name = `${b.id}-${v.components[b.id]}.zip`;
     const n = zipFolder(b.dir, path.join(out, name));
     zips.push({ id: b.id, file: name, files: n });
