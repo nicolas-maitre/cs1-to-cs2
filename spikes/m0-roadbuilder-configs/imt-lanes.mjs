@@ -43,13 +43,15 @@ const tangent = (p, t) => {
   return [v[0] / l, v[1] / l];
 };
 
+// even-odd rule: a ray towards +x crosses the outline an odd number of times when (x, z) is inside
 function inside(poly, x, z) {
-  let c = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, , zi] = poly[i], [xj, , zj] = poly[j];
-    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c;
+  let odd = false;
+  for (let k = 0; k < poly.length; k++) {
+    const [ax, , az] = poly[k], [bx, , bz] = poly[(k + 1) % poly.length];
+    if ((az <= z) === (bz <= z)) continue;
+    if (x < ax + (z - az) / (bz - az) * (bx - ax)) odd = !odd;
   }
-  return c;
+  return odd;
 }
 
 const bboxOf = pts => pts.reduce((b, [x, , z]) => [Math.min(b[0], x), Math.min(b[1], z), Math.max(b[2], x), Math.max(b[3], z)], [Infinity, Infinity, -Infinity, -Infinity]);

@@ -79,25 +79,7 @@ From `Game.Tools.NetToolSystem/CreateDefinitionsJob::CreateStraightLine`:
 Traffic carries a simplified copy of this:
 
 - `src/Traffic/Code/Tools/Helpers/ToolHelpers.cs:36-49` (`GetCoursePos`).
-- Its use in `src/Traffic/Code/Tools/LaneConnectorToolSystem.CreateDefinitionsJob.cs:886-917` (`CreateNodeDefinition`) builds a zero-length course on an existing node:
-
-```csharp
-CreationDefinition nodeDef = new CreationDefinition() { m_Flags = 0, m_Original = node, m_Prefab = prefabRefData[node].m_Prefab };
-NetCourse netCourse = default(NetCourse);
-netCourse.m_Curve = new Bezier4x3(point.m_Position, point.m_Position, point.m_Position, point.m_Position);
-netCourse.m_StartPosition = ToolHelpers.GetCoursePos(netCourse.m_Curve, point, 0f);
-netCourse.m_StartPosition.m_Flags |= (CoursePosFlags.IsFirst);
-netCourse.m_StartPosition.m_ParentMesh = -1;
-netCourse.m_EndPosition = ToolHelpers.GetCoursePos(netCourse.m_Curve, point, 1f);
-netCourse.m_EndPosition.m_Flags |= (CoursePosFlags.IsLast);
-netCourse.m_EndPosition.m_ParentMesh = -1;
-netCourse.m_Length = MathUtils.Length(netCourse.m_Curve);
-netCourse.m_FixedIndex = -1;
-Entity nodeEntity = commandBuffer.CreateEntity();
-commandBuffer.AddComponent(nodeEntity, nodeDef);
-commandBuffer.AddComponent(nodeEntity, netCourse);
-commandBuffer.AddComponent<Updated>(nodeEntity);
-```
+- Its use in `src/Traffic/Code/Tools/LaneConnectorToolSystem.CreateDefinitionsJob.cs:886-917` (`CreateNodeDefinition`) builds a zero-length course on an existing node. In outline: a `CreationDefinition` with no flags, `m_Original` set to the node and the node's prefab; a `NetCourse` whose curve has all four points at the node; start and end course positions from `GetCoursePos` at 0 and 1, flagged `IsFirst` and `IsLast`, with no parent mesh; the curve's length; `m_FixedIndex = -1`; then a new entity with the definition, the course and `Updated`. (Described, not quoted: that repository has no licence.)
 
 That is a Temp definition (`m_Flags = 0`) created inside a ToolBaseSystem job. It is the only CreationDefinition + NetCourse creation in the four repos.
 

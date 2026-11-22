@@ -62,13 +62,18 @@ function tangent(p: Bezier, t: number): [number, number] {
   return [x / l, z / l];
 }
 
+/** Even-odd rule: a ray from (x, z) towards +x crosses the polygon's outline an odd number of times when the point is inside. */
 export function pointInPolygon(poly: Vec3[], x: number, z: number): boolean {
-  let c = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i][0], zi = poly[i][2], xj = poly[j][0], zj = poly[j][2];
-    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c;
+  let inside = false;
+  const n = poly.length;
+  for (let k = 0; k < n; k++) {
+    const a = poly[k], b = poly[(k + 1) % n];
+    // the edge spans the ray's z (each end point counted on one side only, so a vertex on the ray isn't counted twice)
+    if ((a[2] <= z) === (b[2] <= z)) continue;
+    const crossX = a[0] + (z - a[2]) / (b[2] - a[2]) * (b[0] - a[0]);
+    if (x < crossX) inside = !inside;
   }
-  return c;
+  return inside;
 }
 
 type BBox = [number, number, number, number];

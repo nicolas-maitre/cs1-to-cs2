@@ -44,6 +44,8 @@ Known limits:
 * Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed; the report lists each one ("place it yourself").
 * Big power plants feed the city only through a transformer station (opt-in setting); producers away from any road produce nothing.
 * Growable buildings are left to the zoning.
+
+The source is open (MIT licence). This mod isn't affiliated with or endorsed by Colossal Order or Paradox Interactive.
   </LongDescription>
   <Thumbnail Value="Properties/Thumbnail.png" />
   <Tag Value="Code Mod" />

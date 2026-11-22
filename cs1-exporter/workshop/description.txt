@@ -38,4 +38,6 @@ Every part is optional except the networks and terrain. You can switch parts off
 The file contains only data about your city (map, networks, buildings, traffic-mod settings) and the list of enabled mods. Nothing is uploaded anywhere; you decide where the file goes.
 
 [h2]Source and format[/h2]
-The .cs1x format is a zip of JSON files and is documented with the converter.
+The .cs1x format is a zip of JSON files and is documented with the converter. The source is open (MIT licence).
+
+This mod isn't affiliated with or endorsed by Colossal Order or Paradox Interactive.

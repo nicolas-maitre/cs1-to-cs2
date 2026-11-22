@@ -125,4 +125,4 @@ node tools/e2e/run.mjs --apply-terrain --cs1x $env:LOCALAPPDATA\cs1-to-cs2\sampl
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Cities: Skylines and Cities: Skylines II are trademarks of Paradox Interactive; this project isn't affiliated with Paradox Interactive or Colossal Order. Third-party libraries bundled in the web tool are listed in [web/public/THIRD-PARTY-NOTICES.txt](web/public/THIRD-PARTY-NOTICES.txt).
+MIT, see [LICENSE](LICENSE). Cities: Skylines and Cities: Skylines II are trademarks of Paradox Interactive; this project isn't affiliated with Paradox Interactive or Colossal Order. It contains no game or mod code and no game assets; the web tool ships CS2 prefab names, sizes and lane layouts as data, so it can match CS1 buildings and roads to CS2 ones. Third-party libraries bundled in the web tool are listed in [web/public/THIRD-PARTY-NOTICES.txt](web/public/THIRD-PARTY-NOTICES.txt).

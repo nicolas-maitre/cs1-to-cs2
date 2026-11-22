@@ -49,7 +49,9 @@ export default defineConfig({
   plugins: [react(), samples()],
   worker: { format: 'es' },
   // the app is one page with its docs and messages in two languages (~500 kB, ~165 kB gzipped); no route to split
-  build: { chunkSizeWarningLimit: 700 },
+  // no modulepreload polyfill: every current browser supports it, and the bundle then holds only our code and the
+  // npm dependencies listed in THIRD-PARTY-NOTICES.txt
+  build: { chunkSizeWarningLimit: 700, modulePreload: { polyfill: false } },
   // the buildings worker's matcher lives in ../buildings and is imported by relative path
   server: { port: 5178, strictPort: true, fs: { allow: ['..'] } },
   test: { include: ['test/**/*.test.{ts,tsx}'] },
