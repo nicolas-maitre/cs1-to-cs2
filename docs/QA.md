@@ -771,3 +771,41 @@ Same procedure as §13: a `git archive` of **af82ed1** in `%LOCALAPPDATA%\cs1-to
 5. **Per-line vehicles:** still 0 for every bus line even when counted by `CurrentRoute`. The 34 `Bus01` may be depot-parked rather than running; to check with the `vehicles` op.
 
 Rail stays off by default.
+
+## 15. Final release acceptance, 0.3.1 with running bus lines (buildings worker)
+
+Decision 168: a `git archive` of **66558c8** in `%LOCALAPPDATA%\cs1-to-cs2\final\66558c8` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).
+- **Artefacts:** product 0.3.1: exporter 1.2.2, importer 0.4.0, buildings 0.4.0, **web 0.9.6**. Build and `--check` passed.
+- **New since §14:**
+  - the placer builds through Temp definitions and the tool's Apply (buildings #47), so imported bus lines run;
+  - the per-line vehicles gate (lines-check);
+  - corrected utility-stub counting (22e74cb);
+  - the release texts.
+- **Settings:** the persisted Options had `ConnectRail: false` before and after the runs. This acceptance pins it off and restores the user's value exactly.
+- **Result:** all three **ok=true**, every gate passed; CS2 was stopped before the lock was released.
+
+| Gate | Skibidi 3 km (`20261122-073603`) | CacaoCity, left-hand (`20261122-074532`) | Westfield (`20261122-075430`) |
+| --- | --- | --- | --- |
+| **Vehicles** (running on a line's route only) | **Bus lines with vehicles: 6 of 8, 24 buses running**; the other 2 wait for capacity (the one Bus Depot's 24 buses are all out); Metro 0 of 1, reported only | no lines in the city | no lines in the city |
+| **Utility stubs** | 8 markers, **8 ok, 0 split** | 8, **8 ok, 0 split** | 4, **4 ok, 0 split** |
+| **Roads after reload** | **0 of 2035 differ** | 0 of 684 | 0 of 648 |
+| **Lane connections after reload** | 71 junctions, 0 loader failures, 120 / 120 | 68, 0, 167 / 167 | 35, 0, 83 / 83 |
+| **Heights** | 2035, **0 missing** | 684, 0 missing | 648, 0 missing |
+| **Report complete** | ok (7 registered steps + built-ins) | ok | ok |
+| **Transit lines named** | **9 created, 9 named** | – | – |
+| Placer's road guard | 2015 road edges, 0 gone, 0 rewired | 583, 0, 0 | 691, 0, 0 |
+| Lane directions / turns | 1949 the same / 120 of 120 | 554 the same (left-hand) / 167 of 167 | 647 the same / 83 of 83 |
+| Buildings | 79 / 108 (Bus Depot moved, #152) | 26 / 43 | 7 / 13 |
+| Outside connections (utilities) | 4 electricity, 4 water | 4, 4 | 2, 2 |
+| Homes supplied | electricity 98.2 %, water 98.1 %; 918 households in 674 homes | 90 / 100 % of 10 homes; 639 households (spawn-variance note) | 100 / 100 %; 3 households in 3 homes |
+
+**Zips:** `LICENSE.txt` in cs1-exporter-1.2.2, cs2-importer-0.4.0 and web-0.9.6.
+
+**Web 0.9.6's dropped stops** (Skibidi package report): "Bus Line 14: 2 stops outside the crop or off the imported roads were dropped; the line runs between the remaining 17". The same line appears for Bus Lines 12 (7 dropped), 10 (4) and 16 (1).
+
+**Against §14:**
+- **Imported bus lines now run:** 24 buses on 6 of 8 lines, against 0 on every line (the earlier prefab totals counted parked buses).
+- **No regression:** roads, lanes, reloads, heights, stubs (now 8/8, 8/8 and 4/4 ok) and supply are all unchanged.
+- **Capacity limit:** Skibidi's 2 idle lines are a capacity limit of the CS1 city's single depot, not a fault. The acceptance reports them as "wait for capacity, not failed".
+
+**Not covered:** imported metro and train lines (rail is opt-in, #99).
