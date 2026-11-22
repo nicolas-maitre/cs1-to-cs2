@@ -772,6 +772,53 @@ Same procedure as §13: a `git archive` of **af82ed1** in `%LOCALAPPDATA%\cs1-to
 
 Rail stays off by default.
 
+### 5g. Rail in the mod, round 3 (6 game runs on 66558c8 + working copy; opt-in `ConnectRail`; `.gamectl/acceptance/20261122-080522`, `-082617`, `.gamectl/tracklink/rail-reach*.json`, `rail-joints-4.json`)
+
+**Hypothesis tested:** stations and yards placed the old Permanent way had unconnected platform lanes; the placer's tool apply (buildings #47) would fix that. **It doesn't on its own:** run 1 (current main, Skibidi 6 km) gave train 0/1 and metro 0/3, and the RailYard02's lanes reached 0 lanes outside the yard.
+
+**Found (runs 2–4, load-only diagnostics on the run-1 save):**
+- **Train Line 1's west terminus (TrainStation03, platform x −2527…−2315, z −434) is linked by two hairpins.**
+  - Its **east end** is joined back 34 m to an imported dead end lying under the platform, (−2349, −448).
+  - Its **west end** is joined by a 180 m straight link running back under the whole platform to another stub, (−2350, −464).
+  - Both joints double back, so they get no lanes: the platform lane reaches only itself.
+  - **Why the trim didn't fire:** the "dead end under the platform" test measured along the direction from the building's centre, which sits off the platform axis. The dead end looked 28 m off the axis, more than the 16 m allowed.
+- **The yard bridge (`bridgeYard`) left the yard's far east end and doubled back west over the yard.**
+  - Each ramp was a fixed 25 % of the course, so only courses of 667 m or more qualified. The only such candidate was behind that end, and the fallback built it straight.
+  - The yard joint was a hairpin again, with no lanes.
+- **Metro:** paths unchanged (126 / 63 / 63 elements, 122/122 and 61/61 path lanes linked). No vehicles, because no subway yard is placed: the metro track doesn't leave the crop (#83, reported as a warning).
+
+**Fix tried, opt-in only:** `tracklink` gets `frontOnly`, which only the mod's rail step passes.
+- **Straight fallback links:** only to a target in front of the end (within 60° of its track's outward direction), or to a dead end under the platform (≤ 80 m behind, ≤ 16 m off the axis) that is then trimmed. If the trim fails, there's no link (status `behind`).
+- **The trim test** measures along the platform's own track.
+- **Yard bridges:** smooth candidates only; each ramp just long enough for the height at the grade limit (at most 40 % of the course).
+- **The import report** gets the tracklink details (`transit.rail.detail`).
+
+**Run 5** (acceptance `20261122-082617`, Skibidi 6 km, `ConnectRail` on):
+- **Vehicles:**
+  - **Train Line 1 has a moving train: 1 of 1** (0 in every earlier mod run);
+  - **the yard's lanes reach 30 lanes outside it** (0 before);
+  - bus lines 9 of 16, with 20 buses running; the depot is out of vehicles (capacity, not failed);
+  - metro 0 of 3 (no yard).
+- **Road gates green:**
+  - roads-reload 0 of 3402 changed;
+  - lane connections after reload 468 / 468, 0 loader failures;
+  - placer's road guard 3263 road edges, 0 gone, 0 rewired;
+  - utility stubs, lane directions and turns ok.
+- **Heights: ok=false:** 22 track segments missing, 16 trimmed under stations, so **6 unexplained**, against 4 in run 1. No road is missing.
+
+**Still open (run 6, load-only):**
+1. **The yard bridge's descent meets the elevated one-way track at the same height** at (2498, 478).
+   - CS2 makes a 4-edge junction there, and that junction is how the yard's train reaches the line.
+   - The bridge's own landing at (2392, 488) is left as a dead end, not joined.
+   - The crossings split plan segments 32531, 36772 and 2049, which accounts for 3 of the 6 unexplained missing segments. The other 3 are track merged into the gap bridges (the known one from §5f, plus the new 6th bridge at (−462, 30)).
+   - **Next:** check the bridge pieces against every elevated net (track too, not only roads), and join the landing.
+2. **Train Line 1 still has no path** (0 path elements).
+   - The west terminus's east end is now trimmed and linked to the junction at (−2284, −462), but straight (42°), so still no lanes.
+   - After the trim, the target's tangent comes from the trimmed (deleted) edge, so the link isn't built smooth.
+   - **Root cause:** the CS2 station sits 14–30 m north of CS1's track bundle. Aligning the platform with the track end at placement (buildings placer) would remove the sharp S altogether.
+
+Rail stays off by default; nothing here is in the release.
+
 ## 15. Final release acceptance, 0.3.1 with running bus lines (buildings worker)
 
 Decision 168: a `git archive` of **66558c8** in `%LOCALAPPDATA%\cs1-to-cs2\final\66558c8` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).

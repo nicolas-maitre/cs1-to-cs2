@@ -349,7 +349,20 @@ namespace Cs1ConvTransit
             {
                 var a = wpLanes[i]; var b = wpLanes[(i + 1) % wpLanes.Count];
                 if (a.Key.Split('#')[0] != b.Key.Split('#')[0]) continue;
-                chain.Add(new Dictionary<string, object> { { "from", a.Key }, { "to", b.Key }, { "reach", forward(new[] { a.Value }).Contains(b.Value) } });
+                var fwa = forward(new[] { a.Value });
+                var ci = new Dictionary<string, object> { { "from", a.Key }, { "to", b.Key }, { "reach", fwa.Contains(b.Value) }, { "fromLane", LaneDesc(a.Value, twoway, next) }, { "toLane", LaneDesc(b.Value, twoway, next) }, { "reachedLanes", fwa.Count } };
+                if (!fwa.Contains(b.Value) && Em.HasComponent<Game.Net.Curve>(b.Value))
+                {
+                    // the frontier (rail round 2026-11-22): the reached lane whose end comes nearest the target lane
+                    float3 tp = Em.GetComponentData<Game.Net.Curve>(b.Value).m_Bezier.a; float bd = float.MaxValue; Entity bl = Entity.Null;
+                    foreach (var l in fwa) { if (!Em.HasComponent<Game.Net.Curve>(l)) continue; var c = Em.GetComponentData<Game.Net.Curve>(l).m_Bezier; float dd = math.min(math.distance(c.a, tp), math.distance(c.d, tp)); if (dd < bd) { bd = dd; bl = l; } }
+                    if (bl != Entity.Null) { ci["nearestReached"] = LaneDesc(bl, twoway, next); ci["nearestGap"] = bd; }
+                    // and from the target side: which lanes lead into it (reverse search over the same graph, bounded)
+                    var into = new List<object>();
+                    foreach (var l in lanes) { if (into.Count >= 6) break; foreach (var dir in new[] { false, true }) { if (dir && !twoway.Contains(l)) continue; foreach (var n in next(new KeyValuePair<Entity, bool>(l, dir))) if (n.Key == b.Value) { into.Add(LaneDesc(l, twoway, next)); break; } } }
+                    ci["lanesInto"] = into;
+                }
+                chain.Add(ci);
             }
             // graph check: consecutive lanes of the named line's computed paths should be linked one step apart
             int pairs = 0, linked = 0; object firstGap = null;
@@ -379,6 +392,21 @@ namespace Cs1ConvTransit
                 }
             rq2.Dispose();
             return new Dictionary<string, object> { { "track", track.ToString() }, { "lanes", lanes.Count }, { "twoway", twoway.Count }, { "waypoints", wpLanes.Count }, { "depots", depots }, { "lineChain", chain }, { "pathPairs", pairs }, { "pathPairsLinked", linked }, { "firstGap", firstGap } };
+        }
+
+        static object LaneDesc(Entity l, HashSet<Entity> twoway, Func<KeyValuePair<Entity, bool>, List<KeyValuePair<Entity, bool>>> next)
+        {
+            var ow = Em.HasComponent<Owner>(l) ? Em.GetComponentData<Owner>(l).m_Owner : Entity.Null;
+            var top = TopOwner(l);
+            var c = Em.HasComponent<Game.Net.Curve>(l) ? Em.GetComponentData<Game.Net.Curve>(l).m_Bezier : default(Bezier4x3);
+            return new Dictionary<string, object> {
+                { "lane", Id(l) }, { "prefab", PrefabName(Em.GetComponentData<PrefabRef>(l).m_Prefab) },
+                { "flags", Em.HasComponent<Game.Net.TrackLane>(l) ? Em.GetComponentData<Game.Net.TrackLane>(l).m_Flags.ToString() : "-" },
+                { "owner", ow == Entity.Null ? "none" : (Em.HasComponent<Edge>(ow) ? "edge " : Em.HasComponent<Node>(ow) ? "node " : "") + Id(ow) + " " + (Em.HasComponent<PrefabRef>(ow) ? PrefabName(Em.GetComponentData<PrefabRef>(ow).m_Prefab) : "") },
+                { "top", top != ow && top != Entity.Null && Em.HasComponent<PrefabRef>(top) ? PrefabName(Em.GetComponentData<PrefabRef>(top).m_Prefab) : null },
+                { "a", V(c.a) }, { "d", V(c.d) },
+                { "next", next(new KeyValuePair<Entity, bool>(l, false)).Count }, { "nextRev", twoway.Contains(l) ? next(new KeyValuePair<Entity, bool>(l, true)).Count : -1 },
+            };
         }
 
         /// <summary>Diagnostic (#159): at the node nearest (x,z) of each depot's open track ends (or at points), every track
@@ -896,6 +924,7 @@ namespace Cs1ConvTransit
             var linkEnds = new List<Entity>(); // both end nodes of every link built (touchEnds)
             tangentMode = a != null && a.TryGetValue("tangentLinks", out var tl) && tl is bool tlb && tlb;
             bool avoidRoads = a != null && a.TryGetValue("avoidRoads", out var ar) && ar is bool arb && arb;
+            frontOnly = a != null && a.TryGetValue("frontOnly", out var fo) && fo is bool fob && fob;
             int trimmedEdges = 0;
             float maxDist = F(a, "maxDistance", 2500f);
             float gradeLimit = F(a, "maxGrade", 0f); // 0 = no grade limit (default); --interior-yards passes 0.06
@@ -928,7 +957,7 @@ namespace Cs1ConvTransit
                         float reach0 = bd;
                         foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f && (!tangentMode || TangentOk(ep, en, t, out _, out _)) && !(avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node))) { bd = dd; best = t; } }
                         // tangent mode: no smooth target -> the nearest one, straight, as before
-                        if (tangentMode && best.Node == Entity.Null) { bd = reach0; foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f && !(avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node))) { bd = dd; best = t; } } }
+                        if (tangentMode && best.Node == Entity.Null) { bd = reach0; foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f && (!frontOnly || InFront(ep, en, t.Pos) || UnderPlatform(ep, en, t.Pos, a)) && !(avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node))) { bd = dd; best = t; } } }
                         if (best.Node == Entity.Null) { links.Add(new Dictionary<string, object> { { "from", Id(en) }, { "status", "no-track-end-near" } }); continue; }
                         usedTargets.Add(best.Node);
                         var li = new Dictionary<string, object>();
@@ -937,6 +966,9 @@ namespace Cs1ConvTransit
                         // its axis). Trim the imported track back to the first node beyond the platform end and join
                         // that node instead (QA 5c, buildings decision 36).
                         float2 dir = math.normalizesafe((ep - center).xz);
+                        // frontOnly: along the platform's own track (the building's centre can sit well off the platform
+                        // axis, so the dead end under the platform looked 28 m off it and wasn't trimmed: run 4)
+                        if (frontOnly) { var od = OutDir(en); if (od != null) dir = od.Value; }
                         float2 rel = (best.Pos - ep).xz;
                         float along = math.dot(rel, dir), lateral = math.abs(math.dot(rel, new float2(-dir.y, dir.x)));
                         if (along < -1f && lateral < F(a, "overlapLateral", 16f))
@@ -950,6 +982,12 @@ namespace Cs1ConvTransit
                                 best = beyondT; bd = math.distance(ep.xz, beyondT.Pos.xz);
                             }
                             else li["overlap"] = new Dictionary<string, object> { { "deadEnd", V(best.Pos) }, { "behind", -along }, { "notTrimmed", why } };
+                        }
+                        if (frontOnly && !InFront(ep, en, best.Pos))
+                        {
+                            // still behind the end (not trimmed): a link would double back, which gets no lanes
+                            usedTargets.Remove(best.Node);
+                            li["from"] = Id(en); li["status"] = "behind"; li["target"] = V(best.Pos); links.Add(li); continue;
                         }
                         if (Crosses(ep, best.Pos, en, best.Node, out string what)) li["crossing"] = what;
                         // always the player's way: a Permanent course that starts on a building-owned node (the
@@ -1066,25 +1104,30 @@ namespace Cs1ConvTransit
                         var en = crossPairs[i].Value.Key; var t = crossPairs[i].Value.Value;
                         float3 ep = Em.GetComponentData<Node>(en).m_Position;
                         float len = crossPairs[i].Key;
-                        if (len * 0.25f * g < h) continue; // ramps too steep for this length
+                        // frontOnly (rail round 2026-11-22): each ramp just long enough for the height at maxGrade (at
+                        // most 40 % of the course each), and only smooth candidates: a straight course from the yard's
+                        // far end doubled back over the yard (run 3), and a joint that sharp gets no lanes (#160)
+                        float f = frontOnly ? h / (g * math.max(len, 1f)) : 0.25f;
+                        if (frontOnly ? f > 0.4f : len * 0.25f * g < h) continue; // ramps too steep for this length
                         float2 dA, arr; bool tan = TangentOk(ep, en, t, out dA, out arr);
+                        if (!tan && frontOnly) continue;
                         if (!tan) { dA = math.normalizesafe(t.Pos.xz - ep.xz); arr = dA; }
                         float k = len / 3f;
                         var curve = new Bezier4x3(ep, new float3(ep.x + dA.x * k, math.lerp(ep.y, t.Pos.y, 1f / 3f), ep.z + dA.y * k), new float3(t.Pos.x - arr.x * k, math.lerp(ep.y, t.Pos.y, 2f / 3f), t.Pos.z - arr.y * k), t.Pos);
-                        float3 p1 = MathUtils.Position(curve, 0.25f), p2 = MathUtils.Position(curve, 0.75f);
+                        float3 p1 = MathUtils.Position(curve, f), p2 = MathUtils.Position(curve, 1f - f);
                         p1.y = TerrainUtils.SampleHeight(ref data2, p1) + h; p2.y = TerrainUtils.SampleHeight(ref data2, p2) + h;
                         if (CrossesRoad(ep, p1, en, Entity.Null) || CrossesRoad(p1, p2, Entity.Null, Entity.Null) || CrossesRoad(p2, t.Pos, Entity.Null, t.Node)) continue;
                         var yt = YardPrefab(a, t, en);
                         var prefab = yt.Prefab != Entity.Null ? yt.Prefab : Em.GetComponentData<PrefabRef>(t.Edge).m_Prefab;
                         float e0 = ep.y - TerrainUtils.SampleHeight(ref data2, ep), e1 = t.Pos.y - TerrainUtils.SampleHeight(ref data2, t.Pos);
-                        item["link"] = new Dictionary<string, object> { { "from", Id(en) }, { "fromPos", V(ep) }, { "to", Id(t.Node) }, { "toPos", V(t.Pos) }, { "distance", len }, { "prefab", PrefabName(prefab) }, { "bridge", new List<object> { V(p1), V(p2) } }, { "bridgeHeight", h } };
+                        item["link"] = new Dictionary<string, object> { { "from", Id(en) }, { "fromPos", V(ep) }, { "to", Id(t.Node) }, { "toPos", V(t.Pos) }, { "distance", len }, { "prefab", PrefabName(prefab) }, { "bridge", new List<object> { V(p1), V(p2) } }, { "bridgeHeight", h }, { "ramp", f }, { "smooth", tan } };
                         if (!dry)
                         {
                             // pieces of the one smooth curve (MathUtils.Cut), so each joint keeps the tangent: a straight
                             // ramp would leave the yard track at an angle, which gets no lanes (#160)
-                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0f, 0.25f)), ep.y, p1.y), en, Entity.Null, e0, h, true, false);
-                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0.25f, 0.75f)), p1.y, p2.y), Entity.Null, Entity.Null, h, h, false, false);
-                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0.75f, 1f)), p2.y, t.Pos.y), Entity.Null, t.Node, h, e1, false, true);
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0f, f)), ep.y, p1.y), en, Entity.Null, e0, h, true, false);
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(f, 1f - f)), p1.y, p2.y), Entity.Null, Entity.Null, h, h, false, false);
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(1f - f, 1f)), p2.y, t.Pos.y), Entity.Null, t.Node, h, e1, false, true);
                             pendingTemp.Add(item);
                         }
                         item["status"] = dry ? "planned" : "linked";
@@ -1273,6 +1316,26 @@ namespace Cs1ConvTransit
 
         /// <summary>tangentLinks (passed with --interior-yards, opt-in, #159 round 3).</summary>
         static bool tangentMode;
+
+        /// <summary>frontOnly (the mod's rail step, opt-in, rail round 2026-11-22): a straight fallback link and a yard
+        /// bridge only to a target in front of the end (within 60° of its track's outward direction). A link to a
+        /// target behind the end doubles back (the west end of Skibidi's terminus, the yard's far end): no lanes.</summary>
+        static bool frontOnly;
+
+        /// <summary>A dead end lying under the platform behind this end (to be trimmed): behind it, within overlapLateral
+        /// of its axis and at most overlapAlong behind (CS2 platforms overrun CS1's by about 36 m per end).</summary>
+        static bool UnderPlatform(float3 ep, Entity en, float3 tp, Dictionary<string, object> a)
+        {
+            var oa = OutDir(en); if (oa == null) return false;
+            float2 rel = (tp - ep).xz; float along = math.dot(rel, oa.Value), lateral = math.abs(math.dot(rel, new float2(-oa.Value.y, oa.Value.x)));
+            return along < -1f && along > -F(a, "overlapAlong", 80f) && lateral < F(a, "overlapLateral", 16f);
+        }
+
+        static bool InFront(float3 ep, Entity en, float3 tp)
+        {
+            var oa = OutDir(en); if (oa == null) return true;
+            return math.dot(oa.Value, math.normalizesafe(tp.xz - ep.xz)) >= 0.5f;
+        }
 
         /// <summary>The direction a track points out of a node it ends at (its only track edge), or null at a through node.</summary>
         static float2? OutDir(Entity node)

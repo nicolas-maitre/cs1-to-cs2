@@ -208,7 +208,7 @@ namespace Cs2ImporterMod
             }
 
             // station platform ends and yards joined to the imported track (smooth curves; touchEnds stays off)
-            var link = (IEnumerator)Ops.Run(new Dictionary<string, object> { { "op", "tracklink" }, { "maxDistance", 2500.0 }, { "tangentLinks", true }, { "yardLinkPrefab", "yard" }, { "avoidRoads", true }, { "guardRoads", true }, { "bridgeYard", true } });
+            var link = (IEnumerator)Ops.Run(new Dictionary<string, object> { { "op", "tracklink" }, { "maxDistance", 2500.0 }, { "tangentLinks", true }, { "yardLinkPrefab", "yard" }, { "avoidRoads", true }, { "guardRoads", true }, { "bridgeYard", true }, { "frontOnly", true } });
             object lr = null;
             while (link.MoveNext()) { if (link.Current != null) lr = link.Current; yield return null; }
             var ld = lr as Dictionary<string, object>;
@@ -233,6 +233,8 @@ namespace Cs2ImporterMod
             var yardLinks = new List<object>();
             if (yl != null) foreach (var o in yl) { var y = o as Dictionary<string, object>; yardLinks.Add(new Dictionary<string, object> { { "prefab", P.Str(y, "prefab", "") }, { "status", P.Str(y, "status", "") } }); if (P.Str(y, "status", "") == "blocked" || P.Str(y, "status", "") == "too-far" || P.Str(y, "status", "") == "no-network") warnings.Add(P.Str(y, "prefab", "yard") + ": its track could not be joined to the line (" + P.Str(y, "status", "") + "); connect it yourself."); }
             r["yardLinks"] = yardLinks;
+            // every link as tracklink built it (opt-in rail only; for diagnosis)
+            r["detail"] = new Dictionary<string, object> { { "stations", sl }, { "yards", yl }, { "bridges", P.List(ld, "bridges") } };
             for (int f = 0; f < 60; f++) yield return null;
             r["warnings"] = warnings;
             yield return r;

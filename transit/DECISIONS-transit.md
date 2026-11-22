@@ -71,3 +71,11 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
     - **`touchEnds` breaks line paths:** it's off unless `--touch-ends` is passed, as a diagnostic only.
     - **Metro needs the yard aligned with the line** (QA §5e).
     - **Worth considering as a default for station links:** after an acceptance run.
+
+17. **Front-only links in the mod's rail step (opt-in `ConnectRail`, rail round 3, QA §5g).** A station or yard link must not double back: a joint that sharp gets no lanes (#16). The mod passes `frontOnly`.
+    - **Straight fallbacks:** only to targets within 60° of the end's outward direction, or to a dead end under the platform that is then trimmed. If the trim fails, there's no link.
+    - **The trim test** runs along the platform's own track, not from the building's centre.
+    - **Yard bridges:** smooth candidates only, with each ramp sized to the grade limit.
+    - **Result:** on Skibidi 6 km, the yard's train leaves the yard and runs on Train Line 1 (1 of 1), and every road gate stays green.
+    - **Still open:** the bridge descent meets the elevated one-way track at the same height, and its landing isn't joined (heights: 6 unexplained missing segments). Train Line 1 still has no path, because the west terminus sits 14–30 m off CS1's tracks and its link stays straight.
+    - **Why opt-in:** the heights gate fails, and the train runs only through an accidental junction.
