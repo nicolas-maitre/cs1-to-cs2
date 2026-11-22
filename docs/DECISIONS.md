@@ -600,3 +600,11 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
       - off-road power producers produce nothing;
       - depot capacity can leave lines short of vehicles.
     This supersedes #158 and #163. Publishing stays the user's call (docs/RELEASE.md "Before you publish").
+170. **Rail (opt-in) runs its first train in the mod flow; next, align CS2 station platforms with CS1's tracks** (Claude, from worker-4's round on 656b750).
+    - **Result:** with `ConnectRail` on, links no longer double back (`frontOnly`), and Skibidi's Train Line 1 has a moving train in the mod flow for the first time. Road gates stay green.
+    - **Still opt-in:**
+      - 6 track segments go missing (bridge crossings and merges);
+      - the train runs only through an accidental junction;
+      - Train Line 1's own path fails because the CS2 station sits 14–30 m off CS1's tracks, which leaves a 42° straight link with no lanes.
+    - **Next (buildings worker, opt-in, next version):** place station buildings so their platform track lies on the CS1 track, using the prefab's platform sub-net geometry rather than the lot centre. #106 still holds: no move to free land, only the correct anchor for the same building at its CS1 spot.
+    - **Release 0.3.1 stays 66558c8 (#169).** Main moves ahead with opt-in rail work only.
