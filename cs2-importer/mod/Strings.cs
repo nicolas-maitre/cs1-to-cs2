@@ -184,6 +184,8 @@ namespace Cs2ImporterMod
             { "line.off", new[] { "turned off in the Options ({0})", "désactivé dans les options ({0})" } },
             { "label.ApplyBuildings", new[] { "Buildings, trees, districts", "Bâtiments, arbres, quartiers" } },
             { "label.ApplyTransit", new[] { "Transit lines", "Lignes de transport" } },
+            { "label.ConnectRail", new[] { "Connect train and metro stations and add rail yards at the edge of the area", "Relier les gares de train et de métro et ajouter des dépôts ferroviaires au bord de la zone" } },
+            { "line.transitRail", new[] { "; stations: {0} track ends joined, rail yards placed: {1}", " ; gares : {0} extrémités de voie reliées, dépôts ferroviaires placés : {1}" } },
 
             // cancel
             { "cancel.none", new[] { "Nothing to cancel.", "Rien à annuler." } },

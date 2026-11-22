@@ -6,6 +6,12 @@
 //      at the positions step 1 created them;
 //   3. CS1 names and numbers (NameSystem: needs the end-frame barrier, which ImportSystem allows before every step);
 //   4. a check: lines and counts.
+// With the opt-in setting "Connect train and metro stations" (off by default, DECISIONS.md #161), between 1 and 2: rail and subway
+// yards at the crop edge where a line's track leaves the area (#83; interior only if the plan's depotMode says so),
+// placed with the buildings worker's placer, then the transit worker's `tracklink` (station platform ends and yards
+// joined to the imported track with smooth curves, `tangentLinks`, DECISIONS-transit #16; yards in their own track
+// prefab; never across a road at grade, `avoidRoads`, so imported roads aren't split into level crossings). Train and metro lines are
+// created after that, so they pathfind over the joined track; no repath is needed.
 // The jobs come from Cs2Importer.Core.TransitPlan, a C# port of transit/lib/plan.mjs transitJobs, kept in step by a
 // golden test (tests/CoreTests/TransitPlanTests.cs).
 using System;
@@ -73,6 +79,22 @@ namespace Cs2ImporterMod
                     if (key != null && posByKey.TryGetValue(key, out p)) { s["x"] = p[0]; s["z"] = p[2]; }
                 }
 
+            // 1b. train and metro: yards at the crop edge + station and yard links (before the lines, so they pathfind)
+            if (P.Bool(args, "transit.rail", false))
+            {
+                var rail = Rail(root, planLines, offX, offZ, args);
+                object last = null;
+                while (rail.MoveNext()) { if (rail.Current != null) last = rail.Current; yield return null; }
+                var rr = last as Dictionary<string, object>;
+                if (rr != null)
+                {
+                    report["rail"] = rr;
+                    object w;
+                    if (rr.TryGetValue("warnings", out w)) report["warnings"] = w;
+                }
+            }
+            else report["rail"] = Skipped("setting off");
+
             // 2. lines, one at a time
             int linesCreated = 0, linesSkipped = 0, tempRoutes = 0;
             bool applied = true;
@@ -120,6 +142,99 @@ namespace Cs2ImporterMod
             report["items"] = jobs.Lines.Count;
             report["placed"] = linesCreated;
             yield return report;
+        }
+
+        /// <summary>The rail part of `node transit/transit.mjs depots` (yards.plan, the placer, tracklink), in the mod.
+        /// Yields per frame; the last value is the report: {types, yards: {items, placed, failed}, links: {stations,
+        /// linked, tangent, noTarget}, yardLinks, warnings: [text]}.</summary>
+        static IEnumerator Rail(Dictionary<string, object> root, List<object> planLines, double offX, double offZ, Dictionary<string, object> args)
+        {
+            var warnings = new List<object>();
+            var r = new Dictionary<string, object>();
+            // the lines with a rail type, their stops moved like the import
+            var lines = new List<object>();
+            foreach (var o in planLines)
+            {
+                var l = o as Dictionary<string, object>;
+                string t = P.Str(l, "cs1Type", null);
+                if (t != "Train" && t != "Metro") continue;
+                var stops = new List<object>();
+                var ls = P.List(l, "stops");
+                if (ls != null) foreach (var so in ls) { var sd = so as Dictionary<string, object>; stops.Add(new Dictionary<string, object> { { "x", P.Num(sd, "x", 0) + offX }, { "z", P.Num(sd, "z", 0) + offZ } }); }
+                lines.Add(new Dictionary<string, object> { { "name", P.Str(l, "name", "?") }, { "cs1Type", t }, { "stops", stops } });
+            }
+            if (lines.Count == 0) { r["skipped"] = "no train or metro lines"; yield return r; yield break; }
+            var b = P.Obj(root, "bounds");
+            if (b == null) { r["skipped"] = "the plan has no bounds"; yield return r; yield break; }
+            var bounds = new Dictionary<string, object> { { "minX", P.Num(b, "minX", 0) + offX }, { "maxX", P.Num(b, "maxX", 0) + offX }, { "minZ", P.Num(b, "minZ", 0) + offZ }, { "maxZ", P.Num(b, "maxZ", 0) + offZ } };
+            var depotMode = P.Obj(P.Obj(root, "transit"), "depotMode");
+
+            // yards where a line's track leaves the area (#83), else report entries
+            var yp = (Dictionary<string, object>)Ops.Run(new Dictionary<string, object> { { "op", "yards.plan" }, { "bounds", bounds }, { "lines", lines }, { "depotMode", (object)depotMode }, { "edgeMargin", 80.0 } });
+            r["types"] = yp["types"];
+            var planReport = P.List(yp, "report");
+            if (planReport != null) foreach (var o in planReport) { var m = P.Str(o as Dictionary<string, object>, "message", null); if (m != null) warnings.Add(m); }
+            var items = P.List(P.Obj(yp, "buildings"), "items") ?? new List<object>();
+            int placed = 0;
+            if (items.Count > 0)
+            {
+                string file = Path.Combine(Path.GetTempPath(), "cs1conv-rail-yards.json");
+                File.WriteAllText(file, MiniJson.Write(new Dictionary<string, object> { { "buildings", new Dictionary<string, object> { { "items", items } } } }), Encoding.UTF8);
+                var place = (IEnumerator)Cs2Buildings.Placement.Place(new Dictionary<string, object> { { "plan", file }, { "offsetX", 0.0 }, { "offsetZ", 0.0 }, { "fallback", "nearby" }, { "nearbyRadius", 600.0 } });
+                object last = null;
+                while (place.MoveNext()) { if (place.Current != null) last = place.Current; yield return null; }
+                var pr = last as Dictionary<string, object>;
+                placed = (int)P.Num(pr, "placed", 0);
+                r["yards"] = new Dictionary<string, object> { { "items", items.Count }, { "placed", placed }, { "failed", P.Num(pr, "failed", 0) } };
+                // a yard that found no free land with road access: its lines need a depot placed by hand
+                var sample = P.List(pr, "sample");
+                if (sample != null)
+                    foreach (var o in sample)
+                    {
+                        var sd = o as Dictionary<string, object>;
+                        string st = P.Str(sd, "status", "");
+                        if (st == "placed" || st == "alreadyPlaced") continue;
+                        foreach (var io in items)
+                        {
+                            var it = io as Dictionary<string, object>;
+                            if (P.Num(it, "id", 0) != P.Num(sd, "id", 1)) continue;
+                            string kind = (P.Str(it, "prefab", "") ?? "").Contains("Subway") ? "subway yard" : "rail yard";
+                            var ln = P.List(it, "lines");
+                            if (ln != null) foreach (var n in ln) warnings.Add(n + ": no free land with road access for a " + kind + " where its track leaves the converted area, so no depot was placed: place a " + kind + " yourself and connect its track to the line.");
+                        }
+                    }
+                for (int f = 0; f < 60; f++) yield return null;
+            }
+
+            // station platform ends and yards joined to the imported track (smooth curves; touchEnds stays off)
+            var link = (IEnumerator)Ops.Run(new Dictionary<string, object> { { "op", "tracklink" }, { "maxDistance", 2500.0 }, { "tangentLinks", true }, { "yardLinkPrefab", "yard" }, { "avoidRoads", true } });
+            object lr = null;
+            while (link.MoveNext()) { if (link.Current != null) lr = link.Current; yield return null; }
+            var ld = lr as Dictionary<string, object>;
+            int stations = 0, linked = 0, tangent = 0, noTarget = 0;
+            var sl = P.List(ld, "stations");
+            if (sl != null)
+                foreach (var o in sl)
+                {
+                    stations++;
+                    var links = P.List(o as Dictionary<string, object>, "links");
+                    if (links == null) continue;
+                    foreach (var lo in links)
+                    {
+                        var li = lo as Dictionary<string, object>;
+                        if (P.Str(li, "status", "") == "linked") linked++; else noTarget++;
+                        var lk = P.Obj(li, "link");
+                        if (lk != null && P.Bool(lk, "tangent", false)) tangent++;
+                    }
+                }
+            r["links"] = new Dictionary<string, object> { { "stations", stations }, { "linked", linked }, { "tangent", tangent }, { "noTarget", noTarget }, { "bridges", P.List(ld, "bridges")?.Count ?? 0 }, { "trimmedEdges", P.Num(ld, "trimmedEdges", 0) }, { "applied", P.Bool(ld, "applied", false) } };
+            var yl = P.List(ld, "yards");
+            var yardLinks = new List<object>();
+            if (yl != null) foreach (var o in yl) { var y = o as Dictionary<string, object>; yardLinks.Add(new Dictionary<string, object> { { "prefab", P.Str(y, "prefab", "") }, { "status", P.Str(y, "status", "") } }); if (P.Str(y, "status", "") == "blocked" || P.Str(y, "status", "") == "too-far" || P.Str(y, "status", "") == "no-network") warnings.Add(P.Str(y, "prefab", "yard") + ": its track could not be joined to the line (" + P.Str(y, "status", "") + "); connect it yourself."); }
+            r["yardLinks"] = yardLinks;
+            for (int f = 0; f < 60; f++) yield return null;
+            r["warnings"] = warnings;
+            yield return r;
         }
 
         static Dictionary<string, object> Skipped(string why) { return new Dictionary<string, object> { { "skipped", why } }; }

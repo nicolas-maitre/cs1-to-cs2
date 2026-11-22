@@ -61,5 +61,7 @@ The source is open (MIT licence). This mod isn't affiliated with or endorsed by 
 * The city stays the same after a save and reload: roads keep their lanes, and lane connections and arrows survive.
 * Bus and tram lines get a depot: when none fits at its CS1 spot, one is placed nearby.
 * The import report lists every step and everything left to do by hand.
+* Transit lines keep their CS1 names and numbers.
+* New opt-in setting: connect train and metro stations and add rail yards at the edge of the area (off by default for now).
   </ChangeLog>
 </Publish>

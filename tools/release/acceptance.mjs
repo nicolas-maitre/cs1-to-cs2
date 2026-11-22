@@ -202,7 +202,20 @@ try {
     const imp = report.import ?? {};
     const res = { segments: h.segments, missing: h.missing, importFailed: imp.segments_failed, tunnelPlanned: imp.tunnel_planned, cs1TunnelsBuilt: imp.cs1_tunnel_segments_built, tunnelBuilt: imp.tunnel_built };
     const bad = [];
-    if (h.missing > (imp.segments_failed ?? 0)) bad.push(`heights: ${h.missing} plan segments without a CS2 road, the import failed ${imp.segments_failed ?? 0}`);
+    // #161: the transit step trims imported track under the CS2 stations' longer platforms (DECISIONS-transit #12);
+    // those plan track segments are gone on purpose. Missing track segments up to the trimmed count are expected,
+    // any missing road still fails.
+    const plan = JSON.parse(fs.readFileSync(path.join(S.package, 'cs1conv-plan.json'), 'utf8'));
+    const rows = h.rows ?? JSON.parse(fs.readFileSync(path.join(runDir, 'heights.json'), 'utf8')).rows ?? [];
+    const seen = new Set(rows.map((r) => r.id));
+    const missingSegs = plan.segments.filter((s) => !seen.has(s.id));
+    const isTrack = (s) => plan.prefabs[s.prefab]?.type === 'TrackPrefab';
+    const trimmed = Number(report.transit?.rail?.links?.trimmedEdges ?? 0);
+    const missingTrack = missingSegs.filter(isTrack).length, missingOther = missingSegs.length - missingTrack;
+    res.missingTrack = missingTrack; res.missingOther = missingOther; res.railTrimmed = trimmed;
+    // the op's own count (it skips zero-length segments), less the track segments trimmed under stations
+    const unexplained = (h.missing ?? missingSegs.length) - Math.min(trimmed, missingTrack);
+    if (unexplained > (imp.segments_failed ?? 0)) bad.push(`heights: ${unexplained} plan segments without a CS2 road (${missingOther} road, ${missingTrack} track of which ${trimmed} trimmed under stations), the import failed ${imp.segments_failed ?? 0}`);
     if (imp.tunnel_planned != null && imp.cs1_tunnel_segments_built !== imp.tunnel_planned) bad.push(`tunnels: ${imp.cs1_tunnel_segments_built} of ${imp.tunnel_planned} CS1 tunnel segments built as tunnels`);
     if (bad.length) throw new Error(bad.join('; ') + ` (${JSON.stringify(res)})`);
     return res;
@@ -312,7 +325,12 @@ try {
       const kind = (n) => /subway|metro/i.test(n) ? 'metro' : /train|engine|locomotive/i.test(n) ? 'train' : /tram/i.test(n) ? 'tram' : /bus/i.test(n) ? 'bus' : 'other';
       const byKind = {};
       for (const [n, c] of Object.entries(by)) { const k = kind(n); byKind[k] = (byKind[k] ?? 0) + (typeof c === 'number' ? c : (c?.count ?? 0)); }
-      return { total: r.publicTransportVehicles, byKind, byPrefab: by, depots: r.depots, routes: r.routes };
+      // per imported line (#161): its vehicles and path; train and metro lines with vehicles are the rail check
+      const lines = (await b.exec(TRANSIT_LIB, { type: TRANSIT_TYPE, args: { op: 'lines.list' }, timeout: 300 }).catch(() => [])) ?? [];
+      const perLine = (Array.isArray(lines) ? lines : []).map((l) => ({ name: l.name, prefab: l.prefab, vehicles: l.vehicles, pathElements: l.pathElements }));
+      const rail = perLine.filter((l) => /train|subway/i.test(l.prefab ?? ''));
+      return { total: r.publicTransportVehicles, byKind, byPrefab: by, depots: r.depots, routes: r.routes, lines: perLine,
+        railLines: rail.length, railLinesWithVehicles: rail.filter((l) => (l.vehicles ?? 0) > 0).length };
     });
   }
   // Utilities (docs/DECISIONS.md #109, tools/qa): electricity / water / sewage supply after the simulation, read-only.

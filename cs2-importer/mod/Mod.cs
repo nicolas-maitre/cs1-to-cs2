@@ -38,7 +38,12 @@ namespace Cs2ImporterMod
             Cs2Buildings.Steps.RegisterAll((name, step) => ImportSteps.Register(name, args =>
                 Settings.ApplyBuildings ? step(args) : SkippedStep("label.ApplyBuildings")));
             // transit after the buildings (stations and depots first)
-            ImportSteps.Register("transit", args => Settings.ApplyTransit ? TransitStep.Run(args) : SkippedStep("label.ApplyTransit"));
+            ImportSteps.Register("transit", args =>
+            {
+                if (!Settings.ApplyTransit) return SkippedStep("label.ApplyTransit");
+                args["transit.rail"] = Settings.ConnectRail; // #161: yards at the crop edge + station and yard links
+                return TransitStep.Run(args);
+            });
             // the import coroutine creates road definitions, which must happen in ToolUpdate (M0 Spike 1b)
             updateSystem.UpdateAt<ImportSystem>(SystemUpdatePhase.ToolUpdate);
         }

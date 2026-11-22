@@ -584,6 +584,44 @@ namespace Cs1ConvTransit
         }
 
         /// <summary>Does the straight course a→b cross (in plan view) any real edge other than those at its two ends?</summary>
+        /// <summary>avoidRoads (the mod's rail step, #161): would the straight course meet a top-level road at grade (within
+        /// 5 m of height)? Such a link becomes a level crossing, which splits the imported road into new edges.</summary>
+        static bool CrossesRoad(float3 a, float3 b, Entity na, Entity nb)
+        {
+            var skip = new HashSet<Entity>(ConnectedEdges(na));
+            foreach (var e in ConnectedEdges(nb)) skip.Add(e);
+            var seg = new Line2.Segment(a.xz, b.xz);
+            var sb = new Bounds2(math.min(a.xz, b.xz) - 2f, math.max(a.xz, b.xz) + 2f);
+            var q = Em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Curve>(), ComponentType.ReadOnly<PrefabRef>() },
+                None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>(), ComponentType.ReadOnly<Owner>() },
+            });
+            try
+            {
+                using (var es = q.ToEntityArray(Allocator.Temp))
+                    foreach (var e in es)
+                    {
+                        if (skip.Contains(e) || !Em.HasComponent<RoadData>(Em.GetComponentData<PrefabRef>(e).m_Prefab)) continue;
+                        var c = Em.GetComponentData<Curve>(e).m_Bezier;
+                        if (!MathUtils.Intersect(MathUtils.Bounds(c.xz), sb)) continue;
+                        float3 p0 = c.a;
+                        for (int i = 1; i <= 8; i++)
+                        {
+                            float3 p1 = MathUtils.Position(c, i / 8f);
+                            if (MathUtils.Intersect(seg, new Line2.Segment(p0.xz, p1.xz), out float2 t) && t.x > 0.01f && t.x < 0.99f)
+                            {
+                                float ly = math.lerp(a.y, b.y, t.x), ry = math.lerp(p0.y, p1.y, t.y);
+                                if (math.abs(ly - ry) < 5f) return true;
+                            }
+                            p0 = p1;
+                        }
+                    }
+            }
+            finally { q.Dispose(); }
+            return false;
+        }
+
         static bool Crosses(float3 a, float3 b, Entity na, Entity nb, out string what)
         {
             what = null;
@@ -748,6 +786,8 @@ namespace Cs1ConvTransit
             var usedTargets = new HashSet<Entity>();
             var linkEnds = new List<Entity>(); // both end nodes of every link built (touchEnds)
             tangentMode = a != null && a.TryGetValue("tangentLinks", out var tl) && tl is bool tlb && tlb;
+            bool avoidRoads = a != null && a.TryGetValue("avoidRoads", out var ar) && ar is bool arb && arb;
+            int trimmedEdges = 0;
             float maxDist = F(a, "maxDistance", 2500f);
             float gradeLimit = F(a, "maxGrade", 0f); // 0 = no grade limit (default); --interior-yards passes 0.06
             int candidates = (int)F(a, "candidates", 40f);
@@ -777,9 +817,9 @@ namespace Cs1ConvTransit
                         float3 ep = Em.GetComponentData<Node>(en).m_Position;
                         Target best = default; float bd = F(a, "stationReach", 200f);
                         float reach0 = bd;
-                        foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f && (!tangentMode || TangentOk(ep, en, t, out _, out _))) { bd = dd; best = t; } }
+                        foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f && (!tangentMode || TangentOk(ep, en, t, out _, out _)) && !(avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node))) { bd = dd; best = t; } }
                         // tangent mode: no smooth target -> the nearest one, straight, as before
-                        if (tangentMode && best.Node == Entity.Null) { bd = reach0; foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f) { bd = dd; best = t; } } }
+                        if (tangentMode && best.Node == Entity.Null) { bd = reach0; foreach (var t in deadEnds) { if (usedTargets.Contains(t.Node)) continue; float dd = math.distance(ep.xz, t.Pos.xz); if (dd < bd && dd > 0.5f && !(avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node))) { bd = dd; best = t; } } }
                         if (best.Node == Entity.Null) { links.Add(new Dictionary<string, object> { { "from", Id(en) }, { "status", "no-track-end-near" } }); continue; }
                         usedTargets.Add(best.Node);
                         var li = new Dictionary<string, object>();
@@ -796,7 +836,7 @@ namespace Cs1ConvTransit
                             if (TrimChain(best, y.Track, ep, dir, F(a, "beyond", 8f), ce, cn, out Target beyondT, out string why))
                             {
                                 li["trim"] = new Dictionary<string, object> { { "edges", ce.Count }, { "deadEnd", V(best.Pos) }, { "to", V(beyondT.Pos) }, { "overlap", -along } };
-                                trimEdges.AddRange(ce); trimNodes.AddRange(cn); trimTo.Add(beyondT.Node);
+                                trimEdges.AddRange(ce); trimNodes.AddRange(cn); trimTo.Add(beyondT.Node); trimmedEdges += ce.Count;
                                 usedTargets.Add(beyondT.Node);
                                 best = beyondT; bd = math.distance(ep.xz, beyondT.Pos.xz);
                             }
@@ -820,6 +860,7 @@ namespace Cs1ConvTransit
                 foreach (var tt in new[] { TrackTypes.Subway, TrackTypes.Train })
                     foreach (var bl in Bridges(tt, F(a, "bridgeReach", 300f), F(a, "bridgeAngle", 30f), usedTargets))
                     {
+                        if (avoidRoads && CrossesRoad(Em.GetComponentData<Node>(bl.A).m_Position, bl.B.Pos, bl.A, bl.B.Node)) continue;
                         var li = new Dictionary<string, object> { { "track", tt.ToString() }, { "distance", bl.Distance } };
                         usedTargets.Add(bl.A); usedTargets.Add(bl.B.Node);
                         deferred.Add(new KeyValuePair<Dictionary<string, object>, KeyValuePair<Entity, Target>>(li, new KeyValuePair<Entity, Target>(bl.A, bl.B)));
@@ -872,6 +913,7 @@ namespace Cs1ConvTransit
                         bool ok = gradeLimit > 0f ? dd <= maxDist && dd >= 20f && math.abs(t.Pos.y - ep.y) <= gradeLimit * dd : dd <= maxDist && dd > 1f;
                         // tangent mode: smooth candidates sort first (a straight one only when no smooth one exists)
                         float key = dd + (tangentMode && !TangentOk(ep, en, t, out _, out _) ? 100000f : 0f);
+                        if (ok && avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node)) ok = false;
                         if (ok) pairs.Add(new KeyValuePair<float, KeyValuePair<Entity, Target>>(key, new KeyValuePair<Entity, Target>(en, t)));
                     }
                 }
@@ -893,7 +935,7 @@ namespace Cs1ConvTransit
                 // otherwise the shortest course, built like the player's track tool: a Temp definition and one apply
                 // frame, so ApplyNetSystem splits the crossed roads/tracks into level crossings / junctions
                 // (a Permanent course across an existing edge leaves Temp ghosts, Spike 1)
-                if (!done && allowCrossings && pairs.Count > 0)
+                if (!done && allowCrossings && !avoidRoads && pairs.Count > 0)
                 {
                     Make(item, pairs[0].Value.Key, YardPrefab(a, pairs[0].Value.Value, pairs[0].Value.Key), pairs[0].Key, ref data, dry, false);
                     linkEnds.Add(pairs[0].Value.Key); linkEnds.Add(pairs[0].Value.Value.Node);
@@ -939,7 +981,7 @@ namespace Cs1ConvTransit
                     touchedCount = touched; touchedB = touchedBuildings;
                 }
             }
-            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "touched", touchedCount }, { "touchedBuildings", touchedB }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
+            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "touched", touchedCount }, { "touchedBuildings", touchedB }, { "trimmedEdges", trimmedEdges }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
         }
 
         /// <summary>From an imported dead end lying under a station platform, the chain of imported track edges up to

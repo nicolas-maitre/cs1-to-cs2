@@ -4,6 +4,12 @@ The CS1 → CS2 converter as a whole. The version is in [`VERSION`](VERSION); th
 
 ## 0.3.1 (2026-11-22)
 
+**Added after the final acceptance of 693ba8a**
+- **Importer:** a new opt-in option (off by default) joins train and metro stations to the imported track and adds rail yards where lines leave the area (#161). Transit lines get their CS1 names again in the mod. Trains still don't run on every city; see the importer's changelog.
+- **Acceptance:**
+  - a vehicles-per-imported-line check;
+  - the heights check accounts for imported track trimmed under the longer CS2 platforms.
+
 RC3 passed on Skibidi, CacaoCity (left-hand) and Westfield, from a clean build through the real mod flow (docs/QA.md §11). Components: exporter 1.2.2 (unchanged), **importer 0.4.0**, **web tool 0.9.5**, **buildings 0.4.0** (RC3 tested importer 0.3.4, web tool 0.9.3 and buildings 0.3.3; the changes since are listed below).
 
 **What works now**

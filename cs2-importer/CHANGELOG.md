@@ -4,6 +4,13 @@ The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The vers
 
 ## 0.4.0 (2026-11-22)
 
+**Added after release candidate 3** (final acceptance, docs/QA.md §14)
+- **New opt-in setting: "Connect train and metro stations and add rail yards at the edge of the area"** (off by default, DECISIONS.md #161). Before the train and metro lines are created, each station's platform ends are joined to the imported track with smooth curves. Where a line's track leaves the converted area, a rail or subway yard is placed there and joined to it. A line whose track stays inside the area is named in the report ("place a yard yourself"). Joins never cross a road at grade.
+- **Fix: transit lines get their CS1 names and numbers again in the mod.** The line results came back as a typed list that the mod read as empty, so `named` was always 0.
+- Why it's off by default:
+  - near elevated metro stations a few imported roads can be replaced;
+  - a yard whose only way to its line crosses a road stays unjoined (on Skibidi 6 km, Train Line 1 gets no train in the mod flow yet). The scripted flow, with crossings allowed, runs a train (DECISIONS-transit #16).
+
 Passed release candidate 3 on Skibidi, CacaoCity (left-hand) and Westfield through the real mod flow (docs/QA.md §11), with buildings 0.4.0.
 
 **New**

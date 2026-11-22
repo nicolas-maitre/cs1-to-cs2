@@ -567,7 +567,16 @@ namespace Cs2ImporterMod
                 case "transit":
                 {
                     var st = d.TryGetValue("stops", out v) ? v as Dictionary<string, object> : null;
-                    return T.S("line.transit", d["placed"], d["items"], st != null ? T.S("line.transitStops", st["defined"], st["requested"]) : "");
+                    // #161: station links and yards, and their report lines (lines without a yard, yards that didn't fit)
+                    var rail = d.TryGetValue("rail", out v) ? v as Dictionary<string, object> : null;
+                    string railText = "";
+                    if (rail != null && rail.ContainsKey("links"))
+                    {
+                        var lk = rail["links"] as Dictionary<string, object>;
+                        var yd = rail.TryGetValue("yards", out v) ? v as Dictionary<string, object> : null;
+                        railText = T.S("line.transitRail", lk != null && lk.TryGetValue("linked", out v) ? v : 0, yd != null && yd.TryGetValue("placed", out v) ? v : 0);
+                    }
+                    return T.S("line.transit", d["placed"], d["items"], (st != null ? T.S("line.transitStops", st["defined"], st["requested"]) : "") + railText) + ReportLines(d);
                 }
                 default:
                     // buildings/ worker's steps: buildings {items, placed, alreadyPlaced, failed}, objects {items, created},

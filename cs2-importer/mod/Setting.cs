@@ -126,6 +126,10 @@ namespace Cs2ImporterMod
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyTransit { get; set; } = true;
 
+        /// <summary>#161: train and metro stations joined to the imported track, rail/subway yards where a line leaves the area. Opt-in (off by default) until it leaves every imported road intact.</summary>
+        [SettingsUISection(Section, ImportGroup)]
+        public bool ConnectRail { get; set; } = false;
+
         /// <summary>Last: outside connections where CS1 highways and train tracks leave the crop (terrain/ worker's library).</summary>
         [SettingsUISection(Section, ImportGroup)]
         public bool ApplyConnections { get; set; } = true;
@@ -199,6 +203,7 @@ namespace Cs2ImporterMod
             KeepMapTerrain = false;
             AllowOtherDrivingSide = false;
             AddTransformers = false;
+            ConnectRail = false;
             RecentPackages = "";
             OffsetX = OffsetZ = 0;
             StatusText = "";

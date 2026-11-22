@@ -343,7 +343,9 @@ namespace Cs1ConvTransit
                 { "op", "lines.create" }, { "tempRoutes", tempRoutes }, { "applied", applied },
                 { "created", results.FindAll(x => (string)x["status"] == "created").Count },
                 { "skipped", results.FindAll(x => (string)x["status"] == "skipped").Count },
-                { "lines", results },
+                // as List<object>: the mod reads it in process with P.List (a typed list came back as null there, so the
+                // mod's lines never got their CS1 names and numbers); over the bridge it is JSON either way
+                { "lines", results.ConvertAll(x => (object)x) },
             };
         }
 
