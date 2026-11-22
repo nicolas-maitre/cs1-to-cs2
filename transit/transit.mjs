@@ -114,7 +114,7 @@ export async function transit(argv) {
       };
       if (!yp.buildings.items.length) {
         // no yard to place: still join the stations' platform tracks to the line track, and recompute the paths
-        out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500), ...(interior ? { maxGrade: 0.06 } : {}) }, { phase: 'tool', pump: 'tool' });
+        out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500), ...(interior ? { maxGrade: 0.06, yardLinkPrefab: 'yard', touchEnds: true } : {}) }, { phase: 'tool', pump: 'tool' });
         await b.wait(60);
         out.repath = await op({ op: 'lines.repath', types: ['Train', 'Subway'] }, { phase: 'tool' });
         await b.wait(120);
@@ -138,7 +138,7 @@ export async function transit(argv) {
       }
       if (!placed.placed) break;
       await b.wait(60);
-      out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500), ...(interior ? { maxGrade: 0.06 } : {}) }, { phase: 'tool', pump: 'tool' });
+      out.link = await op({ op: 'tracklink', maxDistance: Number(a.maxDistance ?? 2500), ...(interior ? { maxGrade: 0.06, yardLinkPrefab: 'yard', touchEnds: true } : {}) }, { phase: 'tool', pump: 'tool' });
       await b.wait(60);
       // the lines' paths were computed before their stations and yard were joined to the track: recompute them
       out.repath = await op({ op: 'lines.repath', types: ['Train', 'Subway'] }, { phase: 'tool' });

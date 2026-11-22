@@ -224,6 +224,224 @@ namespace Cs1ConvTransit
             return r;
         }
 
+        /// <summary>Diagnostic (#159): the directed track-lane graph of one track type (lane A leads to lane B when B's
+        /// start path node is A's end path node, curve position ignored). From every depot of that type, which of the
+        /// named line's waypoint lanes can a vehicle reach driving forward, and from the line's first waypoint lane, can
+        /// it get back to the depot? Lists the depots' outgoing lanes that lead nowhere, too.</summary>
+        public static object LaneReach(string name, string trackName)
+        {
+            var track = trackName == "Train" ? TrackTypes.Train : trackName == "Tram" ? TrackTypes.Tram : TrackTypes.Subway;
+            // all real track lanes of that type
+            var lanes = new List<Entity>();
+            var q = Em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Game.Net.Lane>(), ComponentType.ReadOnly<Game.Net.TrackLane>(), ComponentType.ReadOnly<PrefabRef>() },
+                None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() },
+            });
+            using (var ls = q.ToEntityArray(Allocator.Temp))
+                foreach (var l in ls)
+                {
+                    var pf = Em.GetComponentData<PrefabRef>(l).m_Prefab;
+                    if (!Em.HasComponent<TrackLaneData>(pf) || (Em.GetComponentData<TrackLaneData>(pf).m_TrackTypes & track) == 0) continue;
+                    lanes.Add(l);
+                }
+            q.Dispose();
+            // states: (lane, reversed). A lane is driven start -> end; a Twoway lane (yard and platform tracks) also end -> start
+            var twoway = new HashSet<Entity>();
+            foreach (var l in lanes) if ((Em.GetComponentData<Game.Net.TrackLane>(l).m_Flags & Game.Net.TrackLaneFlags.Twoway) != 0) twoway.Add(l);
+            var byEntry = new Dictionary<Game.Pathfind.PathNode, List<KeyValuePair<Entity, bool>>>();
+            Action<Game.Pathfind.PathNode, KeyValuePair<Entity, bool>> addEntry = (k, st) => { if (!byEntry.TryGetValue(k, out var list)) byEntry[k] = list = new List<KeyValuePair<Entity, bool>>(); list.Add(st); };
+            foreach (var l in lanes)
+            {
+                var ln = Em.GetComponentData<Game.Net.Lane>(l);
+                addEntry(ln.m_StartNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, false));
+                if (twoway.Contains(l)) addEntry(ln.m_EndNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, true));
+                // lanes may join another lane partway (its middle node: depot and building track lanes): enterable there
+                addEntry(ln.m_MiddleNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, false));
+                if (twoway.Contains(l)) addEntry(ln.m_MiddleNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, true));
+            }
+            Func<KeyValuePair<Entity, bool>, List<KeyValuePair<Entity, bool>>> next = st =>
+            {
+                var ln = Em.GetComponentData<Game.Net.Lane>(st.Key);
+                var k = (st.Value ? ln.m_StartNode : ln.m_EndNode).StripCurvePos();
+                var r0 = byEntry.TryGetValue(k, out var list) ? new List<KeyValuePair<Entity, bool>>(list) : new List<KeyValuePair<Entity, bool>>();
+                // and leave partway, at its own middle node, into lanes joined there
+                if (byEntry.TryGetValue(ln.m_MiddleNode.StripCurvePos(), out var mid)) foreach (var m in mid) if (m.Key != st.Key) r0.Add(m);
+                return r0;
+            };
+            Func<IEnumerable<Entity>, HashSet<Entity>> forward = starts =>
+            {
+                var seen = new HashSet<KeyValuePair<Entity, bool>>(); var queue = new List<KeyValuePair<Entity, bool>>();
+                foreach (var st in starts)
+                {
+                    var f = new KeyValuePair<Entity, bool>(st, false); if (seen.Add(f)) queue.Add(f);
+                    if (twoway.Contains(st)) { var b = new KeyValuePair<Entity, bool>(st, true); if (seen.Add(b)) queue.Add(b); }
+                }
+                for (int i = 0; i < queue.Count && i < 500000; i++) foreach (var n in next(queue[i])) if (seen.Add(n)) queue.Add(n);
+                var lanesSeen = new HashSet<Entity>(); foreach (var st in seen) lanesSeen.Add(st.Key);
+                return lanesSeen;
+            };
+            // the line's waypoint lanes
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            var wpLanes = new List<KeyValuePair<string, Entity>>();
+            var rq = Em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Game.Routes.Route>(), ComponentType.ReadOnly<Game.Routes.TransportLine>() },
+                None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() },
+            });
+            using (var rs = rq.ToEntityArray(Allocator.Temp))
+                foreach (var r in rs)
+                {
+                    names.TryGetCustomName(r, out string custom);
+                    if (name != null && custom != name) continue;
+                    if (!Em.HasBuffer<Game.Routes.RouteWaypoint>(r)) continue;
+                    var wb = Em.GetBuffer<Game.Routes.RouteWaypoint>(r, true);
+                    for (int i = 0; i < wb.Length; i++)
+                    {
+                        var w = wb[i].m_Waypoint;
+                        if (Em.HasComponent<Game.Routes.RouteLane>(w)) wpLanes.Add(new KeyValuePair<string, Entity>(custom + "#" + i, Em.GetComponentData<Game.Routes.RouteLane>(w).m_StartLane));
+                    }
+                }
+            rq.Dispose();
+            // depots of that type and their own track lanes
+            var depots = new List<object>();
+            var tt = track == TrackTypes.Train ? TransportType.Train : track == TrackTypes.Tram ? TransportType.Tram : TransportType.Subway;
+            var dq = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Building>(), ComponentType.ReadOnly<PrefabRef>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+            using (var ds = dq.ToEntityArray(Allocator.Temp))
+                foreach (var d in ds)
+                {
+                    var pf = Em.GetComponentData<PrefabRef>(d).m_Prefab;
+                    if (!Em.HasComponent<TransportDepotData>(pf) || Em.GetComponentData<TransportDepotData>(pf).m_TransportType != tt) continue;
+                    var own = new List<Entity>();
+                    foreach (var l in lanes) if (TopOwner(l) == d) own.Add(l);
+                    var reach = forward(own);
+                    var hit = new List<object>(); var miss = new List<object>();
+                    foreach (var kv in wpLanes) (reach.Contains(kv.Value) ? hit : miss).Add(kv.Key);
+                    // back: from the first reachable waypoint lane (or any), can a vehicle return into the depot?
+                    bool back = false;
+                    if (wpLanes.Count > 0)
+                    {
+                        var r2 = forward(new[] { wpLanes[0].Value });
+                        foreach (var l in own) if (r2.Contains(l)) { back = true; break; }
+                    }
+                    int outside = 0; foreach (var l in reach) if (TopOwner(l) != d) outside++;
+                    var ownInfo = new List<object>();
+                    foreach (var l in own)
+                    {
+                        var ow = Em.HasComponent<Owner>(l) ? Em.GetComponentData<Owner>(l).m_Owner : Entity.Null;
+                        ownInfo.Add(new Dictionary<string, object> {
+                            { "lane", Id(l) }, { "prefab", PrefabName(Em.GetComponentData<PrefabRef>(l).m_Prefab) },
+                            { "flags", Em.GetComponentData<Game.Net.TrackLane>(l).m_Flags.ToString() },
+                            { "owner", ow == d ? "building" : Em.HasComponent<Edge>(ow) ? "edge " + Id(ow) + " " + PrefabName(Em.GetComponentData<PrefabRef>(ow).m_Prefab) : Em.HasComponent<Node>(ow) ? "node " + Id(ow) : Id(ow) },
+                            { "next", next(new KeyValuePair<Entity, bool>(l, false)).Count }, { "nextRev", twoway.Contains(l) ? next(new KeyValuePair<Entity, bool>(l, true)).Count : -1 },
+                        });
+                    }
+                    depots.Add(new Dictionary<string, object>
+                    {
+                        { "depot", Id(d) }, { "prefab", PrefabName(pf) }, { "ownLanes", own.Count }, { "reachedLanes", reach.Count }, { "reachedOutside", outside },
+                        { "waypointsReached", hit }, { "waypointsMissed", miss }, { "backToDepot", back }, { "own", ownInfo },
+                    });
+                }
+            dq.Dispose();
+            // the line itself: is each waypoint lane reachable from the previous one (directed)?
+            var chain = new List<object>();
+            for (int i = 0; i < wpLanes.Count; i++)
+            {
+                var a = wpLanes[i]; var b = wpLanes[(i + 1) % wpLanes.Count];
+                if (a.Key.Split('#')[0] != b.Key.Split('#')[0]) continue;
+                chain.Add(new Dictionary<string, object> { { "from", a.Key }, { "to", b.Key }, { "reach", forward(new[] { a.Value }).Contains(b.Value) } });
+            }
+            // graph check: consecutive lanes of the named line's computed paths should be linked one step apart
+            int pairs = 0, linked = 0; object firstGap = null;
+            var rq2 = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Game.Routes.Route>(), ComponentType.ReadOnly<Game.Routes.TransportLine>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+            using (var rs = rq2.ToEntityArray(Allocator.Temp))
+                foreach (var r in rs)
+                {
+                    names.TryGetCustomName(r, out string custom);
+                    if (name != null && custom != name) continue;
+                    var sb = Em.GetBuffer<Game.Routes.RouteSegment>(r, true);
+                    for (int si = 0; si < sb.Length; si++)
+                    {
+                        var sg = sb[si].m_Segment;
+                        if (!Em.HasBuffer<Game.Pathfind.PathElement>(sg)) continue;
+                        var pe = Em.GetBuffer<Game.Pathfind.PathElement>(sg, true);
+                        for (int k = 0; k + 1 < pe.Length; k++)
+                        {
+                            Entity a = pe[k].m_Target, b = pe[k + 1].m_Target;
+                            if (!twoway.Contains(a) && !lanes.Contains(a)) continue;
+                            pairs++;
+                            bool ok = a == b;
+                            foreach (var dir in new[] { false, true }) foreach (var n in next(new KeyValuePair<Entity, bool>(a, dir))) if (n.Key == b) ok = true;
+                            if (ok) linked++;
+                            else if (firstGap == null) firstGap = new Dictionary<string, object> { { "seg", si }, { "k", k }, { "a", Id(a) }, { "aPrefab", Em.HasComponent<PrefabRef>(a) ? PrefabName(Em.GetComponentData<PrefabRef>(a).m_Prefab) : null }, { "aFlags", Em.HasComponent<Game.Net.TrackLane>(a) ? Em.GetComponentData<Game.Net.TrackLane>(a).m_Flags.ToString() : "-" }, { "b", Id(b) }, { "bPrefab", Em.HasComponent<PrefabRef>(b) ? PrefabName(Em.GetComponentData<PrefabRef>(b).m_Prefab) : null }, { "aDelta", pe[k].m_TargetDelta.ToString() }, { "bDelta", pe[k + 1].m_TargetDelta.ToString() } };
+                        }
+                    }
+                }
+            rq2.Dispose();
+            return new Dictionary<string, object> { { "track", track.ToString() }, { "lanes", lanes.Count }, { "twoway", twoway.Count }, { "waypoints", wpLanes.Count }, { "depots", depots }, { "lineChain", chain }, { "pathPairs", pairs }, { "pathPairsLinked", linked }, { "firstGap", firstGap } };
+        }
+
+        /// <summary>Diagnostic (#159): at the node nearest (x,z) of each depot's open track ends (or at points), every track
+        /// lane of the edges and of the node itself, and for each pair whether one's end (or middle) path node matches the
+        /// other's start (Equals / EqualsIgnoreCurvePos / OwnerEquals).</summary>
+        public static object LaneJoint(Dictionary<string, object> a)
+        {
+            var nodes = new List<Entity>();
+            // extra joints by position (e.g. a working station link, for comparison)
+            if (a != null && a.TryGetValue("points", out var po) && po is IList<object> pl)
+            {
+                var nq = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Node>(), ComponentType.ReadOnly<ConnectedEdge>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+                using (var ns = nq.ToEntityArray(Allocator.Temp))
+                    foreach (var o in pl)
+                    {
+                        var xz = o as IList<object>; float2 q = new float2(Convert.ToSingle(xz[0]), Convert.ToSingle(xz[1]));
+                        Entity best = Entity.Null; float bd = 3f;
+                        foreach (var n in ns) { float dd = math.distance(Em.GetComponentData<Node>(n).m_Position.xz, q); if (dd < bd) { bd = dd; best = n; } }
+                        if (best != Entity.Null && !nodes.Contains(best)) nodes.Add(best);
+                    }
+                nq.Dispose();
+            }
+            if (!(a != null && a.TryGetValue("yards", out var yo) && yo is bool yb && !yb))
+                foreach (var y in Yards()) foreach (var en in YardEnds(y, out bool _, out int _)) nodes.Add(en);
+            // the yard ends joined to a link have 2 edges now: YardEnds lists only open ones, so add every yard sub-net node
+            foreach (var y in Yards())
+            {
+                var q0 = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Owner>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+                using (var es = q0.ToEntityArray(Allocator.Temp))
+                    foreach (var e in es) if (TopOwner(e) == y.Building) { var ed = Em.GetComponentData<Edge>(e); foreach (var n in new[] { ed.m_Start, ed.m_End }) if (ConnectedEdges(n).Count >= 2 && !nodes.Contains(n)) nodes.Add(n); }
+                q0.Dispose();
+            }
+            var r = new List<object>();
+            foreach (var n in nodes)
+            {
+                var lanes = new List<KeyValuePair<string, Entity>>();
+                Action<Entity, string> add = (owner, tag) =>
+                {
+                    if (!Em.HasBuffer<Game.Net.SubLane>(owner)) return;
+                    var sl = Em.GetBuffer<Game.Net.SubLane>(owner, true);
+                    for (int i = 0; i < sl.Length; i++) { var l = sl[i].m_SubLane; if (Em.HasComponent<Game.Net.TrackLane>(l)) lanes.Add(new KeyValuePair<string, Entity>(tag + ":" + Id(l), l)); }
+                };
+                add(n, "node");
+                foreach (var e in ConnectedEdges(n)) add(e, (Em.HasComponent<Owner>(e) ? "own " : "") + PrefabName(Em.GetComponentData<PrefabRef>(e).m_Prefab) + " " + Id(e));
+                var links = new List<object>();
+                foreach (var x in lanes) foreach (var yy in lanes)
+                {
+                    if (x.Value == yy.Value) continue;
+                    var lx = Em.GetComponentData<Game.Net.Lane>(x.Value); var ly = Em.GetComponentData<Game.Net.Lane>(yy.Value);
+                    foreach (var pr in new[] { new KeyValuePair<string, Game.Pathfind.PathNode>("end", lx.m_EndNode), new KeyValuePair<string, Game.Pathfind.PathNode>("start", lx.m_StartNode), new KeyValuePair<string, Game.Pathfind.PathNode>("mid", lx.m_MiddleNode) })
+                        foreach (var py in new[] { new KeyValuePair<string, Game.Pathfind.PathNode>("start", ly.m_StartNode), new KeyValuePair<string, Game.Pathfind.PathNode>("end", ly.m_EndNode), new KeyValuePair<string, Game.Pathfind.PathNode>("mid", ly.m_MiddleNode) })
+                        {
+                            bool eq = pr.Value.Equals(py.Value), ign = pr.Value.EqualsIgnoreCurvePos(py.Value), own = pr.Value.OwnerEquals(py.Value);
+                            if (eq || ign || own) links.Add(x.Key + "." + pr.Key + " ~ " + yy.Key + "." + py.Key + (eq ? " eq" : ign ? " ign" : " owner"));
+                        }
+                }
+                var laneInfo = new List<object>();
+                foreach (var l in lanes) laneInfo.Add(l.Key + " " + PrefabName(Em.GetComponentData<PrefabRef>(l.Value).m_Prefab) + " [" + Em.GetComponentData<Game.Net.TrackLane>(l.Value).m_Flags + "]");
+                r.Add(new Dictionary<string, object> { { "node", Id(n) }, { "pos", V(Em.GetComponentData<Node>(n).m_Position) }, { "owned", Em.HasComponent<Owner>(n) }, { "lanes", laneInfo }, { "links", links.Count > 60 ? links.GetRange(0, 60) : links } });
+            }
+            return r;
+        }
+
         static Entity LaneEdge(Entity lane)
         {
             if (lane == Entity.Null || !Em.Exists(lane) || !Em.HasComponent<Owner>(lane)) return Entity.Null;
@@ -528,6 +746,7 @@ namespace Cs1ConvTransit
         {
             var pendingTemp = new List<Dictionary<string, object>>();
             var usedTargets = new HashSet<Entity>();
+            var linkEnds = new List<Entity>(); // both end nodes of every link built (touchEnds)
             float maxDist = F(a, "maxDistance", 2500f);
             float gradeLimit = F(a, "maxGrade", 0f); // 0 = no grade limit (default); --interior-yards passes 0.06
             int candidates = (int)F(a, "candidates", 40f);
@@ -618,6 +837,7 @@ namespace Cs1ConvTransit
                 var li = kv.Key; var en = kv.Value.Key; var t = kv.Value.Value;
                 if (!IsReal(en) || !IsReal(t.Node)) { li["status"] = "node-gone"; continue; }
                 Make(li, en, t, math.distance(Em.GetComponentData<Node>(en).m_Position.xz, t.Pos.xz), ref data, dry, false);
+                linkEnds.Add(en); linkEnds.Add(t.Node);
                 if (!dry) pendingTemp.Add(li);
             }
             foreach (var y in Yards())
@@ -659,7 +879,8 @@ namespace Cs1ConvTransit
                     var en = pairs[i].Value.Key; var t = pairs[i].Value.Value;
                     float3 ep = Em.GetComponentData<Node>(en).m_Position;
                     if (Crosses(ep, t.Pos, en, t.Node, out string what)) { if (tried.Count < 5) tried.Add(new Dictionary<string, object> { { "to", Id(t.Node) }, { "distance", pairs[i].Key }, { "crosses", what } }); continue; }
-                    Make(item, en, t, pairs[i].Key, ref data, dry, false); // the yard end is building-owned too
+                    Make(item, en, YardPrefab(a, t, en), pairs[i].Key, ref data, dry, false); // the yard end is building-owned too
+                    linkEnds.Add(en); linkEnds.Add(t.Node);
                     if (!dry) pendingTemp.Add(item);
                     done = true;
                 }
@@ -668,7 +889,8 @@ namespace Cs1ConvTransit
                 // (a Permanent course across an existing edge leaves Temp ghosts, Spike 1)
                 if (!done && allowCrossings && pairs.Count > 0)
                 {
-                    Make(item, pairs[0].Value.Key, pairs[0].Value.Value, pairs[0].Key, ref data, dry, false);
+                    Make(item, pairs[0].Value.Key, YardPrefab(a, pairs[0].Value.Value, pairs[0].Value.Key), pairs[0].Key, ref data, dry, false);
+                    linkEnds.Add(pairs[0].Value.Key); linkEnds.Add(pairs[0].Value.Value.Node);
                     item["crossing"] = true;
                     if (!dry) pendingTemp.Add(item);
                     done = true;
@@ -676,15 +898,43 @@ namespace Cs1ConvTransit
                 if (!done) { item["status"] = "blocked"; item["reason"] = "every candidate course crosses another edge"; }
                 if (tried.Count > 0) item["rejected"] = tried;
             }
-            bool applied = false;
+            bool applied = false; int touchedCount = 0, touchedB = 0;
+            var linkEndPos = new List<float3>();
+            foreach (var n in linkEnds) if (Em.Exists(n) && Em.HasComponent<Node>(n)) linkEndPos.Add(Em.GetComponentData<Node>(n).m_Position);
             if (pendingTemp.Count > 0)
             {
                 yield return null;                // generation makes the Temp edges
                 applied = Ops.SetApply();         // this frame's ToolOutputSystem runs the vanilla ApplyTool phase
                 for (int i = 0; i < 30; i++) yield return null;
                 foreach (var it in pendingTemp) it["status"] = applied ? "linked" : "not-applied";
+                // touchEnds (passed with --interior-yards, opt-in, #159): CS2 doesn't rebuild the lanes of a building's own
+                // track when a link joins its end node, so the yard's track lanes keep their dead-end flags
+                // (StartingLane / EndingLane) and no train can leave the yard. Mark both link ends and every edge at
+                // them (the yard's track included) Updated, so their lanes are rebuilt with the link.
+                if (applied && a != null && a.TryGetValue("touchEnds", out var te) && te is bool teb && teb)
+                {
+                    // applying the link may replace the joint node with a new entity: find the real nodes at the
+                    // recorded positions (within 0.5 m), not the old entities
+                    int touched = 0, touchedBuildings = 0;
+                    var nq = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Node>(), ComponentType.ReadOnly<ConnectedEdge>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+                    using (var ns = nq.ToEntityArray(Allocator.Temp))
+                        foreach (var n in ns)
+                        {
+                            float3 np = Em.GetComponentData<Node>(n).m_Position;
+                            bool hit = false; foreach (var p0 in linkEndPos) if (math.distance(p0, np) < 0.5f) { hit = true; break; }
+                            if (!hit) continue;
+                            if (!Em.HasComponent<Updated>(n)) { Em.AddComponent<Updated>(n); touched++; }
+                            foreach (var e in ConnectedEdges(n)) if (!Em.HasComponent<Updated>(e)) { Em.AddComponent<Updated>(e); touched++; }
+                            // and the building owning the joint node (yard / station): its sub-nets and lanes are rebuilt
+                            var ob = TopOwner(n);
+                            if (ob != n && Em.Exists(ob) && Em.HasComponent<Building>(ob) && !Em.HasComponent<Updated>(ob)) { Em.AddComponent<Updated>(ob); touched++; touchedBuildings++; }
+                        }
+                    nq.Dispose();
+                    for (int i = 0; i < 30; i++) yield return null;
+                    touchedCount = touched; touchedB = touchedBuildings;
+                }
             }
-            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
+            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "touched", touchedCount }, { "touchedBuildings", touchedB }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
         }
 
         /// <summary>From an imported dead end lying under a station platform, the chain of imported track edges up to
@@ -795,6 +1045,17 @@ namespace Cs1ConvTransit
             }
             Em.AddComponent<Deleted>(e);
             foreach (var s in subs) if (IsReal(s)) Em.AddComponent<Deleted>(s);
+        }
+
+        /// <summary>yardLinkPrefab "yard" (passed with --interior-yards, opt-in, #159): build the yard link with the yard's own
+        /// track prefab (its "Twoway … Track" exit) instead of the line's double track. A double-track course on the yard's
+        /// single two-way exit gets no lane connection at that node, so the yard's trains can't leave it (lanes.reach).</summary>
+        static Target YardPrefab(Dictionary<string, object> a, Target t, Entity yardEnd)
+        {
+            if (a == null || !a.TryGetValue("yardLinkPrefab", out var v) || (v as string) != "yard") return t;
+            foreach (var e in ConnectedEdges(yardEnd))
+                if (Em.HasComponent<Owner>(e) && (EdgeTrack(e) & EdgeTrack(t.Edge)) != 0) { t.Prefab = Em.GetComponentData<PrefabRef>(e).m_Prefab; break; }
+            return t;
         }
 
         static void Make(Dictionary<string, object> item, Entity en, Target t, float distance, ref TerrainHeightData data, bool dry, bool permanent)

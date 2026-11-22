@@ -634,3 +634,28 @@ Same procedure as §11 and §12: a `git archive` of **693ba8a** in `%LOCALAPPDAT
 - **The households line** shows where CS2 grew few homes: Westfield 3 buildings and 10 households after 300 s. That's the spawn variance of §12, not a supply problem (100 %, 0 homeless).
 
 **Not covered:** imported metro and train lines (#99). Skibidi's crop has 8 bus lines and 1 subway line; its 24 train vehicles are outside-connection traffic.
+
+### 5d. Train/metro hunt, round 2 (decision #159, 9 game runs, `.gamectl/tracklink/r159-*`, `lanereach-*`, `lanejoint-*`)
+
+**Result: trains still don't leave the yard, but the cause is now located.** It's a missing lane connection at our link joints, not the lines.
+
+1. **New tool:** `lanes.reach` (Transit op), a directed track-lane graph.
+   - **Rule:** lane A leads to B when B's start, end or middle path node is A's exit; Twoway lanes are drivable both ways.
+   - **Validated against CS2's own paths:** all consecutive lane pairs of the computed line paths are linked (26/26, 75/75).
+2. **The yards are isolated.** SubwayYard02's and RailYard02's 4 own track lanes reach only each other, never the link or the line (`reachedOutside: 0`), so depot dispatch has no path and the trains stay parked. That holds in every variant tried:
+   - the link in the line's double track;
+   - the link in the yard's own "Twoway … Track" (`yardLinkPrefab`);
+   - nodes and edges at the link ends marked Updated after the apply, by position, since applying replaces the node entity (`touchEnds`);
+   - the owning building marked Updated as well.
+3. **The joint, lane by lane** (`lanes.joint`, run 8): two edges meet at a building-owned node.
+   - **Working station link** (2500, −422): CS2 generated switch node lanes joining the link and platform lanes.
+   - **Failing station link** (1938, −398) and **the yard link** (1017, −402): no node lanes and no shared path node between the two edges' lanes (not even the owner). Both sides' lanes keep their dead-end flags (`StartingLane` / `EndingLane`), as if the other edge weren't there.
+   - That also explains the lines' partial paths: segments through a failing joint get no path.
+4. **What didn't help:** marking the joint nodes, edges or the building Updated doesn't make CS2 regenerate those lanes.
+
+**Open leads** (not tried, run cap):
+- Build the link with CS2's own net tool (NetToolSystem with control points), as a player would, and compare the joint's lanes with ours.
+- Find what differs between the working joint at (2500, −422) and the failing ones.
+- Check whether `ApplyNetSystem` / `LaneSystem` skip lane generation at a building-owned node joined by a non-owned edge, unless the building's sub-net is re-created.
+
+Everything stays opt-in (`--interior-yards`: interior yards, `maxGrade`, `yardLinkPrefab`, `touchEnds`); trains and metros remain a known limit (#99).

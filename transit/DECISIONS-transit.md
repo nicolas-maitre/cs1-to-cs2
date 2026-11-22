@@ -60,3 +60,7 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
     - **Why:** on Skibidi's 6 km crop the metro track never leaves the area. So the metro lines, which now have paths, can only get vehicles from an interior yard; this verifies that the chain works end to end.
 
     - **Grade limit on yard links (also opt-in, with `--interior-yards`):** `tracklink` then only joins the yard to line nodes at least 20 m away and within 6 % grade (`maxGrade`). In run 12, an 8 m link climbing 1.8 m was silently not built. In run 13, the 110 m link at 5.8 % was built, but the yard's trains still stayed parked (QA §5, rail hunt stopped by #133).
+
+15. **Rail hunt round 2 (#159): the yard and some station joints have no lane connection.** The directed lane graph (`lanes.reach`, validated against CS2's own computed paths) shows the yards' track lanes reach nothing outside the yard. `lanes.joint` shows a building-owned joint node without switch node lanes and with dead-end lane flags on both sides (QA §5d).
+    - **Tried, all opt-in behind `--interior-yards`, none fixed it:** the link in the yard's own two-way track prefab (`yardLinkPrefab: "yard"`); Updated on the joint nodes, their edges and the owning building after the apply (`touchEnds`).
+    - **Next lead:** build the link with CS2's own net tool, and compare with the one working station joint.

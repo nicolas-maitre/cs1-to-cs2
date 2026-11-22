@@ -62,6 +62,8 @@ namespace Cs1ConvTransit
                 case "lines.debug": return LinesDebug(Str(a, "name", null));
                 case "node.at": return NodeAt(a);
                 case "lines.reach": return TrackLink.Reach(Str(a, "name", null));
+                case "lanes.reach": return TrackLink.LaneReach(Str(a, "name", null), Str(a, "track", "Subway"));
+                case "lanes.joint": return TrackLink.LaneJoint(a);
                 case "counts": return Counts();
                 case "stops.touch": return StopsTouch();
                 case "vehicles": return Vehicles(Str(a, "match", "Subway"));

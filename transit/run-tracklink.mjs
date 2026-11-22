@@ -63,6 +63,8 @@ try {
     await b.wait(60);
   }
   await step('inspectAfter', () => x({ op: 'yards.inspect' }));
+  // #159: can a vehicle drive from each depot onto its lines (directed track-lane graph)?
+  await step('lanereach', async () => ({ subway: await x({ op: 'lanes.reach', track: 'Subway' }), train: await x({ op: 'lanes.reach', track: 'Train' }) }));
   await step('simulate', async () => {
     await b.call('sim.set', { paused: false, speed: 3 });
     const secs = Number(opt('--sim-seconds', 300)), samples = [];
