@@ -520,3 +520,10 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - tests pulling each segment end back by the NC offset with the existing off-node mechanism (and checks whether the shifts make small-angle splits worse);
     - measures the sideways overshoot, node failures, reload stability and lane connections.
     If it works without breaking anything, it becomes the default before publishing.
+157. **NC offsets are applied by default at junctions (3+ arms)** (Claude, from worker-5's test, decision 156).
+    - **Finding:** players stretch exactly the small-angle splits and merges. Every one of Skibidi's 28 in the 3 km crop carries a large NC offset (e.g. node 3071: 36/62/63 m against NC's 8 m default). CS2's default short junction then makes the diverging lane curve overshoot across the through lanes.
+    - **Method:** pulling each such end back along its own CS1 curve by the offset, with the existing off-node mechanism, gives CS2 a long junction and a smooth taper. Shown on Skibidi 3071, 11237 and 22534, Cacao 30538 and Westfield 5867, with CS1 screenshots for reference. Every check stays clean on all three cities: roads 2035/684/648, turn checks 117/167/83, 0 loader failures, 0 node failures, lane data kept after a reload.
+    - **Rule:** at nodes with 3+ arms, an end whose NC offset exceeds NC's default for its node type by more than 5 m is pulled back by the offset, capped at 45 % of the segment. Two-road nodes are excluded: there it made S-wiggles at lane drops.
+    - **Not caused by the shift:** shift alone isn't the cause, and shift plus offset is best. Slope and twist stay report-only.
+    - **Side effect:** a wider paved gore, closer to CS1's look.
+    - **Implementation:** in the web plan's NC alignment (shortened bezier, `offNode`, `ncOffset` for traceability). The importer needs nothing new. One more release acceptance with the reload check follows.
