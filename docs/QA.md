@@ -558,3 +558,38 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
 4. **Acceptance in a clean tree didn't build the transit exec library**, so the first Skibidi run had no vehicles count. Fixed in the working tree: `build-exec-lib` builds it too.
 
 **Not covered:** trains and metros (known limit, #99; Skibidi's subway line is created with 0 vehicles). The CacaoCity city had only 11 homes after 300 s, so its percentages are on a small base.
+
+## 12. Final release acceptance, 0.3.1 (buildings worker)
+
+Same procedure as RC3 (§11): a `git archive` of **13c25e5** in `%LOCALAPPDATA%\cs1-to-cs2\final\13c25e5` plus `local.props`; `node tools/release/build.mjs --npm-ci`, then `--check`; then `node tools/release/acceptance.mjs --skip-build --simulate 300` per city.
+- **Artefacts:** product **0.3.1**: exporter 1.2.2, **importer 0.4.0**, **buildings 0.4.0**, **web 0.9.4**. Build and `--check` passed.
+- **Result:** all three **ok=true**, every step passed. The release mod was installed per city and the dev mod restored, and CS2 was stopped before the lock was released.
+
+| | Skibidi 3 km (`20261122-000820`) | CacaoCity, left-hand (`20261122-001757`) | Westfield (`20261122-002658`) |
+| --- | --- | --- | --- |
+| Roads | **2035 / 2035** | **684 / 684**; "Traffic drives on the left, as in the CS1 city." | **648 / 648** |
+| Report complete / heights / stubs | ok / 0 missing / 8 markers, 0 split | ok / 0 / 8, 0 split | ok / 0 / 10, 0 split |
+| Lane directions | all 1949 the same | all 554 the same (left-hand) | all 647 the same |
+| Lane connections (turn check) | 363 at 70/95; 685/685 refs; **117/117** | 341 at 68/79; 727/729; **167/167** | 127 at 34/39; 299/301; **81/81** |
+| Roads / lane connections after reload | **0 differ** / 0 loader failures | 0 / 0 | 0 / 0 |
+| Buildings | **79 / 108**; Bus Depot moved (#152) | 26 / 43; "no power plant placed" warning, 5 "connect a road" | 7 / 13; 3 "place a transformer station" |
+| **In-game summary: outside connections** | "20 of 20 (13 road, 7 train, **4 electricity, 4 water**)" | "4 of 4 (4 road, 0 train, **4 electricity, 4 water**)" | "22 of 22 (22 road, 0 train, **5 electricity, 5 water**)" |
+| **In-game summary: moved depot** | "Warning: Bus Depot: placed away from its CS1 spot because its lines need a depot (117 m from its CS1 spot, CS1 (3370, 198) = CS2 (−380, 1448))" | – | – |
+| Transit / vehicles after 300 s | 9 / 9 lines; **33 buses** on 9 routes (RC2 34, RC3 4) | none in the city | none in the city (6 buses, no lines) |
+| Homes supplied (electricity / water) | 100 / 100 %; QA ok | 100 / 100 %; 1 pump `notEnoughSurfaceWater` | 96.9 / 98.8 %; 3 incinerators `highVoltageNotConnected` (transformers are opt-in) |
+
+**Against RC3 (§11):** the same roads, lanes, reload and report results to the digit, plus:
+- **Skibidi's buses are back** (33 against 4), with the Bus Depot placed 117 m from its CS1 spot (#152).
+- **CacaoCity's Water Tower** now matches a CS2 water tower (WaterTower02; matcher 1.2.1). Only the CS1 shore intake at CS2 (535, −941) remains on dry land (#42, open).
+- **The new summary lines** for electricity and water outside connections, and for moved depots, show in the mod's status.
+
+**Residential counts vary from run to run** (Skibidi 7 homes here against 647 in RC3; Westfield 160 against 7). Electricity consumption is comparable (Skibidi 123 000 against 136 000), so this is CS2's growth after 300 s, not the import. The percentages are on a small base where the count is low.
+
+**Release zips and licence** (`release/0.3.1/`):
+- **cs1-exporter-1.2.2.zip:** `Cs1Exporter/Cs1Exporter.dll`, `Cs1Exporter/PreviewImage.png`, `CHANGELOG.md`, `workshop-description.txt`.
+- **cs2-importer-0.4.0.zip:** `Cs2Importer/Cs2ImporterMod.dll`, `Properties/PublishConfiguration.xml`, `Properties/Thumbnail.png`, `CHANGELOG.md`.
+- **web-0.9.4.zip:** `index.html`, `assets/` (3 files), `cs2-catalogue.json`, `cs2-roads.json`, `THIRD-PARTY-NOTICES.txt` (fflate, React and the other bundled packages, each with its licence).
+- **The AI disclaimer is in:** the importer's `PublishConfiguration.xml` (short and long description: "Made with AI coding assistance") and the exporter's `workshop-description.txt`.
+- **Finding: none of the three zips contains the project's `LICENSE`** (MIT, in the repository root), and `RELEASE-NOTES.md` doesn't mention it. MIT asks that the copyright and permission notice go with copies of the software, so `LICENSE` should be added to each zip in `tools/release/build.mjs`. Per the instructions, `build.mjs` was left unchanged during this run.
+
+**Not covered:** trains and metros (known limit, #99).
