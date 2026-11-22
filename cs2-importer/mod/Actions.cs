@@ -502,12 +502,13 @@ namespace Cs2ImporterMod
 
         /// <summary>
         /// The buildings worker's report lines, under their step's line: warnings ("no power plant placed"), powerhook's
-        /// plants that need a transformer station, and buildings to connect to a road. Up to 5 of each, then a count.
+        /// plants that need a transformer station, buildings to connect to a road, and bus/tram depots placed away from
+        /// their CS1 spot because their lines need one (buildings decision 152). Up to 5 of each, then a count.
         /// </summary>
         static string ReportLines(Dictionary<string, object> d)
         {
             var sb = new StringBuilder();
-            foreach (var key in new[] { "warnings", "needTransformer", "connectRoad" })
+            foreach (var key in new[] { "warnings", "needTransformer", "connectRoad", "depotsMoved" })
             {
                 object v;
                 if (!d.TryGetValue(key, out v) || !(v is System.Collections.IEnumerable list) || v is string) continue;
@@ -531,7 +532,13 @@ namespace Cs2ImporterMod
             if (d == null) return T.S("line.noResult", title);
             object v;
             if (d.TryGetValue("error", out v)) return T.S("line.failed", title, v);
-            if (d.TryGetValue("skipped", out v)) return T.S("line.skipped", title, v);
+            if (d.TryGetValue("skipped", out v))
+            {
+                // a package with only electricity/water connections still gets its utility markers (MapSteps.Connections)
+                string u;
+                if (name == "connections" && UtilityCounts(d, out u)) return T.S("line.connectionsUtilitiesOnly", u);
+                return T.S("line.skipped", title, v);
+            }
             switch (name)
             {
                 case "zoning": return T.S("line.zoning", d["cells_matched"], d["plan_cells"], d["coverage"], d["cells_painted"]);
@@ -556,7 +563,7 @@ namespace Cs2ImporterMod
                         var rp = d.TryGetValue("repair", out v) ? v as Dictionary<string, object> : null;
                         return T.S("line.lanesRepair", rp != null ? rp["junctions_rewritten"] : 0, rp != null ? rp["junctions_checked"] : 0);
                     }
-                case "connections": return T.S("line.connections", d["placed"], d["items"], d["road"], d["train"], Convert.ToInt32(d["failed"]) > 0 ? T.S("line.connectionsFailed", d["failed"]) : "");
+                case "connections": return T.S("line.connections", d["placed"], d["items"], d["road"], d["train"], Convert.ToInt32(d["failed"]) > 0 ? T.S("line.connectionsFailed", d["failed"]) : "", UtilityConnections(d));
                 case "transit":
                 {
                     var st = d.TryGetValue("stops", out v) ? v as Dictionary<string, object> : null;
@@ -583,6 +590,25 @@ namespace Cs2ImporterMod
                     }
                     return T.S("line.done", title) + ReportLines(d);
             }
+        }
+
+        // the connections step's utility markers: utilities = {electricity, water}, or {error} when they could not be made
+        static bool UtilityCounts(Dictionary<string, object> d, out string text)
+        {
+            text = "";
+            object u;
+            var ud = d.TryGetValue("utilities", out u) ? u as Dictionary<string, object> : null;
+            object el, wa;
+            if (ud == null || !ud.TryGetValue("electricity", out el) || !ud.TryGetValue("water", out wa)) return false;
+            if (Convert.ToInt32(el) + Convert.ToInt32(wa) == 0) return false;
+            text = T.S("line.connectionsUtilities", el, wa);
+            return true;
+        }
+
+        static string UtilityConnections(Dictionary<string, object> d)
+        {
+            string u;
+            return UtilityCounts(d, out u) ? ", " + u : "";
         }
 
         // ---------------------------------------------------------------- cancel + remove imported
