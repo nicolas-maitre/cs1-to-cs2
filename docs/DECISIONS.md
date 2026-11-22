@@ -619,3 +619,7 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Effect:** none visible on these crops. None has a train line that leaves the area, and Skibidi's metro line gets no yard (#83: a yard is never invented inside the city). Trains run only where a train line leaves the area (Skibidi 6 km, §5i).
     - **Decision:** the default stays off for release 0.3.1. Turning it on for the next version is a small change once the user agrees.
     - **Open question:** Skibidi 3 km's Metro Line 3 has no path even with rail off; for a later round.
+173. **Metro paths: skew trim for sharp station-end links (opt-in rail); further rail work waits for the user** (Claude, from worker-4, cbe8f9b).
+    - **Cause:** Skibidi 3 km's Metro Line 3 had no path because two station-end links were 5–8 m long with a 6–7 m sideways step, too sharp for CS2 to give them lanes.
+    - **Fix:** a target must lie ahead at 5× its sideways offset or more; otherwise the imported track is trimmed back, never past a junction, and the link curves smoothly. Metro Line 3 now has a path on every segment, on 3 km and 6 km. Train Line 1 still runs, and both acceptances pass.
+    - **Still open:** Metro Lines 1 and 2 on 6 km pass underground stations placed 14–44 m off their CS1 track, where a junction blocks the trim. Fixing that needs anchoring underground stations (a placer change). Rail is opt-in and outside release 0.3.1 (66558c8), so further rail work waits for the user's go-ahead along with the default question (#172).
