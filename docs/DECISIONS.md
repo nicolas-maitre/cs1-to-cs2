@@ -514,4 +514,4 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
       - Vite's modulepreload polyfill is off, so no bundler code ships;
       - both mod descriptions say MIT and "not affiliated";
       - the README states that no game or mod code and no game assets are included.
-    - **Left as is:** the Traffic quote remains in old commits (64f34fe and later). Removing it would need a history rewrite, and the user chose to keep history (#141). It is 15 lines of research notes, not shipped. The CS2 prefab data in the web tool (names, sizes, lane layouts) is factual interop data.
+    - **Left as is:** the Traffic quote remains in old commits (64f34fe and later). Removing it would need a history rewrite, and the user chose to keep history (#137). It is 15 lines of research notes, not shipped. The CS2 prefab data in the web tool (names, sizes, lane layouts) is factual interop data.
