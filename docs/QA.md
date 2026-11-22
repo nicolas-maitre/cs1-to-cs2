@@ -602,3 +602,35 @@ Same procedure as RC3 (§11): a `git archive` of **13c25e5** in `%LOCALAPPDATA%\
 - **Finding: none of the three zips contains the project's `LICENSE`** (MIT, in the repository root), and `RELEASE-NOTES.md` doesn't mention it. MIT asks that the copyright and permission notice go with copies of the software, so `LICENSE` should be added to each zip in `tools/release/build.mjs`. Per the instructions, `build.mjs` was left unchanged during this run.
 
 **Not covered:** trains and metros (known limit, #99).
+
+## 13. Final release acceptance, 0.3.1 with Node Controller offsets (buildings worker)
+
+Same procedure as §11 and §12: a `git archive` of **693ba8a** in `%LOCALAPPDATA%\cs1-to-cs2\final\693ba8a` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city.
+- **Artefacts:** product 0.3.1: exporter 1.2.2, importer 0.4.0, buildings 0.4.0, **web 0.9.5**. Build and `--check` passed.
+- **Every zip now has `LICENSE.txt`:** cs1-exporter-1.2.2, cs2-importer-0.4.0 and web-0.9.5 (the §12 finding is closed).
+- **The web report names the stretched junctions** (Skibidi package): "50 junctions stretched as Node Controller had them: 107 road ends pulled back by the CS1 offset (up to 52.069 m; 58 capped at 45 % of their segment), so CS2 builds longer junctions with smoother lane curves". It also lists the 17 road ends shifted sideways and the 22 nodes whose Node Controller type changed.
+- **Result:** all three **ok=true**, every step passed; CS2 was stopped before the lock was released.
+
+| | Skibidi 3 km (`20261122-012947`) | CacaoCity, left-hand (`20261122-013914`) | Westfield (`20261122-014813`) |
+| --- | --- | --- | --- |
+| Roads | 2035 / 2035 | 684 / 684 | 648 / 648 |
+| **Heights / CS1 tunnels** (heights-tunnels) | 2035 segments, **0 missing**; tunnels as planned | 684, 0 missing | 648, 0 missing |
+| Report complete / stubs | ok / 8 markers, 0 split | ok / 8, 0 split | ok / 10, 0 split |
+| Lane directions | all 1949 the same | all 554 the same (left-hand) | all 647 the same |
+| Lane connections (turn check) | **368 at 71 / 95** (was 363 at 70); 685/685 refs; **120 / 120** | 342 at 68 / 79; 727/729; 167 / 167 | **129 at 35 / 39** (was 127 at 34); 299/301; **83 / 83** |
+| **Roads after reload** | **0 of 2035 differ** | 0 of 684 | 0 of 648 |
+| **Lane connections after reload** | 71 junctions, 0 loader failures, 120 / 120 | 68, 0, 167 / 167 | 35, 0, 83 / 83 |
+| Zoning | 93.96 % (94.18 % in §12) | 90.73 % (91.07 %) | 99.99 % |
+| Buildings | 79 / 108; Bus Depot moved (#152) | 26 / 43; supply warnings as in §12 | 7 / 13; 3 "place a transformer station" |
+| Outside connections (summary) | 20 of 20 (13 road, 7 train, 4 electricity, 4 water) | 4 of 4 (4 road, 4 electricity, 4 water) | 22 of 22 (22 road, 5 electricity, 5 water) |
+| Vehicles after 300 s | **30 buses** on 9 routes; 24 train vehicles (6 engines, 18 cars), from the rail outside connections (this crop has no imported train line) | – | – |
+| Homes supplied (electricity / water) | 98.9 / 99.4 %; QA ok | 100 / 100 %; 1 shore pump on dry land (#42) | 100 / 100 %; 3 incinerators need a transformer (opt-in) |
+| **Households line** (new) | 851 households (0 homeless) in 634 residential buildings | 584 (0 homeless) in 143 | 10 (0 homeless) in 3 |
+
+**Against §12:**
+- **Node Controller offsets: more lane connections and no reload regressions.** Skibidi 368 at 71 junctions with 120/120 correct turns (363 at 70, 117/117 before), Westfield 129 at 35 (127 at 34). Roads and lane connections were still unchanged after a save and reload in all three cities.
+- **Zoning 0.2–0.3 points lower** in Skibidi and CacaoCity: the longer junctions cover a little more of the zoned strip.
+- **Everything else** is the same: roads, directions, heights, tunnels, stubs, report completeness, the moved Bus Depot, and supply.
+- **The households line** shows where CS2 grew few homes: Westfield 3 buildings and 10 households after 300 s. That's the spawn variance of §12, not a supply problem (100 %, 0 homeless).
+
+**Not covered:** imported metro and train lines (#99). Skibidi's crop has 8 bus lines and 1 subway line; its 24 train vehicles are outside-connection traffic.
