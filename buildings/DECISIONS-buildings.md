@@ -326,7 +326,7 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
         - both train stations anchored, 4.0 m across each, not turned; platforms 1.2 m and 0.0 m from their CS1 track (`platformcheck` on the save);
         - Train Line 1 path 180 elements; placer road guard 3263 edges, 0 gone;
         - roads-reload 0 changed; lane connections after reload 468/468, 0 loader failures.
+    - **Known limit** (coordinator, after the commit): elevated metro stations whose anchored lot overlaps a ground road stay at their CS1 spot as before, unanchored. On Skibidi that's all 3, their platforms 2–23 m off the CS1 track. Anchoring them would need a collision test that lets an elevated station's lot stand over a ground road (not checked against CS2's own rules yet); that's left for a later version.
     - **Open:**
-      - The 3 elevated metro stations collide at their anchored pose (over a ground road) and stay as before, 2–23 m off.
       - The 5 underground metro entrances have no CS1 metro track along their small lot, 9–12 m off.
       - No train ran in 300 s: yard dispatch, worker-4's side.
