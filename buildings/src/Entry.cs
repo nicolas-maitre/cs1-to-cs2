@@ -44,8 +44,103 @@ namespace Cs2Buildings
                 case "powerhook": return PowerHook.Start(args);
                 case "linetest": return LineTest.Start(args);
                 case "nodes": return NodesOp(args);
+                case "census": return CensusOp(args);
+                case "zonecells": return ZoneCellsOp(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (catalogue, place, inspect, list, objects, areas, prefab, utilities, netlayers, instance, water)");
             }
+        }
+
+        // zonecells {} [phase main]: zone cells by zone prefab and state (visible, occupied, blocked, shared …), from every
+        // Game.Zones.Block's Cell buffer. Read only; is residential land zoned and free (QA §12)?
+        static object ZoneCellsOp(Dictionary<string, object> a)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            var em = world.EntityManager;
+            var ps = world.GetOrCreateSystemManaged<PrefabSystem>();
+            var names = new Dictionary<ushort, string>();
+            using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<ZoneData>(), ComponentType.ReadOnly<PrefabData>()))
+            using (var es = q.ToEntityArray(Unity.Collections.Allocator.Temp))
+                foreach (var e in es) names[em.GetComponentData<ZoneData>(e).m_ZoneType.m_Index] = ps.GetPrefabName(e);
+            var counts = new SortedDictionary<string, int>();
+            int blocks = 0;
+            using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Zones.Block>(), ComponentType.ReadOnly<Game.Zones.Cell>()))
+            using (var es = q.ToEntityArray(Unity.Collections.Allocator.Temp))
+                foreach (var b in es)
+                {
+                    if (em.HasComponent<Game.Common.Deleted>(b)) continue;
+                    blocks++;
+                    var cells = em.GetBuffer<Game.Zones.Cell>(b, true);
+                    for (int i = 0; i < cells.Length; i++)
+                    {
+                        var c = cells[i];
+                        string zn;
+                        if (!names.TryGetValue(c.m_Zone.m_Index, out zn)) zn = "zone" + c.m_Zone.m_Index;
+                        var key = zn + " | " + c.m_State;
+                        int n; counts.TryGetValue(key, out n); counts[key] = n + 1;
+                    }
+                }
+            return new Dictionary<string, object> { { "blocks", blocks }, { "cells", counts } };
+        }
+
+        // census {} [phase main]: every building by its zone kind (the prefab's zone area type, or "service") and state
+        // (UnderConstruction, Abandoned, Condemned, with ResidentialProperty / CommercialProperty / IndustrialProperty …),
+        // plus households and the simulation frame. Read only; for "why so few homes after 300 s" (QA §12).
+        static object CensusOp(Dictionary<string, object> a)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            var em = world.EntityManager;
+            var res = new Dictionary<string, object>();
+            var byKind = new SortedDictionary<string, int>();
+            using (var q = em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Game.Buildings.Building>(), ComponentType.ReadOnly<PrefabRef>() },
+                None = new[] { ComponentType.ReadOnly<Game.Common.Deleted>(), ComponentType.ReadOnly<Game.Tools.Temp>() },
+            }))
+            using (var es = q.ToEntityArray(Unity.Collections.Allocator.Temp))
+                foreach (var e in es)
+                {
+                    var pf = em.GetComponentData<PrefabRef>(e).m_Prefab;
+                    string zone = "service";
+                    if (em.HasComponent<SpawnableBuildingData>(pf))
+                    {
+                        var zp = em.GetComponentData<SpawnableBuildingData>(pf).m_ZonePrefab;
+                        zone = zp != Entity.Null && em.HasComponent<ZoneData>(zp) ? em.GetComponentData<ZoneData>(zp).m_AreaType.ToString() : "spawnable?";
+                    }
+                    var st = new List<string>();
+                    if (em.HasComponent<Game.Objects.UnderConstruction>(e)) st.Add("underConstruction");
+                    if (em.HasComponent<Game.Buildings.Abandoned>(e)) st.Add("abandoned");
+                    if (em.HasComponent<Game.Buildings.Condemned>(e)) st.Add("condemned");
+                    if (em.HasComponent<Game.Common.Destroyed>(e)) st.Add("destroyed");
+                    if (em.HasComponent<Game.Buildings.ResidentialProperty>(e)) st.Add("resProp");
+                    if (em.HasComponent<Game.Buildings.CommercialProperty>(e)) st.Add("comProp");
+                    if (em.HasComponent<Game.Buildings.IndustrialProperty>(e)) st.Add("indProp");
+                    if (em.HasComponent<Game.Buildings.OfficeProperty>(e)) st.Add("offProp");
+                    if (em.HasBuffer<Game.Buildings.Renter>(e)) st.Add("renters" + Math.Min(em.GetBuffer<Game.Buildings.Renter>(e, true).Length, 1));
+                    var key = zone + " | " + (st.Count == 0 ? "-" : string.Join(",", st));
+                    int c; byKind.TryGetValue(key, out c); byKind[key] = c + 1;
+                }
+            res["buildings"] = byKind;
+            using (var q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Citizens.Household>()))
+                res["households"] = q.CalculateEntityCount();
+            var sim = world.GetExistingSystemManaged<Game.Simulation.SimulationSystem>();
+            if (sim != null) res["frameIndex"] = sim.frameIndex;
+            var rd = world.GetExistingSystemManaged<Game.Simulation.ResidentialDemandSystem>();
+            if (rd != null)
+            {
+                res["householdDemand"] = rd.householdDemand;
+                res["buildingDemand"] = rd.buildingDemand.x + " / " + rd.buildingDemand.y + " / " + rd.buildingDemand.z + " (low / medium / high)";
+                var names = Enum.GetNames(typeof(Game.Simulation.DemandFactor));
+                foreach (var dens in new[] { "low", "high" })
+                {
+                    var deps = default(Unity.Jobs.JobHandle);
+                    var f = dens == "low" ? rd.GetLowDensityDemandFactors(out deps) : rd.GetHighDensityDemandFactors(out deps);
+                    deps.Complete();
+                    var d = new Dictionary<string, object>();
+                    for (int i = 0; i < f.Length && i < names.Length; i++) if (f[i] != 0) d[names[i]] = f[i];
+                    res[dens + "DensityFactors"] = d;
+                }
+            }
+            return res;
         }
 
         // nodes {x, z, r=4}: every node within r m, with each connected edge's prefab and whether this node is that edge's

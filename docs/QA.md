@@ -583,7 +583,16 @@ Same procedure as RC3 (§11): a `git archive` of **13c25e5** in `%LOCALAPPDATA%\
 - **CacaoCity's Water Tower** now matches a CS2 water tower (WaterTower02; matcher 1.2.1). Only the CS1 shore intake at CS2 (535, −941) remains on dry land (#42, open).
 - **The new summary lines** for electricity and water outside connections, and for moved depots, show in the mod's status.
 
-**Residential counts vary from run to run** (Skibidi 7 homes here against 647 in RC3; Westfield 160 against 7). Electricity consumption is comparable (Skibidi 123 000 against 136 000), so this is CS2's growth after 300 s, not the import. The percentages are on a small base where the count is low.
+**Residential counts vary from run to run: CS2, not the build** (checked at the coordinator's request).
+- **The metric** is the number of buildings with `ResidentialProperty` (tools/qa), not households.
+- **Same inputs** in the 7-home run (`20261122-000820`) and RC3's 647-home run (`20261121-232522`):
+  - packages: zoning cells by type identical (46 670 / 21 608 / 3474 / 4379 / 439 / 88);
+  - import: zoning 72 197 of 76 658 cells; buildings 79 vs 78; outside connections 4 electricity, 4 water;
+  - 300.1 s simulated in both, ending at the same simulation frame (7 981 163 against 7 981 303);
+  - in game (new read-only ops `census` and `zonecells`): the same 4212 zone blocks, about 50 000 free "NA Residential Low" cells, the same residential building demand (0 / 100 / 0) and household demand 92 against 106.
+- **The difference:** the low run had 554 households but only 7 residential buildings. 3 more minutes added just 1 (with an `EmptyBuildings` penalty of −257), while RC3's save grew from 647 to 1126 in the same 3 minutes. Commercial and industrial grew the same in both.
+- **Repeat on the same final build** (`20261122-010305`, ok=true): **667 residential buildings and 34 buses**. The same thing happened in RC3's Westfield (7 homes) against this release's (160), and in CacaoCity (11 and 15 in acceptance, 228 in an e2e run).
+- **Conclusion:** CS2 sometimes stalls residential spawning in a fresh city; it isn't the import or 0.3.1. The acceptance doesn't use these counts as a pass criterion, and the supply percentages are on a small base when it happens.
 
 **Release zips and licence** (`release/0.3.1/`):
 - **cs1-exporter-1.2.2.zip:** `Cs1Exporter/Cs1Exporter.dll`, `Cs1Exporter/PreviewImage.png`, `CHANGELOG.md`, `workshop-description.txt`.
