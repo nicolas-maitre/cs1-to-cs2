@@ -515,3 +515,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
       - both mod descriptions say MIT and "not affiliated";
       - the README states that no game or mod code and no game assets are included.
     - **Left as is:** the Traffic quote remains in old commits (64f34fe and later). Removing it would need a history rewrite, and the user chose to keep history (#137). It is 15 lines of research notes, not shipped. The CS2 prefab data in the web tool (names, sizes, lane layouts) is factual interop data.
+156. **Node Controller offsets get a real attempt before publishing** (user, 2026-11-22). The user showed two imported highway splits where the diverging lane curve inside the junction overshoots sideways across the through lanes. In CS1 they were smooth tapers. NC offsets (which lengthen a junction) and stretch were report-only (DECISIONS-nodecontroller #5), because CS2 decides junction length itself. Worker-5 now:
+    - compares CS1 and CS2 at these splits;
+    - tests pulling each segment end back by the NC offset with the existing off-node mechanism (and checks whether the shifts make small-angle splits worse);
+    - measures the sideways overshoot, node failures, reload stability and lane connections.
+    If it works without breaking anything, it becomes the default before publishing.
