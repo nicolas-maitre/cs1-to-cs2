@@ -556,3 +556,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Locks:** scripts must wait for a free `cs2.lock` (`waitAndTakeLock`) and never take a held one. Worker-4's rail scripts took it twice during the acceptance.
     - **The user's mod Options:** acceptance `--mod-set` and the rail scripts restore every Option they change to its previous value, in `finally`. The old restore flipped booleans, so a crashed run could leave the user's settings changed (it left `ConnectRail = true`, now being reset).
     The per-line vehicle count in acceptance (0 per line, while 33 buses run) is a counting bug in the new check, not in the import.
+164. **Release 0.3.1 is on hold: imported bus lines get no buses** (Claude, from worker-4's bus check on the final Skibidi acceptance save).
+    - **Finding:** all 25 Bus01 are parked in the depot. Every imported bus line has `RequireVehicles, NotEnoughVehicles`, no vehicle, and passengers waiting. Every line's vehicle request has failed 9 times and was never dispatched. The moving buses were CS2's through traffic.
+    - **Correction:** the "31–34 buses on 9 routes" in QA §11–§14, the changelogs and #152 counted parked buses (a by-prefab total). The new per-line count (0 per line) was right.
+    - **What's known:** the depot is on the same road graph as all 145 stops, so the failure is in the directed path (traffic rules, one-way access, or the depot's lot side after the #152 move) or in the line setup.
+    - **Next:** worker-4 bisects with directed lane reach and the traffic steps turned off (up to ~6 runs).
+    - **Rule for the release:** it waits until bus lines run, or until the store texts and changelogs stop claiming they do. Acceptance must fail when an imported bus line has no vehicle.
