@@ -686,3 +686,40 @@ Smooth targets are preferred, within 45° of the chord at both ends; otherwise t
 - **Next:** place the yard with its tracks parallel to the line (buildings placer orientation), or give the link a lead-out curve longer than one cubic.
 
 Trains run with the opt-in; metros remain a known limit until the yard can be aligned.
+
+## 14. Final release acceptance, 0.3.1 with CS1 line names (buildings worker)
+
+Same procedure as §13: a `git archive` of **af82ed1** in `%LOCALAPPDATA%\cs1-to-cs2\final\af82ed1` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).
+- **Artefacts:** product 0.3.1: exporter 1.2.2, importer 0.4.0, buildings 0.4.0, web 0.9.5. Build and `--check` passed. **`LICENSE.txt` is in all three zips.**
+- **Result:** all three cities **ok=true**, every step passed. CS2 was stopped after each run.
+
+**Settings and the shared lock (worker-4's rail runs in parallel):**
+- **Overlap:** worker-4's scripts took `cs2.lock` while these runs held it, twice: `rail-roads.mjs` 29 s into the Skibidi run, and the line diagnostics during the Westfield run.
+- **Rail left on:** a crashed rail acceptance of theirs (run 3, 04:26Z) left the mod's persisted Options at **`ConnectRail: true`**, and its import of CacaoCity collided with the first CacaoCity run here (`20261122-042353`). That run is discarded.
+- **Re-runs:** CacaoCity and Westfield were re-run with `--mod-set '{"ConnectRail":false}'` (`20261122-043717`, `20261122-045623`). Skibidi (`20261122-041416`) ran with the default settings, which were checked on disk before the run.
+- **No visible effect:** every number below matches §13 apart from the line names, which this commit fixes.
+- **Follow-ups:**
+  - Worker-4 pins `ConnectRail: false` in the acceptance's base Options (their working copy, uncommitted), so a default acceptance runs with rail off whatever the persisted state.
+  - The old restore flips booleans, so the persisted Options were left at `ConnectRail: true` after these runs; worker-4 is resetting it.
+  - Lock-taking scripts must wait on an existing lock.
+
+| | Skibidi 3 km (`20261122-041416`) | CacaoCity, left-hand (`20261122-043717`) | Westfield (`20261122-045623`) |
+| --- | --- | --- | --- |
+| Roads | 2035 / 2035 | 684 / 684 | 648 / 648 |
+| **Transit lines named** | **9 created, 9 named** ("Bus Line 12", "Bus Line 10", …, "Metro Line 3"); `named: 0` since RC3 | none in the city | none in the city |
+| **Heights / tunnels** (now without track trimmed under stations) | 2035, **0 missing** (track 0, other 0, rail trimmed 0) | 684, 0 missing | 648, 0 missing |
+| Report complete / stubs | ok / 8 markers, 0 split | ok / 8, 0 split | ok / 10, 0 split |
+| Lane directions | all 1949 the same | all 554 the same (left-hand) | all 647 the same |
+| Lane connections (turn check) | 368 at 71 / 95; 685/685; **120 / 120** | 342 at 68 / 79; 727/729; **167 / 167** | 129 at 35 / 39; 299/301; **83 / 83** |
+| **Roads / lane connections after reload** | **0 differ** / 0 loader failures | 0 / 0 | 0 / 0 |
+| Buildings | 79 / 108; Bus Depot moved (#152) | 26 / 43; supply warnings | 7 / 13; 3 "place a transformer station" |
+| Outside connections | 20 of 20 (13 road, 7 train, 4 electricity, 4 water) | 4 of 4 (4 electricity, 4 water) | 22 of 22 (5 electricity, 5 water) |
+| Vehicles after 300 s | **33 buses**, 16 train vehicles (outside-connection traffic) | 3 buses (no lines) | 7 buses (no lines) |
+| Homes supplied (electricity / water) | 98.9 / 98.8 %; QA ok | 88.9 / 100 % of 9 homes; 1 shore pump on dry land (#42) | 100 / 100 %; 3 incinerators need a transformer (opt-in) |
+| Households | 654 residential buildings | 588 households in 9 buildings, flagged as spawn variance by the new line | 7 in 6 |
+
+**Against §13:** the same results to the digit, plus the CS1 line names (9 of 9) and the stricter heights check (track trimmed under stations excluded, 0 missing in all three).
+
+**Finding: the new per-line vehicle count reports 0 for every Skibidi line** (`vehicles.lines`, from the transit library's `lines.list`), while 33 buses run on the city's 9 routes. Most likely `lines.list` doesn't count a line's vehicles the way CS2 assigns them; the totals by prefab are right. For worker-4 (transit library); it doesn't change the result.
+
+**Not covered:** imported metro and train lines with rail on (worker-4's runs).
