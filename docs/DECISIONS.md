@@ -608,3 +608,9 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
       - Train Line 1's own path fails because the CS2 station sits 14–30 m off CS1's tracks, which leaves a 42° straight link with no lanes.
     - **Next (buildings worker, opt-in, next version):** place station buildings so their platform track lies on the CS1 track, using the prefab's platform sub-net geometry rather than the lot centre. #106 still holds: no move to free land, only the correct anchor for the same building at its CS1 spot.
     - **Release 0.3.1 stays 66558c8 (#169).** Main moves ahead with opt-in rail work only.
+171. **Trains run in the mod flow with rail on; next, check whether rail can be on by default** (Claude, from worker-4's round 5, c82f74c).
+    - **Result:** with `ConnectRail` on, Skibidi's Train Line 1 runs a train from its crop-edge yard. Every acceptance gate passes, with roads-reload 0, lane reload intact and 0 unexplained missing track.
+    - **Cause:** the temporary road guard also fixed the links' own target nodes, so CS2 built the landing beside the target.
+    - **Changes:** the guard now skips link ends; a landing repair stays as insurance; yard crossings go over ground track only.
+    - **Still missing:** metro has no vehicles, because no yard is invented inside the city (#83).
+    - **Next:** an evaluation with rail on, on the standard acceptance crops of all three cities and Skibidi 6 km, to decide whether `ConnectRail` can default to on in the next version. Release 0.3.1 stays 66558c8 with rail opt-in (#169). Changing the default after release is the user's call, since it changes what an import builds.
