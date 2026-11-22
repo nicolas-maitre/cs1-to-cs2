@@ -527,3 +527,10 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Not caused by the shift:** shift alone isn't the cause, and shift plus offset is best. Slope and twist stay report-only.
     - **Side effect:** a wider paved gore, closer to CS1's look.
     - **Implementation:** in the web plan's NC alignment (shortened bezier, `offNode`, `ncOffset` for traceability). The importer needs nothing new. One more release acceptance with the reload check follows.
+158. **Release 0.3.1 is ready to publish; publishing stays the user's call** (Claude). The final release acceptance on 693ba8a (docs/QA.md §13) passed every step on Skibidi, CacaoCity (left-hand) and Westfield, from a clean archive through the real mod flow.
+    - **Versions:** product 0.3.1, with exporter 1.2.2, importer 0.4.0, buildings 0.4.0 and web 0.9.5.
+    - **Roads:** 0 differences after a reload, lane connections survive with 0 loader failures, and turns are all correct.
+    - **Other checks:** heights and tunnels as planned, the report complete, 0 stub splits, and 99–100 % of homes supplied.
+    - **Contents:** every zip carries the MIT licence, and the store texts carry the AI disclaimer and "not affiliated".
+    - **Known limits** (in the store texts and changelogs): trains and metros don't run, buildings overlapping a road aren't placed, transformers are opt-in, and off-road power producers produce nothing.
+    - **Before publishing** (docs/RELEASE.md): tag the commit, upload the CS1 exporter to the Steam Workshop and the CS2 importer to Paradox Mods, and fill in the published links in web/src/ui/links.ts. Nothing has been uploaded.
