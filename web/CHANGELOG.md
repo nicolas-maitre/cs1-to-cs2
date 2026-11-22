@@ -2,6 +2,10 @@
 
 The web tool (https://nicolas-maitre.github.io/cs1-to-cs2/): it turns a CS1 export (`.cs1x`) into an import package for the CS2 mod. The version is `version` in `web/package.json`. Decision numbers refer to [docs/DECISIONS.md](../docs/DECISIONS.md).
 
+## 0.9.6 (2026-11-22)
+
+- **Bus and tram stops on roads cut by the crop** (#166 follow-up): a kerbside stop is dropped when its road, in the stop's direction of travel, only leads to a dead end at the crop edge (a one-way road the crop cut, within 50 m of the edge), with no loop to circulate on, or can only be reached from one. In CS1 the line left the crop there and came back; the roads crossing the edge aren't imported, so the bus would be stranded and the line would get no vehicles. The line keeps its other stops and stays marked `truncated`, and the report names each dropped stop ("stop 15 (CS1 segment 20357) dropped: its road only leads to the crop edge"). A two-way road's dead end turns vehicles round (CS2 does it, even across a median), so stops on two-way stubs stay; so do stops near CS1's own dead ends away from the edge. Skibidi 3 km: one stop of Bus Line 14.
+
 ## 0.9.5 (2026-11-22)
 
 - **Node Controller offsets at junctions** (#157): where a player stretched a junction with Node Controller (an end offset more than 5 m above its default, at junctions of 3 or more roads), the roads are pulled back from the node by that offset, at most 45 % of the segment. CS2 then builds a longer junction: splits and merges at small angles taper smoothly instead of kinking, and lane lines no longer overshoot or cross. Not at 2-road nodes. On by default; option "Node Controller offsets at junctions", CLI `--no-nc-offsets`. Plan: `segments[].ncOffset` [start, end] in m, with `offNode`.

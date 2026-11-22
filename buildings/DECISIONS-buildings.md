@@ -290,3 +290,21 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
     - **Report:** the depot's reason ends in "placed away from its CS1 spot because its lines need a depot". `depotsMoved` lists them with the distance and the CS1 spot, and `depotRetries` counts them. The "no bus depot placed" warning still shows when the retry fails too.
     - **Tests:** `PlacementRules.DepotRetries` and `DepotMovedNote` in RulesTests (11/11).
     - **Verified:** Skibidi acceptance on the dev tree (`.gamectl/acceptance/20261121-233917`, ok=true, every step green). The Bus Depot was retried and placed 117 m from its CS1 spot; buildings 79/108; **31 buses** after 300 s (RC3: 4, RC2: 34) on 9 routes. Roads and lane connections were unchanged after reload, the report was complete, and homes ~99 % supplied.
+47. **Buildings are placed the object tool's way: Temp definitions, then the tool's Apply** (DECISIONS.md #164/#166, worker-4's finding).
+    - **Why:** imported bus lines never got a bus. Every bus stood parked in the depot, every line was `NotEnoughVehicles`, and the earlier "31–34 buses" counted parked buses by prefab.
+      - Built from a `CreationFlags.Permanent` definition plus our own Permanent sub-net courses, a depot's spawn locations joined its own invisible internal paths, which reached nothing, so dispatch found no path.
+      - Worker-4 rebuilt the same BusDepot01 at the same spot through a Temp definition and the forced apply frame: 25 buses moving within 150 s, and its spawns joined the street's own lanes.
+    - **Rule** (run option `toolApply`: `all` (default), `depots`, or `none` for the old Permanent path):
+      1. Each batch gets Temp definitions (no Permanent flag; ObjectDefinition with local position zero and identity rotation, as the tool writes them).
+      2. Sub-net courses are written the same way (Temp, owned through `OwnerDefinition`), but **only the visible ones** (tracks, platforms, visible roads and paths).
+      3. One frame later, the active tool's `applyMode` is set to Apply by reflection (`SetApply`, as worker-4's `Ops.SetApply`), and the batch settles.
+    - **Invisible paths are not written on this path:** applied, an invisible path ending on the street split imported road edges (Skibidi: 8 road edges gone). Without them CS2 joins the spawn locations to the street, and the buses dispatch.
+    - **Road guard against node reduction:** the apply runs CS2's NodeReductionSystem, which merged two imported roads at a plain two-edge node 137 m from a park.
+      - Every imported top-level two-edge node gets a temporary `Game.Net.Fixed` for all the apply batches (NodeReduction skips Fixed, as TrackLink `guardRoads`), removed after the last one.
+      - The placer's report has `roadGuard` (every road edge's endpoints before and after) and `ok`.
+    - **Report:** `toolApply`, `toolApplied`, `applyBatches`, `applyFailed`, `nodesGuarded`, `roadGuard`, `ok`. A tool-applied building's `subNetsExpected` counts its visible sub-nets only.
+    - **Verified** on Skibidi (`.gamectl/acceptance/20261122-070026`, dev tree, ok=true):
+      - 79 buildings tool-applied in 2 batches (3.6 s); 1127 nodes guarded; road guard 2015 road edges, 0 gone, 0 rewired;
+      - heights 0 missing; roads and lane connections unchanged after reload; the 6 buildings with visible sub-nets all have them;
+      - **23 buses running on 6 of 8 bus lines** (before: 0 on every line). The other 2 lines wait for capacity: the one CS1 Bus Depot's 24–25 buses are all out.
+    - **Acceptance:** `tools/release/lines-check.mjs` counts only vehicles running on a line's route. A bus or tram line with none fails the run unless every depot of that kind is out of vehicles; then it's reported as waiting for capacity.

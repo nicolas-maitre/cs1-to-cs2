@@ -169,6 +169,61 @@ describe('transit', () => {
     expect(manual.summary.find(s => s.id === 'transit')!.details.join(' ')).toMatch(/Lignes de métro : vous placez leur dépôt vous-même/);
     expect(buildPackage(cross({ transit: { lines: [c.transit!.lines[0]] } }), { crop: CROP }).plan.transit!.depotMode).toBeUndefined();
   });
+
+  // #166 follow-up: a kerbside stop whose road only leads to (or comes from) the crop edge strands the bus
+  describe('stops on roads cut by the crop edge', () => {
+    const ONEWAY: NetInfo = {
+      name: 'Oneway', title: 'One-Way Road', ai: 'RoadAI', service: 'Road', parent: null, fields: { m_halfWidth: 8 },
+      lanes: [lane(-7, 3, 'Pedestrian', 'None', 'Both'), lane(-1.5, 3, 'Vehicle', 'Car', 'Forward'), lane(1.5, 3, 'Vehicle', 'Car', 'Forward'), lane(7, 3, 'Pedestrian', 'None', 'Both')],
+    };
+    // a two-way loop A(0,0) B(200,0) C(200,200) D(0,200) (the city), with stubs; the crop's edges are at ±500
+    const P: Record<number, [number, number]> = { 1: [0, 0], 2: [200, 0], 3: [200, 200], 4: [0, 200], 5: [480, 0], 6: [200, 480], 7: [-100, 200], 8: [-480, 0], 9: [200, 320] };
+    const seg = (id: number, info: string, a: number, b: number) => {
+      const [x0, z0] = P[a], [x1, z1] = P[b];
+      return { ...straight(id, info, 0, 0, 0, false, a, b), bezier: [[x0, 0, z0], [x0 + (x1 - x0) / 3, 0, z0 + (z1 - z0) / 3], [x0 + 2 * (x1 - x0) / 3, 0, z0 + 2 * (z1 - z0) / 3], [x1, 0, z1]] as Cs1City['segments'][number]['bezier'], length: Math.hypot(x1 - x0, z1 - z0) };
+    };
+    const at = (a: number, b: number): [number, number, number] => [(P[a][0] + P[b][0]) / 2, 0, (P[a][1] + P[b][1]) / 2];
+    // a stop on the right-hand sidewalk (travel start → end): ROAD lane 5, ONEWAY lane 3
+    const stop = (id: number, segment: number, a: number, b: number, laneIndex: number) => ({ node: id, position: at(a, b), segment, laneIndex, laneOffset: 0.5, building: 0 });
+    const net = (stub: ReturnType<typeof stop>) => city({
+      netInfos: [ROAD, ONEWAY],
+      nodes: Object.entries(P).map(([id, [x, z]]) => node(Number(id), x, z)),
+      segments: [
+        seg(1, ROAD.name, 1, 2), seg(2, ROAD.name, 2, 3), seg(3, ROAD.name, 3, 4), seg(4, ROAD.name, 4, 1),
+        seg(10, ONEWAY.name, 2, 5), // one-way east, ends 20 m from the edge
+        seg(11, ROAD.name, 3, 9), seg(12, ROAD.name, 9, 6), // two-way north via node 9, ends 20 m from the edge
+        seg(13, ONEWAY.name, 4, 7), // one-way west, ends 400 m from the edge (CS1's own dead end)
+        seg(14, ONEWAY.name, 8, 1), // one-way east from 20 m off the edge into the city
+      ],
+      transit: { lines: [{ id: 1, name: 'Bus 1', type: 'Bus', stops: [stop(100, 1, 1, 2, 5), stop(101, 3, 3, 4, 5), stub] }] },
+    });
+    const run = (stub: ReturnType<typeof stop>) => { const r = buildTransit(ctxOf(net(stub))); return { line: r.section!.lines[0], items: r.items.map(i => i.message) }; };
+
+    it('drops a stop on a one-way road that only leads to the crop edge', () => {
+      const { line, items } = run(stop(102, 10, 2, 5, 3));
+      expect(line.stops.map(s => s.segment)).toEqual([1, 3]);
+      expect(line.truncated).toBe(true);
+      expect(items).toContain('Bus 1: stop 3 (CS1 segment 10) dropped: its road only leads to the crop edge');
+      expect(items.some(m => /1 kerbside stop on one-way roads .* was dropped/.test(m))).toBe(true);
+    });
+    it('drops a stop on a one-way road that only comes from the crop edge', () => {
+      const { line, items } = run(stop(102, 14, 8, 1, 3));
+      expect(line.stops.map(s => s.segment)).toEqual([1, 3]);
+      expect(items).toContain('Bus 1: stop 3 (CS1 segment 14) dropped: its road only comes from the crop edge');
+    });
+    it('keeps a stop on a two-way stub to the edge: the bus turns at a node or at the end', () => {
+      for (const s of [stop(102, 11, 3, 9, 5), stop(102, 12, 9, 6, 5), stop(102, 12, 9, 6, 0)]) {
+        const { line, items } = run(s);
+        expect(line.stops).toHaveLength(3);
+        expect(line.truncated).toBe(false);
+        expect(items.some(m => /crop edge/.test(m))).toBe(false);
+      }
+    });
+    it('keeps a stop on a one-way stub far from the edge (a dead end CS1 had too)', () => {
+      const { line } = run(stop(102, 13, 4, 7, 3));
+      expect(line.stops.map(s => s.segment)).toEqual([1, 3, 13]);
+    });
+  });
 });
 
 describe('TM:PE', () => {

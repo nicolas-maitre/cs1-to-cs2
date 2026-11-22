@@ -66,14 +66,14 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Lignes de bus et de tram | Lignes CS2 avec couleur, nom, numéro et arrêts | converti, approché | Trolleybus, bus touristiques et interurbains deviennent des lignes de bus. |
+| Lignes de bus et de tram | Lignes CS2 avec couleur, nom, numéro et arrêts | converti, approché | Trolleybus, bus touristiques et interurbains deviennent des lignes de bus. Elles n'ont pas encore de véhicules (limite connue, en cours de correction). |
 | Lignes de train, métro, bateau et avion | Lignes CS2 aux gares placées | converti, approché | Ont besoin de leurs gares, placées avec les bâtiments. Les dépôts de métro et de train vont au bord de la découpe, là où la voie en sort (ou vous les placez) ; jamais dans la ville. |
 
 ## Bâtiments
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Bâtiments de service, gares, dépôts, parcs, monuments | Bâtiment CS2 le plus proche (même service, puis capacité et taille) | converti, approché | Vérifiez ou changez chaque type dans l'onglet Bâtiments. Un bâtiment qui ne tient pas à sa place n'est pas déplacé par défaut : il vous est listé pour que vous le placiez. Les dépôts de bus et de tram font exception quand aucun de leur type ne tient : l'un d'eux est placé à proximité pour que les lignes aient des véhicules. |
+| Bâtiments de service, gares, dépôts, parcs, monuments | Bâtiment CS2 le plus proche (même service, puis capacité et taille) | converti, approché | Vérifiez ou changez chaque type dans l'onglet Bâtiments. Un bâtiment qui ne tient pas à sa place n'est pas déplacé par défaut : il vous est listé pour que vous le placiez. Les dépôts de bus et de tram font exception quand aucun de leur type ne tient : l'un d'eux est placé à proximité pour que les lignes aient un dépôt. |
 | Bâtiments des zones | Construits par CS2 sur les zones converties | converti | Pas placés un par un. |
 | Bibliothèques, stations de taxi, arrêts de téléphérique | – | non converti | Pas d'équivalent CS2. |
 

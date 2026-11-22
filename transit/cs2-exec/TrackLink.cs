@@ -442,6 +442,115 @@ namespace Cs1ConvTransit
             return r;
         }
 
+        /// <summary>Diagnostic (bus check): the directed road-lane graph (car lanes, not Forbidden; road connection lanes
+        /// both ways; Twoway car lanes both ways; joined at start / end / middle path nodes). From each bus depot's own
+        /// lanes: lanes reached, and which bus lines' first waypoint lanes; per bus line, stop-to-stop reach; plus the
+        /// depot's road edge lanes (flags), the lines' vehicle models and the depot's transport data.</summary>
+        public static object RoadReach()
+        {
+            var lanes = new List<Entity>(); var two = new HashSet<Entity>(); int forbidden = 0;
+            var q = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Game.Net.Lane>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+            using (var ls = q.ToEntityArray(Allocator.Temp))
+                foreach (var l in ls)
+                {
+                    if (Em.HasComponent<Game.Net.CarLane>(l))
+                    {
+                        var f = Em.GetComponentData<Game.Net.CarLane>(l).m_Flags;
+                        if ((f & Game.Net.CarLaneFlags.Forbidden) != 0) { forbidden++; continue; }
+                        lanes.Add(l); if ((f & Game.Net.CarLaneFlags.Twoway) != 0) two.Add(l);
+                    }
+                    else if (Em.HasComponent<Game.Net.ConnectionLane>(l) && (Em.GetComponentData<Game.Net.ConnectionLane>(l).m_Flags & Game.Net.ConnectionLaneFlags.Road) != 0) { lanes.Add(l); two.Add(l); }
+                }
+            q.Dispose();
+            var byEntry = new Dictionary<Game.Pathfind.PathNode, List<KeyValuePair<Entity, bool>>>();
+            Action<Game.Pathfind.PathNode, KeyValuePair<Entity, bool>> add = (k, st) => { if (!byEntry.TryGetValue(k, out var li)) byEntry[k] = li = new List<KeyValuePair<Entity, bool>>(); li.Add(st); };
+            foreach (var l in lanes)
+            {
+                var ln = Em.GetComponentData<Game.Net.Lane>(l);
+                add(ln.m_StartNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, false));
+                add(ln.m_MiddleNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, false));
+                if (two.Contains(l)) { add(ln.m_EndNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, true)); add(ln.m_MiddleNode.StripCurvePos(), new KeyValuePair<Entity, bool>(l, true)); }
+            }
+            Func<KeyValuePair<Entity, bool>, IEnumerable<KeyValuePair<Entity, bool>>> next = st =>
+            {
+                var ln = Em.GetComponentData<Game.Net.Lane>(st.Key);
+                var r0 = new List<KeyValuePair<Entity, bool>>();
+                if (byEntry.TryGetValue((st.Value ? ln.m_StartNode : ln.m_EndNode).StripCurvePos(), out var a1)) r0.AddRange(a1);
+                if (byEntry.TryGetValue(ln.m_MiddleNode.StripCurvePos(), out var a2)) foreach (var m in a2) if (m.Key != st.Key) r0.Add(m);
+                return r0;
+            };
+            Func<IEnumerable<Entity>, HashSet<Entity>> forward = starts =>
+            {
+                var seen = new HashSet<KeyValuePair<Entity, bool>>(); var queue = new List<KeyValuePair<Entity, bool>>();
+                foreach (var st in starts) { var f = new KeyValuePair<Entity, bool>(st, false); if (seen.Add(f)) queue.Add(f); if (two.Contains(st)) { var bb = new KeyValuePair<Entity, bool>(st, true); if (seen.Add(bb)) queue.Add(bb); } }
+                for (int i = 0; i < queue.Count && i < 2000000; i++) foreach (var n in next(queue[i])) if (seen.Add(n)) queue.Add(n);
+                var res = new HashSet<Entity>(); foreach (var st in seen) res.Add(st.Key); return res;
+            };
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            // bus lines: waypoint lanes and vehicle models
+            var lines = new List<KeyValuePair<string, List<Entity>>>(); var lineInfo = new List<object>();
+            var rq = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Game.Routes.Route>(), ComponentType.ReadOnly<Game.Routes.TransportLine>(), ComponentType.ReadOnly<PrefabRef>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+            using (var rs = rq.ToEntityArray(Allocator.Temp))
+                foreach (var r in rs)
+                {
+                    var pf = Em.GetComponentData<PrefabRef>(r).m_Prefab;
+                    if (!Em.HasComponent<TransportLineData>(pf) || Em.GetComponentData<TransportLineData>(pf).m_TransportType != TransportType.Bus) continue;
+                    names.TryGetCustomName(r, out string nm);
+                    var wl = new List<Entity>();
+                    if (Em.HasBuffer<Game.Routes.RouteWaypoint>(r)) { var wb = Em.GetBuffer<Game.Routes.RouteWaypoint>(r, true); for (int i = 0; i < wb.Length; i++) { var w = wb[i].m_Waypoint; wl.Add(Em.HasComponent<Game.Routes.RouteLane>(w) ? Em.GetComponentData<Game.Routes.RouteLane>(w).m_StartLane : Entity.Null); } }
+                    lines.Add(new KeyValuePair<string, List<Entity>>(nm ?? Id(r), wl));
+                    var vm = new List<object>();
+                    if (Em.HasBuffer<Game.Routes.VehicleModel>(r)) { var vb = Em.GetBuffer<Game.Routes.VehicleModel>(r, true); for (int i = 0; i < vb.Length; i++) vm.Add(PrefabName(vb[i].m_PrimaryPrefab) + "/" + PrefabName(vb[i].m_SecondaryPrefab)); }
+                    int chainOk = 0, chainN = 0; var fails = new List<object>();
+                    Func<Entity, string> desc = l0 =>
+                    {
+                        if (l0 == Entity.Null || !Em.Exists(l0)) return "none";
+                        string own = Em.HasComponent<Owner>(l0) ? Id(Em.GetComponentData<Owner>(l0).m_Owner) + " " + PrefabName(Em.GetComponentData<PrefabRef>(Em.GetComponentData<Owner>(l0).m_Owner).m_Prefab) : "-";
+                        string fl = Em.HasComponent<Game.Net.CarLane>(l0) ? Em.GetComponentData<Game.Net.CarLane>(l0).m_Flags.ToString() : "not a car lane";
+                        return Id(l0) + " " + PrefabName(Em.GetComponentData<PrefabRef>(l0).m_Prefab) + " on " + own + " [" + fl + "]";
+                    };
+                    for (int i = 0; i < wl.Count; i++)
+                    {
+                        var a0 = wl[i]; var b0 = wl[(i + 1) % wl.Count]; if (a0 == Entity.Null || b0 == Entity.Null) continue; chainN++;
+                        var fa = forward(new[] { a0 });
+                        if (fa.Contains(b0)) { chainOk++; continue; }
+                        var fb = forward(new[] { b0 });
+                        fails.Add(new Dictionary<string, object> { { "from", i }, { "to", (i + 1) % wl.Count }, { "fromLane", desc(a0) }, { "toLane", desc(b0) }, { "fromReaches", fa.Count }, { "toReaches", fb.Count }, { "reverseOk", fb.Contains(a0) } });
+                    }
+                    lineInfo.Add(new Dictionary<string, object> { { "name", nm }, { "waypoints", wl.Count }, { "vehicleModel", vm }, { "stopToStopReach", chainOk + "/" + chainN }, { "failingPairs", fails } });
+                }
+            rq.Dispose();
+            var depots = new List<object>();
+            var dq = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Game.Buildings.Building>(), ComponentType.ReadOnly<PrefabRef>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() } });
+            using (var ds = dq.ToEntityArray(Allocator.Temp))
+                foreach (var d in ds)
+                {
+                    var pf = Em.GetComponentData<PrefabRef>(d).m_Prefab;
+                    if (!Em.HasComponent<TransportDepotData>(pf)) continue;
+                    var tdd = Em.GetComponentData<TransportDepotData>(pf);
+                    if (tdd.m_TransportType != TransportType.Bus) continue;
+                    var own = new List<Entity>(); foreach (var l in lanes) if (TopOwner(l) == d) own.Add(l);
+                    var reach = forward(own);
+                    var hit = new List<object>(); var miss = new List<object>();
+                    foreach (var kv in lines) { var fw = kv.Value.Find(x => x != Entity.Null); if (fw == Entity.Null) continue; (reach.Contains(fw) ? hit : miss).Add(kv.Key); }
+                    var bd = Em.GetComponentData<Game.Buildings.Building>(d);
+                    var edgeLanes = new List<object>();
+                    if (bd.m_RoadEdge != Entity.Null && Em.HasBuffer<Game.Net.SubLane>(bd.m_RoadEdge))
+                    {
+                        var sl = Em.GetBuffer<Game.Net.SubLane>(bd.m_RoadEdge, true);
+                        for (int i = 0; i < sl.Length; i++) { var l = sl[i].m_SubLane; if (Em.HasComponent<Game.Net.CarLane>(l)) edgeLanes.Add(PrefabName(Em.GetComponentData<PrefabRef>(l).m_Prefab) + " [" + Em.GetComponentData<Game.Net.CarLane>(l).m_Flags + "] reached=" + reach.Contains(l)); }
+                    }
+                    var ownInfo = new List<object>(); foreach (var l in own) ownInfo.Add(PrefabName(Em.GetComponentData<PrefabRef>(l).m_Prefab) + (Em.HasComponent<Game.Net.ConnectionLane>(l) ? " conn[" + Em.GetComponentData<Game.Net.ConnectionLane>(l).m_Flags + "]" : " car[" + Em.GetComponentData<Game.Net.CarLane>(l).m_Flags + "]"));
+                    depots.Add(new Dictionary<string, object> {
+                        { "depot", Id(d) }, { "prefab", PrefabName(pf) }, { "energy", tdd.m_EnergyTypes.ToString() }, { "size", tdd.m_SizeClass.ToString() },
+                        { "roadEdge", bd.m_RoadEdge != Entity.Null ? Id(bd.m_RoadEdge) + " " + PrefabName(Em.GetComponentData<PrefabRef>(bd.m_RoadEdge).m_Prefab) : "none" }, { "curvePos", bd.m_CurvePosition },
+                        { "ownLanes", ownInfo }, { "reachedLanes", reach.Count }, { "linesReached", hit }, { "linesMissed", miss }, { "roadEdgeLanes", edgeLanes },
+                    });
+                }
+            dq.Dispose();
+            return new Dictionary<string, object> { { "lanes", lanes.Count }, { "forbiddenCarLanes", forbidden }, { "depots", depots }, { "lines", lineInfo } };
+        }
+
         static Entity LaneEdge(Entity lane)
         {
             if (lane == Entity.Null || !Em.Exists(lane) || !Em.HasComponent<Owner>(lane)) return Entity.Null;

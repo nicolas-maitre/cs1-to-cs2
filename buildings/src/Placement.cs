@@ -66,7 +66,8 @@ namespace Cs2Buildings
             public float SnapDistance = -1;
             public Entity Placed;
             public int SubNetsExpected = -1, SubNetsBuilt = -1; // course definitions written / edges owned by the building
-            public bool DepotRetry;          // decision #152: a bus / tram CS1 depot retried with "nearby" (none of its kind placed)
+            public bool DepotRetry;
+            public bool ToolApplied;         // decision #47: built through the tool's Temp + Apply path          // decision #152: a bus / tram CS1 depot retried with "nearby" (none of its kind placed)
             public string PumpWater;         // surface-water pump: "shore N m away" (slid toward the water) or "groundwater pump" (swapped)
         }
 
@@ -450,6 +451,18 @@ namespace Cs2Buildings
             // definitions owned by the building definition. Same here (run option subNets, default on).
             bool subNets = P.Bool(a, "subNets", true);
             var rnd = new Unity.Mathematics.Random(0x5eed1234u);
+            // Buildings go the object tool's way (buildings decision #47, DECISIONS.md #166): Temp definitions, then the
+            // tool's Apply, in batches. Built from Permanent definitions, a building's spawn locations connected to its own
+            // invisible paths instead of the street's lanes: dispatch found no path, every bus stayed parked and every line
+            // was NotEnoughVehicles (worker-4). On the apply path CS2 builds the sub-nets, sub-lanes and spawn locations
+            // itself. Run option toolApply: "all" (default), "depots" (transport depots and yards only) or "none" (the old
+            // Permanent path with our own sub-net courses).
+            string toolApply = P.Str(a, "toolApply", "all");
+            var applied = new List<Item>();
+            if (toolApply == "all") applied = new List<Item>(ready);
+            else if (toolApply == "depots") applied = ready.FindAll(i => em.HasComponent<TransportDepotData>(i.PrefabEntity));
+            ready.RemoveAll(i => applied.Contains(i));
+            var roadGuard = RoadGuard.Take(em);
             for (int start = 0; start < ready.Count; start += batchSize)
             {
                 for (int k = start; k < Math.Min(ready.Count, start + batchSize); k++)
@@ -471,8 +484,44 @@ namespace Cs2Buildings
                 batches++;
                 for (int f = 0; f < settle; f++) { yield return null; frames++; }
             }
+            int applyBatches = 0, applyFailed = 0, nodesGuarded = 0;
+            // The apply runs CS2's NodeReductionSystem, which merges a plain two-edge node's two imported roads into one
+            // edge (worker-4, rail; here a park's paths 137 m from the node merged two Skibidi roads). Its query skips
+            // Game.Net.Fixed: every imported top-level two-edge node gets a temporary Fixed for all the apply batches (as
+            // TrackLink guardRoads), removed after the last one.
+            var guarded = applied.Count > 0 ? GuardNodes(em, null, 0f) : new List<Entity>();
+            nodesGuarded = guarded.Count;
+            for (int start = 0; start < applied.Count; start += batchSize)
+            {
+                var batch = applied.GetRange(start, Math.Min(batchSize, applied.Count - start));
+                foreach (var it in batch)
+                {
+                    var e = em.CreateEntity();
+                    em.AddComponentData(e, new CreationDefinition { m_Prefab = it.PrefabEntity, m_RandomSeed = rnd.NextInt() });
+                    em.AddComponentData(e, new ObjectDefinition
+                    {
+                        m_Position = it.Position, m_Rotation = it.Rotation, m_LocalPosition = float3.zero, m_LocalRotation = quaternion.identity,
+                        m_Scale = new float3(1f), m_Intensity = 1f, m_ParentMesh = -1, m_GroupIndex = -1, m_Probability = 100, m_PrefabSubIndex = -1,
+                    });
+                    em.AddComponent<Updated>(e);
+                    em.AddComponent<Deleted>(e);
+                    if (subNets) subNetCourses += CreateSubNets(em, it.PrefabEntity, it.Position, it.Rotation, ref rnd, false, ps);
+                    it.Status = "created";
+                    it.ToolApplied = true;
+                }
+                yield return null; frames++;          // generation makes the Temp objects
+                if (!SetApply(world)) applyFailed++;  // this frame's ToolOutputSystem runs the vanilla ApplyTool phase
+                for (int f = 0; f < settle + 10; f++) { yield return null; frames++; }
+                applyBatches++;
+            }
+            ready.AddRange(applied);
+            for (int f = 0; f < (applied.Count > 0 ? 60 : 0); f++) { yield return null; frames++; }
+            foreach (var n in guarded) if (em.Exists(n) && em.HasComponent<Game.Net.Fixed>(n)) em.RemoveComponent<Game.Net.Fixed>(n);
+            if (guarded.Count > 0) for (int f = 0; f < 5; f++) { yield return null; frames++; }
             for (int f = 0; f < 30; f++) { yield return null; frames++; }
 
+            int roadsChanged;
+            var roadCheck = roadGuard.Check(em, out roadsChanged);
             // Verify: the real building with this prefab at this spot, and its road connection.
             var found = FindBuildings(em);
             int placed = 0, connected = 0, connectedToSnapEdge = 0, usedAlternative = 0, slid = 0, withSubNets = 0, subNetsMissing = 0;
@@ -490,7 +539,7 @@ namespace Cs2Buildings
                 it.Placed = best;
                 if (subNets)
                 {
-                    it.SubNetsExpected = ExpectedSubNets(em, it.PrefabEntity);
+                    it.SubNetsExpected = ExpectedSubNets(em, it.PrefabEntity, it.ToolApplied ? ps : null);
                     it.SubNetsBuilt = em.HasBuffer<Game.Net.SubNet>(best) ? em.GetBuffer<Game.Net.SubNet>(best, true).Length : 0;
                     if (it.SubNetsExpected > 0) { withSubNets++; if (it.SubNetsBuilt == 0) subNetsMissing++; }
                 }
@@ -572,7 +621,7 @@ namespace Cs2Buildings
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "warnings", warnings }, { "placeYourself", placeYourself }, { "connectRoad", connectRoad }, { "depotRetries", depotRetries }, { "depotsMoved", DepotsMoved(items) },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "warnings", warnings }, { "placeYourself", placeYourself }, { "connectRoad", connectRoad }, { "depotRetries", depotRetries }, { "toolApply", toolApply }, { "toolApplied", applied.Count }, { "applyBatches", applyBatches }, { "applyFailed", applyFailed }, { "nodesGuarded", nodesGuarded }, { "roadGuard", roadCheck }, { "ok", roadsChanged == 0 && applyFailed == 0 }, { "depotsMoved", DepotsMoved(items) },
                 { "pumps", new Dictionary<string, object> { { "slidToWater", pumpsSlidToWater }, { "groundwater", pumpsSwapped }, { "dry", pumpsDry }, { "noWaterData", pumpsUnknown }, { "shoreReach", pumpShoreReach }, { "samples", pumpSamples } } }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
                 { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "subNetCourses", subNetCourses }, { "buildingsWithSubNets", withSubNets }, { "subNetsMissing", subNetsMissing }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
@@ -590,6 +639,55 @@ namespace Cs2Buildings
             reply.Remove("results");
             reply["sample"] = list.GetRange(0, Math.Min(10, list.Count));
             yield return reply;
+        }
+
+        /// <summary>
+        /// The active tool's Apply (buildings decision #47): ToolSystem's last-updated tool gets applyMode = Apply (a
+        /// protected setter), so ToolOutputSystem commits this frame's Temp entities, as the object tool does on a click.
+        /// The same reflection as worker-4's transit Ops.SetApply.
+        /// </summary>
+        /// <summary>Temporary Game.Net.Fixed on imported top-level two-edge nodes (all of them when batch is null, else within r m of the batch's buildings).</summary>
+        static List<Entity> GuardNodes(EntityManager em, List<Item> batch, float r)
+        {
+            var res = new List<Entity>();
+            using (var q = em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Node>(), ComponentType.ReadOnly<ConnectedEdge>() },
+                None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>(), ComponentType.ReadOnly<Owner>(), ComponentType.ReadOnly<Game.Net.Fixed>() },
+            }))
+            using (var es = q.ToEntityArray(Allocator.Temp))
+                foreach (var n in es)
+                {
+                    var np = em.GetComponentData<Node>(n).m_Position.xz;
+                    bool near = batch == null;
+                    if (!near) foreach (var it in batch) if (math.distance(it.Position.xz, np) < r) { near = true; break; }
+                    if (!near) continue;
+                    var ce = em.GetBuffer<ConnectedEdge>(n, true);
+                    int ends = 0; bool top = true;
+                    for (int i = 0; i < ce.Length; i++)
+                    {
+                        var ed = em.GetComponentData<Edge>(ce[i].m_Edge);
+                        if (ed.m_Start == n || ed.m_End == n) ends++;
+                        if (em.HasComponent<Owner>(ce[i].m_Edge)) top = false;
+                    }
+                    if (ends != 2 || !top) continue;
+                    em.AddComponentData(n, new Game.Net.Fixed { m_Index = -1 });
+                    res.Add(n);
+                }
+            return res;
+        }
+
+        static bool SetApply(World world)
+        {
+            var ts = world.GetOrCreateSystemManaged<ToolSystem>();
+            var f = typeof(ToolSystem).GetField("m_LastTool", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var tool = (f != null ? f.GetValue(ts) as ToolBaseSystem : null) ?? ts.activeTool;
+            if (tool == null) return false;
+            var p = typeof(ToolBaseSystem).GetProperty("applyMode", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            var set = p != null ? p.GetSetMethod(true) : null;
+            if (set == null) return false;
+            set.Invoke(tool, new object[] { ApplyMode.Apply });
+            return true;
         }
 
         /// <summary>Report lines for the depots placed away from their CS1 spot by decision #152.</summary>
@@ -976,16 +1074,21 @@ namespace Cs2Buildings
         /// passed on as an Upgraded component like vanilla ZoneSpawnSystem.CreateSubNet (buildings decision #39).
         /// Returns the number of courses.
         /// </summary>
-        static int ExpectedSubNets(EntityManager em, Entity prefab)
+        static int ExpectedSubNets(EntityManager em, Entity prefab, PrefabSystem skipInvisible = null)
         {
             if (!em.HasBuffer<Game.Prefabs.SubNet>(prefab)) return 0;
             var buf = em.GetBuffer<Game.Prefabs.SubNet>(prefab, true);
             int n = 0;
-            for (int i = 0; i < buf.Length; i++) if (buf[i].m_Prefab != Entity.Null) n++;
+            for (int i = 0; i < buf.Length; i++)
+            {
+                if (buf[i].m_Prefab == Entity.Null) continue;
+                if (skipInvisible != null) { var nm = skipInvisible.GetPrefabName(buf[i].m_Prefab); if (nm != null && nm.StartsWith("Invisible", StringComparison.Ordinal)) continue; }
+                n++;
+            }
             return n;
         }
 
-        static int CreateSubNets(EntityManager em, Entity buildingPrefab, float3 pos, quaternion rot, ref Unity.Mathematics.Random rnd)
+        static int CreateSubNets(EntityManager em, Entity buildingPrefab, float3 pos, quaternion rot, ref Unity.Mathematics.Random rnd, bool permanent = true, PrefabSystem skipInvisible = null)
         {
             if (!em.HasBuffer<Game.Prefabs.SubNet>(buildingPrefab)) return 0;
             var buf = em.GetBuffer<Game.Prefabs.SubNet>(buildingPrefab, true);
@@ -995,6 +1098,10 @@ namespace Cs2Buildings
             foreach (var sn in subNets)
             {
                 if (sn.m_Prefab == Entity.Null) continue;
+                // the tool-apply path (decision #47) writes no invisible paths: applied, an invisible path ending on the
+                // street splits the imported road edge (Skibidi: 8 road edges gone), and CS2 joins the building's spawn
+                // locations to the street's lanes without them (the buses dispatch); tracks, platforms and visible roads stay
+                if (skipInvisible != null) { var nm = skipInvisible.GetPrefabName(sn.m_Prefab); if (nm != null && nm.StartsWith("Invisible", StringComparison.Ordinal)) continue; }
                 var local = sn.m_Curve;
                 var curve = ObjectUtils.LocalToWorld(pos, rot, local);
                 var start = new CoursePos
@@ -1011,7 +1118,9 @@ namespace Cs2Buildings
                 };
                 if (curve.a.Equals(curve.d)) { start.m_Flags |= CoursePosFlags.IsLast; end.m_Flags |= CoursePosFlags.IsFirst; }
                 var e = em.CreateEntity();
-                em.AddComponentData(e, new CreationDefinition { m_Prefab = sn.m_Prefab, m_RandomSeed = rnd.NextInt(), m_Flags = CreationFlags.Permanent });
+                // permanent=false (the tool-apply path, decision #47): a Temp course owned by the building's Temp definition,
+                // as the object tool writes it; the Apply commits both
+                em.AddComponentData(e, new CreationDefinition { m_Prefab = sn.m_Prefab, m_RandomSeed = rnd.NextInt(), m_Flags = permanent ? CreationFlags.Permanent : 0 });
                 em.AddComponentData(e, new OwnerDefinition { m_Prefab = buildingPrefab, m_Position = pos, m_Rotation = rot });
                 em.AddComponentData(e, new NetCourse { m_Curve = curve, m_StartPosition = start, m_EndPosition = end, m_Length = MathUtils.Length(curve), m_FixedIndex = -1 });
                 if (!sn.m_Upgrades.Equals(default(CompositionFlags))) em.AddComponentData(e, new Upgraded { m_Flags = sn.m_Upgrades });

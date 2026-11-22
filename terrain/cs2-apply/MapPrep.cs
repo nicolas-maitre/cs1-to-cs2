@@ -14,9 +14,11 @@
 //                                                 one marker per connection, owned by the real node at (x,z)
 //   oc.utilities {kinds=["electricity","water"], mode="stub"|"node", stubLength=24 (pipes +8),
 //                 start="setback"|"nomerge"|"attach"|"free", setback=3, perSide=1, minNodes=8, max=8,
-//                 nodes?:[{x,z}], radius=3, dryRun=false}                       [phase + pump tool; a coroutine]
+//                 stopGuard=50, nodes?:[{x,z}], radius=3, dryRun=false}                       [phase + pump tool; a coroutine]
 //                                                 electricity and water-pipe outside connections (docs/DECISIONS.md #136)
-//                                                 at imported road nodes near the edge of the road network, one per road
+//                                                 at imported junction nodes near the edge of the road network (never on a dead-end chain, nor within
+//                                                 stopGuard m of a bus or tram stop's segment ends: a stub there kept CS2
+//                                                 from building the dead end's turnaround), one per road
 //                                                 island (+ one per side for the largest). Roads carry low voltage and
 //                                                 pipes, and the game's graph systems link a marker's owner node to the
 //                                                 trade source/sink. mode "stub": a short "Low-voltage Line" / "Combined
@@ -356,7 +358,67 @@ namespace Cs1ConvTerrain
             }
             nodes.Dispose();
 
-            var result = new Dictionary<string, object> { { "op", "oc.utilities" }, { "roadNodes", roadNodes.Count }, { "dryRun", dry } };
+            // Where a stub must never start (#144 follow-up, worker-4's Bus Line 2 test): a stub node beside a road's dead
+            // end keeps CS2 from building the turnaround there, so buses serving a stop on that road can't turn back.
+            // 1. dead-end chains: a node with one road edge (by real endpoints, Edge.m_Start / m_End) and the nodes with
+            //    two that lead to it, up to the first junction; that also covers one-way chains to the crop edge;
+            // 2. nodes within stopGuard m of a kerbside bus or tram stop's segment ends.
+            float stopGuard = F(a, "stopGuard", 50f);
+            var roadEdgesAt = new Dictionary<Entity, List<Entity>>();
+            foreach (var n in roadNodes)
+            {
+                var l = new List<Entity>();
+                var buf = Em.GetBuffer<ConnectedEdge>(n, true);
+                for (int i = 0; i < buf.Length; i++)
+                {
+                    var e = buf[i].m_Edge;
+                    if (!IsReal(e) || Em.HasComponent<Owner>(e) || !Em.HasComponent<RoadData>(Em.GetComponentData<PrefabRef>(e).m_Prefab)) continue;
+                    var eg = Em.GetComponentData<Edge>(e);
+                    if (eg.m_Start == n || eg.m_End == n) l.Add(e);
+                }
+                roadEdgesAt[n] = l;
+            }
+            var deadEndChain = new HashSet<Entity>();
+            foreach (var kv in roadEdgesAt)
+            {
+                if (kv.Value.Count != 1) continue;
+                Entity cur = kv.Key, via = kv.Value[0];
+                for (int hops = 0; hops < 200; hops++)
+                {
+                    deadEndChain.Add(cur);
+                    var eg = Em.GetComponentData<Edge>(via);
+                    var nx = eg.m_Start == cur ? eg.m_End : eg.m_Start;
+                    if (!roadEdgesAt.TryGetValue(nx, out var nl) || nl.Count != 2 || deadEndChain.Contains(nx)) break;
+                    via = nl[0] == via ? nl[1] : nl[0];
+                    cur = nx;
+                }
+            }
+            var stopEnds = new List<float3>();
+            foreach (var ct in new[] { ComponentType.ReadOnly<Game.Routes.BusStop>(), ComponentType.ReadOnly<Game.Routes.TramStop>() })
+            {
+                var q = Query(new[] { ct, ComponentType.ReadOnly<Attached>() });
+                foreach (var s in q)
+                {
+                    var parent = Em.GetComponentData<Attached>(s).m_Parent;
+                    if (!IsReal(parent) || !Em.HasComponent<Edge>(parent)) continue;
+                    var eg = Em.GetComponentData<Edge>(parent);
+                    foreach (var en in new[] { eg.m_Start, eg.m_End }) if (Em.Exists(en) && Em.HasComponent<Game.Net.Node>(en)) stopEnds.Add(Em.GetComponentData<Game.Net.Node>(en).m_Position);
+                }
+                q.Dispose();
+            }
+            bool Allowed(Entity n, float3 p)
+            {
+                if (deadEndChain.Contains(n)) return false;
+                if (!roadEdgesAt.TryGetValue(n, out var l) || l.Count < 2) return false;
+                foreach (var q in stopEnds) if (math.distance(q.xz, p.xz) <= stopGuard) return false;
+                return true;
+            }
+
+            var result = new Dictionary<string, object>
+            {
+                { "op", "oc.utilities" }, { "roadNodes", roadNodes.Count }, { "dryRun", dry },
+                { "deadEndChainNodes", deadEndChain.Count }, { "stopSegmentEnds", stopEnds.Count },
+            };
             foreach (var kind in kinds)
             {
                 bool elec = kind == "electricity";
@@ -379,6 +441,10 @@ namespace Cs1ConvTerrain
                 if (cand.Count == 0) { info["error"] = "no road node has a " + (elec ? "electricity" : "water pipe") + " connection"; continue; }
                 var pos = new float3[cand.Count];
                 for (int i = 0; i < cand.Count; i++) pos[i] = Em.GetComponentData<Game.Net.Node>(cand[i]).m_Position;
+                var allowed = new bool[cand.Count];
+                int allowedCount = 0;
+                for (int i = 0; i < cand.Count; i++) if (allowed[i] = Allowed(cand[i], pos[i])) allowedCount++;
+                info["allowed"] = allowedCount;
 
                 var picks = new List<KeyValuePair<int, string>>(); // candidate index, why
                 if (explicitNodes != null)
@@ -426,17 +492,19 @@ namespace Cs1ConvTerrain
                         var comp = order[ci];
                         if (comp.Count < minNodes) continue;
                         big++;
-                        // the island's node nearest the network edge
-                        int best = comp[0]; float bd = float.MaxValue;
-                        foreach (int i in comp) { float d = EdgeDistance(pos[i], minX, maxX, minZ, maxZ); if (d < bd - 1e-3f) { bd = d; best = i; } }
+                        // the island's allowed node nearest the network edge (a junction, never a dead-end chain or a stop's road)
+                        int best = -1; float bd = float.MaxValue;
+                        foreach (int i in comp) { if (!allowed[i]) continue; float d = EdgeDistance(pos[i], minX, maxX, minZ, maxZ); if (d < bd - 1e-3f) { bd = d; best = i; } }
+                        if (best < 0) continue;
                         picks.Add(new KeyValuePair<int, string>(best, "island " + ci + " (" + comp.Count + " nodes)"));
                         if (ci == 0 && perSide > 0)
                         {
-                            // the main grid also gets its westmost, eastmost, southmost and northmost node
+                            // the main grid also gets its westmost, eastmost, southmost and northmost allowed node
                             string[] sides = { "west", "east", "south", "north" };
                             for (int s = 0; s < 4; s++)
                             {
-                                var sorted = new List<int>(comp);
+                                var sorted = new List<int>();
+                                foreach (int i in comp) if (allowed[i]) sorted.Add(i);
                                 sorted.Sort((p, q) => SideKey(pos[p], s).CompareTo(SideKey(pos[q], s)));
                                 for (int t = 0; t < perSide && t < sorted.Count; t++) picks.Add(new KeyValuePair<int, string>(sorted[t], "main grid, " + sides[s]));
                             }

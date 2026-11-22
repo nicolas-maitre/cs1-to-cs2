@@ -65,6 +65,15 @@ namespace Cs1ConvTransit
                 case "lanes.reach": return TrackLink.LaneReach(Str(a, "name", null), Str(a, "track", "Subway"));
                 case "lanes.joint": return TrackLink.LaneJoint(a);
                 case "edges.at": return EdgesAt(a);
+                case "buses": return Buses(Str(a, "match", "Bus"));
+                case "depots.check": return DepotsCheck();
+                case "road.reach": return TrackLink.RoadReach();
+                case "requests.reset": return RequestsReset();
+                case "lanes.sizes": return LaneSizes(Str(a, "name", null));
+                case "depot.spawns": return DepotSpawns();
+                case "utility.deleteNear": return UtilityDeleteNear(a);
+                case "depot.rebuild": return DepotRebuild(a);
+                case "lines.stoppos": return LineStopPositions(Str(a, "name", null));
                 case "counts": return Counts();
                 case "stops.touch": return StopsTouch();
                 case "vehicles": return Vehicles(Str(a, "match", "Subway"));
@@ -477,6 +486,8 @@ namespace Cs1ConvTransit
                                 if (Em.HasComponent<Owner>(st)) it["stopOwner"] = PrefabName(Em.GetComponentData<PrefabRef>(Em.GetComponentData<Owner>(st).m_Owner).m_Prefab);
                                 if (Em.HasComponent<Game.Objects.Attached>(st)) { var at = Em.GetComponentData<Game.Objects.Attached>(st); it["attachedTo"] = Id(at.m_Parent); it["attachedReal"] = IsReal(at.m_Parent); }
                                 if (Em.HasComponent<Game.Routes.TransportStop>(st)) it["stopFlags"] = Em.GetComponentData<Game.Routes.TransportStop>(st).m_Flags.ToString();
+                                { var ct = Em.GetComponentTypes(st, Allocator.Temp); var tn = new List<object>(); foreach (var t in ct) tn.Add(t.GetManagedType()?.Name ?? "?"); ct.Dispose(); it["stopComponents"] = tn; }
+                                if (Em.HasBuffer<Game.Net.SubLane>(st)) it["stopSubLanes"] = Em.GetBuffer<Game.Net.SubLane>(st, true).Length;
                                 if (Em.HasComponent<Game.Routes.AccessLane>(st)) { var al = Em.GetComponentData<Game.Routes.AccessLane>(st); it["accessLane"] = Id(al.m_Lane); }
                                 if (Em.HasComponent<Game.Routes.RouteLane>(st)) { var rl = Em.GetComponentData<Game.Routes.RouteLane>(st); it["routeLane"] = Id(rl.m_StartLane) + ">" + Id(rl.m_EndLane); }
                             }
@@ -585,13 +596,14 @@ namespace Cs1ConvTransit
             // vehicles per line: the route's RouteVehicle buffer can stay empty while buses run on it, so also count the
             // vehicles whose CurrentRoute is the line (engines / lead vehicles only: a controller with its own carriages
             // counts once)
-            var onRoute = new Dictionary<Entity, int>();
+            var onRoute = new Dictionary<Entity, int>(); var movingOn = new Dictionary<Entity, int>();
             var vq = Query(new[] { ComponentType.ReadOnly<Game.Routes.CurrentRoute>() });
             foreach (var v in vq)
             {
                 if (Em.HasComponent<Game.Vehicles.Controller>(v) && Em.GetComponentData<Game.Vehicles.Controller>(v).m_Controller != v && Em.GetComponentData<Game.Vehicles.Controller>(v).m_Controller != Entity.Null) continue;
                 var rt = Em.GetComponentData<Game.Routes.CurrentRoute>(v).m_Route;
                 onRoute[rt] = onRoute.TryGetValue(rt, out int n) ? n + 1 : 1;
+                if (IsMovingLead(v)) movingOn[rt] = movingOn.TryGetValue(rt, out int m) ? m + 1 : 1;
             }
             vq.Dispose();
             var es = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>() });
@@ -610,6 +622,7 @@ namespace Cs1ConvTransit
                     { "waypoints", Em.HasBuffer<RouteWaypoint>(e) ? Em.GetBuffer<RouteWaypoint>(e, true).Length : 0 },
                     { "segments", Em.HasBuffer<RouteSegment>(e) ? Em.GetBuffer<RouteSegment>(e, true).Length : 0 },
                     { "vehicles", math.max(Em.HasBuffer<RouteVehicle>(e) ? Em.GetBuffer<RouteVehicle>(e, true).Length : 0, onRoute.TryGetValue(e, out int vr) ? vr : 0) },
+                    { "movingVehicles", movingOn.TryGetValue(e, out int mv) ? mv : 0 },
                     { "pathElements", PathStats(e, out int failed) }, { "failedSegments", failed },
                 });
             }
@@ -705,14 +718,318 @@ namespace Cs1ConvTransit
             return res;
         }
 
+        /// <summary>Diagnostic (bus check, 2026-11-22): every vehicle whose prefab name contains `match` (lead vehicles):
+        /// parked or moving, PublicTransport state, what its CurrentRoute and Target are, its owner (depot), passengers;
+        /// and per transit line: prefab, name, waypoints, stops with waiting passengers, vehicles (RouteVehicle and
+        /// CurrentRoute counts).</summary>
+        static object Buses(string match)
+        {
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            Func<Entity, string> kind = x =>
+            {
+                if (x == Entity.Null) return "null";
+                if (!Em.Exists(x)) return "missing";
+                if (Em.HasComponent<Game.Routes.TransportLine>(x)) { names.TryGetCustomName(x, out string n); return "line " + (n ?? Id(x)); }
+                if (Em.HasComponent<Game.Routes.Segment>(x)) return "route segment";
+                if (Em.HasComponent<Game.Routes.Waypoint>(x)) return "waypoint";
+                if (Em.HasComponent<Game.Routes.TransportStop>(x)) return "stop";
+                if (Em.HasComponent<Game.Buildings.Building>(x)) return "building " + (Em.HasComponent<PrefabRef>(x) ? PrefabName(Em.GetComponentData<PrefabRef>(x).m_Prefab) : "");
+                if (Em.HasComponent<Game.Net.Lane>(x)) return "lane";
+                return Em.HasComponent<PrefabRef>(x) ? PrefabName(Em.GetComponentData<PrefabRef>(x).m_Prefab) : Id(x);
+            };
+            var vehicles = new List<object>();
+            var byState = new Dictionary<string, int>();
+            var onRoute = new Dictionary<Entity, int>();
+            var vq = Query(new[] { ComponentType.ReadOnly<Game.Vehicles.Vehicle>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var v in vq)
+            {
+                string pn = PrefabName(Em.GetComponentData<PrefabRef>(v).m_Prefab);
+                if (pn == null || pn.IndexOf(match, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (Em.HasComponent<Game.Vehicles.Controller>(v)) { var c = Em.GetComponentData<Game.Vehicles.Controller>(v).m_Controller; if (c != Entity.Null && c != v) continue; }
+                bool parked = Em.HasComponent<Game.Vehicles.ParkedCar>(v) || Em.HasComponent<Game.Vehicles.ParkedTrain>(v);
+                string st = Em.HasComponent<Game.Vehicles.PublicTransport>(v) ? Em.GetComponentData<Game.Vehicles.PublicTransport>(v).m_State.ToString() : "-";
+                string key = (parked ? "parked" : "moving") + " / " + st;
+                byState[key] = byState.TryGetValue(key, out int n) ? n + 1 : 1;
+                var it = new Dictionary<string, object> { { "entity", Id(v) }, { "prefab", pn }, { "parked", parked }, { "state", st } };
+                if (Em.HasComponent<Game.Routes.CurrentRoute>(v)) { var rt = Em.GetComponentData<Game.Routes.CurrentRoute>(v).m_Route; it["currentRoute"] = kind(rt); onRoute[rt] = onRoute.TryGetValue(rt, out int k) ? k + 1 : 1; }
+                if (Em.HasComponent<Game.Common.Target>(v)) it["target"] = kind(Em.GetComponentData<Game.Common.Target>(v).m_Target);
+                if (Em.HasComponent<Owner>(v)) it["owner"] = kind(Em.GetComponentData<Owner>(v).m_Owner);
+                if (Em.HasBuffer<Game.Vehicles.Passenger>(v)) it["passengers"] = Em.GetBuffer<Game.Vehicles.Passenger>(v, true).Length;
+                if (Em.HasComponent<Game.Objects.Transform>(v)) it["pos"] = V(Em.GetComponentData<Game.Objects.Transform>(v).m_Position);
+                if (vehicles.Count < 60) vehicles.Add(it);
+            }
+            vq.Dispose();
+            var lines = new List<object>();
+            var lq = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var e in lq)
+            {
+                names.TryGetCustomName(e, out string nm);
+                int wps = 0, waitingStops = 0, waiting = 0;
+                if (Em.HasBuffer<RouteWaypoint>(e))
+                {
+                    var wb = Em.GetBuffer<RouteWaypoint>(e, true);
+                    wps = wb.Length;
+                    for (int i = 0; i < wb.Length; i++)
+                    {
+                        var w = wb[i].m_Waypoint;
+                        Entity stop = Em.HasComponent<Game.Routes.Connected>(w) ? Em.GetComponentData<Game.Routes.Connected>(w).m_Connected : Entity.Null;
+                        foreach (var x in new[] { w, stop })
+                            if (x != Entity.Null && Em.Exists(x) && Em.HasComponent<Game.Routes.WaitingPassengers>(x)) { int c = Em.GetComponentData<Game.Routes.WaitingPassengers>(x).m_Count; if (c > 0) { waitingStops++; waiting += c; } break; }
+                    }
+                }
+                lines.Add(new Dictionary<string, object> {
+                    { "name", nm }, { "prefab", PrefabName(Em.GetComponentData<PrefabRef>(e).m_Prefab) }, { "waypoints", wps },
+                    { "stopsWaiting", waitingStops }, { "waiting", waiting },
+                    { "routeVehicles", Em.HasBuffer<RouteVehicle>(e) ? Em.GetBuffer<RouteVehicle>(e, true).Length : 0 },
+                    { "currentRouteVehicles", onRoute.TryGetValue(e, out int cr) ? cr : 0 },
+                    { "flags", Em.HasComponent<Game.Routes.TransportLine>(e) ? Em.GetComponentData<Game.Routes.TransportLine>(e).m_Flags.ToString() : "-" },
+                    { "vehicleRequest", Em.HasComponent<Game.Routes.TransportLine>(e) ? Em.GetComponentData<Game.Routes.TransportLine>(e).m_VehicleRequest.ToString() : "-" },
+                });
+            }
+            lq.Dispose();
+            return new Dictionary<string, object> { { "byState", byState }, { "vehicles", vehicles }, { "lines", lines } };
+        }
+
+        /// <summary>Diagnostic (bus check): every transport depot (prefab, TransportDepot flags, available vehicles, target
+        /// request, efficiency factors, road edge, building flags) and every TransportVehicleRequest (its route, fail count,
+        /// flags, cooldown, dispatched handler, path state).</summary>
+        static object DepotsCheck()
+        {
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            var depots = new List<object>();
+            var dq = Query(new[] { ComponentType.ReadOnly<Game.Buildings.TransportDepot>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var d in dq)
+            {
+                var td = Em.GetComponentData<Game.Buildings.TransportDepot>(d);
+                var it = new Dictionary<string, object> { { "depot", Id(d) }, { "prefab", PrefabName(Em.GetComponentData<PrefabRef>(d).m_Prefab) }, { "flags", td.m_Flags.ToString() }, { "available", (int)td.m_AvailableVehicles }, { "targetRequest", Id(td.m_TargetRequest) } };
+                if (Em.HasBuffer<Game.Buildings.Efficiency>(d)) { var eff = new List<object>(); var eb = Em.GetBuffer<Game.Buildings.Efficiency>(d, true); for (int i = 0; i < eb.Length; i++) eff.Add(eb[i].m_Factor + "=" + eb[i].m_Efficiency.ToString("0.##")); it["efficiency"] = eff; }
+                if (Em.HasComponent<Game.Buildings.Building>(d)) { var bd = Em.GetComponentData<Game.Buildings.Building>(d); it["roadEdge"] = Id(bd.m_RoadEdge); it["buildingFlags"] = bd.m_Flags.ToString(); }
+                if (Em.HasBuffer<Game.Simulation.ServiceDispatch>(d)) it["dispatches"] = Em.GetBuffer<Game.Simulation.ServiceDispatch>(d, true).Length;
+                if (Em.HasBuffer<Game.Vehicles.OwnedVehicle>(d)) it["ownedVehicles"] = Em.GetBuffer<Game.Vehicles.OwnedVehicle>(d, true).Length;
+                if (Em.HasComponent<Game.Objects.Transform>(d)) it["pos"] = V(Em.GetComponentData<Game.Objects.Transform>(d).m_Position);
+                depots.Add(it);
+            }
+            dq.Dispose();
+            var reqs = new List<object>();
+            var rq = Query(new[] { ComponentType.ReadOnly<Game.Simulation.TransportVehicleRequest>() });
+            foreach (var r in rq)
+            {
+                var tr = Em.GetComponentData<Game.Simulation.TransportVehicleRequest>(r);
+                names.TryGetCustomName(tr.m_Route, out string nm);
+                var it = new Dictionary<string, object> { { "request", Id(r) }, { "route", nm ?? Id(tr.m_Route) }, { "priority", tr.m_Priority } };
+                if (Em.HasComponent<Game.Simulation.ServiceRequest>(r)) { var sr = Em.GetComponentData<Game.Simulation.ServiceRequest>(r); it["failCount"] = (int)sr.m_FailCount; it["cooldown"] = (int)sr.m_Cooldown; it["flags"] = sr.m_Flags.ToString(); }
+                if (Em.HasComponent<Game.Simulation.Dispatched>(r)) it["handler"] = Id(Em.GetComponentData<Game.Simulation.Dispatched>(r).m_Handler);
+                if (Em.HasComponent<Game.Pathfind.PathInformation>(r)) { var pi = Em.GetComponentData<Game.Pathfind.PathInformation>(r); it["pathState"] = pi.m_State.ToString(); it["pathOrigin"] = Id(pi.m_Origin); it["pathDestination"] = Id(pi.m_Destination); }
+                var types = Em.GetComponentTypes(r, Allocator.Temp); var tn = new List<object>(); foreach (var t in types) tn.Add(t.GetManagedType()?.Name ?? "?"); types.Dispose();
+                it["components"] = tn;
+                reqs.Add(it);
+            }
+            rq.Dispose();
+            return new Dictionary<string, object> { { "depots", depots }, { "requests", reqs } };
+        }
+
+        /// <summary>Diagnostic (bus check): resets every TransportVehicleRequest's fail count and cooldown, so the
+        /// dispatch tries again now (shows whether the failure is persistent or stale).</summary>
+        static object RequestsReset()
+        {
+            int n = 0;
+            var rq = Query(new[] { ComponentType.ReadOnly<Game.Simulation.TransportVehicleRequest>(), ComponentType.ReadOnly<Game.Simulation.ServiceRequest>() });
+            foreach (var r in rq) { var sr = Em.GetComponentData<Game.Simulation.ServiceRequest>(r); sr.m_FailCount = 0; sr.m_Cooldown = 0; Em.SetComponentData(r, sr); n++; }
+            rq.Dispose();
+            return new Dictionary<string, object> { { "op", "requests.reset" }, { "requests", n } };
+        }
+
+        /// <summary>Diagnostic: the positions of a line's waypoints (Game.Routes.Position).</summary>
+        static object LineStopPositions(string name)
+        {
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            var r0 = new List<object>();
+            var es = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>() });
+            foreach (var e in es)
+            {
+                names.TryGetCustomName(e, out string nm);
+                if (name != null && nm != name) continue;
+                var wb = Em.GetBuffer<RouteWaypoint>(e, true);
+                for (int i = 0; i < wb.Length; i++) if (Em.HasComponent<Game.Routes.Position>(wb[i].m_Waypoint)) r0.Add(V(Em.GetComponentData<Game.Routes.Position>(wb[i].m_Waypoint).m_Position));
+                break;
+            }
+            es.Dispose();
+            return r0;
+        }
+
+        /// <summary>Diagnostic (bus check): the bus prefab's size class and, along a line's computed path, how many lanes
+        /// allow each max size (CarLaneData.m_MaxSize) and road type, with sample lanes too small for the bus. Also the
+        /// depot's own lanes and its road edge's lanes.</summary>
+        static object LaneSizes(string name)
+        {
+            var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            var r = new Dictionary<string, object>();
+            var buses = new List<object>();
+            var pq = Query(new[] { ComponentType.ReadOnly<Game.Prefabs.CarData>(), ComponentType.ReadOnly<Game.Prefabs.PublicTransportVehicleData>(), ComponentType.ReadOnly<PrefabData>() }, new ComponentType[0]);
+            foreach (var pf in pq) { var ptd = Em.GetComponentData<Game.Prefabs.PublicTransportVehicleData>(pf); if (ptd.m_TransportType != TransportType.Bus) continue; buses.Add(PrefabName(pf) + " size=" + Em.GetComponentData<Game.Prefabs.CarData>(pf).m_SizeClass + " energy=" + Em.GetComponentData<Game.Prefabs.CarData>(pf).m_EnergyType); }
+            pq.Dispose();
+            r["busPrefabs"] = buses;
+            var es = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>() });
+            foreach (var e in es)
+            {
+                names.TryGetCustomName(e, out string nm);
+                if (name != null && nm != name) continue;
+                var bySize = new Dictionary<string, int>(); var small = new List<object>();
+                var sb = Em.GetBuffer<RouteSegment>(e, true);
+                for (int i = 0; i < sb.Length; i++)
+                {
+                    var sg = sb[i].m_Segment; if (!Em.HasBuffer<Game.Pathfind.PathElement>(sg)) continue;
+                    var pe = Em.GetBuffer<Game.Pathfind.PathElement>(sg, true);
+                    for (int k = 0; k < pe.Length; k++)
+                    {
+                        var l = pe[k].m_Target; if (!Em.Exists(l) || !Em.HasComponent<PrefabRef>(l)) continue;
+                        var lp = Em.GetComponentData<PrefabRef>(l).m_Prefab;
+                        if (!Em.HasComponent<Game.Prefabs.CarLaneData>(lp)) { bySize["(not a car lane) " + PrefabName(lp)] = bySize.TryGetValue("(not a car lane) " + PrefabName(lp), out int q0) ? q0 + 1 : 1; continue; }
+                        var cl = Em.GetComponentData<Game.Prefabs.CarLaneData>(lp);
+                        string key = cl.m_MaxSize + " " + cl.m_RoadTypes;
+                        bySize[key] = bySize.TryGetValue(key, out int q) ? q + 1 : 1;
+                        if (cl.m_MaxSize < Game.Vehicles.SizeClass.Large && small.Count < 8)
+                        {
+                            Entity top = l; for (int z = 0; z < 6 && Em.HasComponent<Owner>(top); z++) top = Em.GetComponentData<Owner>(top).m_Owner;
+                            small.Add(PrefabName(lp) + " on " + (Em.HasComponent<PrefabRef>(top) ? PrefabName(Em.GetComponentData<PrefabRef>(top).m_Prefab) : Id(top)));
+                        }
+                    }
+                }
+                r["line"] = nm; r["pathLanesBySize"] = bySize; r["tooSmallSamples"] = small;
+                break;
+            }
+            es.Dispose();
+            return r;
+        }
+
+        /// <summary>A lead vehicle (Controller is itself or none) that is moving: not ParkedCar / ParkedTrain, and not
+        /// DummyTraffic (through traffic from the outside connections). Decision 164's "vehicle running".</summary>
+        static bool IsMovingLead(Entity v)
+        {
+            if (Em.HasComponent<Game.Vehicles.Controller>(v)) { var c = Em.GetComponentData<Game.Vehicles.Controller>(v).m_Controller; if (c != Entity.Null && c != v) return false; }
+            if (Em.HasComponent<Game.Vehicles.ParkedCar>(v) || Em.HasComponent<Game.Vehicles.ParkedTrain>(v)) return false;
+            if (Em.HasComponent<Game.Vehicles.PublicTransport>(v) && (Em.GetComponentData<Game.Vehicles.PublicTransport>(v).m_State & Game.Vehicles.PublicTransportFlags.DummyTraffic) != 0) return false;
+            return true;
+        }
+
+        /// <summary>Diagnostic (bus dispatch, lead a): each bus depot's spawn locations (its sub-objects with SpawnLocation:
+        /// prefab, connection type, road types, connected lanes and their owners, flags) and its component list.</summary>
+        static object DepotSpawns()
+        {
+            var r = new List<object>();
+            var dq = Query(new[] { ComponentType.ReadOnly<Game.Buildings.TransportDepot>(), ComponentType.ReadOnly<Game.Buildings.Building>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var d in dq)
+            {
+                var pf = Em.GetComponentData<PrefabRef>(d).m_Prefab;
+                if (!Em.HasComponent<TransportDepotData>(pf) || Em.GetComponentData<TransportDepotData>(pf).m_TransportType != TransportType.Bus) continue;
+                var spawns = new List<object>();
+                var stack = new List<Entity> { d };
+                for (int i = 0; i < stack.Count && i < 500; i++)
+                {
+                    var e = stack[i];
+                    if (Em.HasBuffer<Game.Objects.SubObject>(e)) { var sb = Em.GetBuffer<Game.Objects.SubObject>(e, true); for (int k = 0; k < sb.Length; k++) stack.Add(sb[k].m_SubObject); }
+                    if (!Em.HasComponent<Game.Objects.SpawnLocation>(e)) continue;
+                    var sl = Em.GetComponentData<Game.Objects.SpawnLocation>(e);
+                    var spf = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                    var it = new Dictionary<string, object> { { "entity", Id(e) }, { "prefab", PrefabName(spf) }, { "flags", sl.m_Flags.ToString() },
+                        { "lane1", LaneDesc(sl.m_ConnectedLane1) }, { "lane2", LaneDesc(sl.m_ConnectedLane2) }, { "curve", new List<object> { sl.m_CurvePosition1, sl.m_CurvePosition2 } }, { "access", Id(sl.m_AccessRestriction) } };
+                    if (Em.HasComponent<Game.Prefabs.SpawnLocationData>(spf)) { var sd = Em.GetComponentData<Game.Prefabs.SpawnLocationData>(spf); it["connection"] = sd.m_ConnectionType.ToString(); it["roadTypes"] = sd.m_RoadTypes.ToString(); }
+                    spawns.Add(it);
+                }
+                var ct = Em.GetComponentTypes(d, Allocator.Temp); var tn = new List<object>(); foreach (var t in ct) tn.Add(t.GetManagedType()?.Name ?? "?"); ct.Dispose();
+                r.Add(new Dictionary<string, object> { { "depot", Id(d) }, { "prefab", PrefabName(pf) }, { "pos", V(Em.GetComponentData<Game.Objects.Transform>(d).m_Position) }, { "spawns", spawns }, { "components", tn } });
+            }
+            dq.Dispose();
+            return r;
+        }
+
+        static string LaneDesc(Entity l)
+        {
+            if (l == Entity.Null) return "null";
+            if (!Em.Exists(l)) return "missing " + Id(l);
+            string own = "";
+            if (Em.HasComponent<Owner>(l)) { var o = Em.GetComponentData<Owner>(l).m_Owner; own = " owner " + (Em.HasComponent<PrefabRef>(o) ? PrefabName(Em.GetComponentData<PrefabRef>(o).m_Prefab) : Id(o)); }
+            return Id(l) + " " + (Em.HasComponent<PrefabRef>(l) ? PrefabName(Em.GetComponentData<PrefabRef>(l).m_Prefab) : "?") + own;
+        }
+
+        /// <summary>Diagnostic (bus dispatch, lead b): replaces every bus depot by the same prefab at the same transform,
+        /// built the game's way (a Temp object definition and the forced apply frame, like the object tool), after
+        /// deleting the placer's one. [phase tool, pump tool]</summary>
+        static IEnumerator DepotRebuild(Dictionary<string, object> a)
+        {
+            var todo = new List<KeyValuePair<Entity, Game.Objects.Transform>>();
+            var dq = Query(new[] { ComponentType.ReadOnly<Game.Buildings.TransportDepot>(), ComponentType.ReadOnly<Game.Buildings.Building>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var d in dq)
+            {
+                var pf = Em.GetComponentData<PrefabRef>(d).m_Prefab;
+                if (!Em.HasComponent<TransportDepotData>(pf) || Em.GetComponentData<TransportDepotData>(pf).m_TransportType != TransportType.Bus) continue;
+                todo.Add(new KeyValuePair<Entity, Game.Objects.Transform>(pf, Em.GetComponentData<Game.Objects.Transform>(d)));
+                Em.AddComponent<Deleted>(d);
+            }
+            dq.Dispose();
+            for (int i = 0; i < 20; i++) yield return null;
+            foreach (var kv in todo)
+            {
+                var def = Em.CreateEntity();
+                Em.AddComponentData(def, new CreationDefinition { m_Prefab = kv.Key, m_RandomSeed = UnityEngine.Random.Range(0, int.MaxValue) });
+                Em.AddComponentData(def, new ObjectDefinition
+                {
+                    m_Position = kv.Value.m_Position, m_LocalPosition = float3.zero, m_Scale = new float3(1f), m_Rotation = kv.Value.m_Rotation, m_LocalRotation = quaternion.identity,
+                    m_Intensity = 1f, m_ParentMesh = -1, m_GroupIndex = -1, m_Probability = 100, m_PrefabSubIndex = -1,
+                });
+                Em.AddComponent<Updated>(def);
+                Em.AddComponent<Deleted>(def);
+            }
+            yield return null;
+            bool applied = SetApply();
+            for (int i = 0; i < 90; i++) yield return null;
+            yield return new Dictionary<string, object> { { "op", "depot.rebuild" }, { "rebuilt", todo.Count }, { "applied", applied } };
+        }
+
+        /// <summary>Diagnostic (Bus Line 2 lead): deletes top-level edges within r of (x,z) that are neither road nor track
+        /// (power lines, pipes: the utility outside-connection stubs), then their nodes left without edges, with their
+        /// sub-objects (the outside-connection markers). [phase tool, pump tool]</summary>
+        static IEnumerator UtilityDeleteNear(Dictionary<string, object> a)
+        {
+            float2 q = new float2(F(a, "x", 0f), F(a, "z", 0f)); float r = F(a, "r", 60f);
+            var gone = new List<object>(); var ends = new HashSet<Entity>();
+            var es = Query(new[] { ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Curve>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var e in es)
+            {
+                if (Em.HasComponent<Owner>(e)) continue;
+                var pf = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                if (Em.HasComponent<RoadData>(pf) || Em.HasComponent<TrackData>(pf)) continue;
+                var c = Em.GetComponentData<Curve>(e).m_Bezier;
+                if (math.min(math.distance(c.a.xz, q), math.distance(c.d.xz, q)) > r) continue;
+                var ed = Em.GetComponentData<Edge>(e); ends.Add(ed.m_Start); ends.Add(ed.m_End);
+                gone.Add(PrefabName(pf) + " " + V(c.a) + " -> " + V(c.d));
+                DelWithSubs(e);
+            }
+            es.Dispose();
+            yield return null;
+            int nodes = 0;
+            foreach (var n in ends) if (IsReal(n) && (!Em.HasBuffer<ConnectedEdge>(n) || Em.GetBuffer<ConnectedEdge>(n, true).Length == 0)) { DelWithSubs(n); nodes++; }
+            for (int i = 0; i < 30; i++) yield return null;
+            yield return new Dictionary<string, object> { { "op", "utility.deleteNear" }, { "edges", gone }, { "nodes", nodes } };
+        }
+
+        static void DelWithSubs(Entity e)
+        {
+            var subs = new List<Entity>();
+            if (Em.HasBuffer<Game.Objects.SubObject>(e)) { var b = Em.GetBuffer<Game.Objects.SubObject>(e, true); for (int i = 0; i < b.Length; i++) subs.Add(b[i].m_SubObject); }
+            Em.AddComponent<Deleted>(e);
+            foreach (var s in subs) if (IsReal(s)) Em.AddComponent<Deleted>(s);
+        }
+
         static object Counts()
         {
-            var byType = new Dictionary<string, int>();
+            var byType = new Dictionary<string, int>(); var moving = new Dictionary<string, int>();
             var vs = Query(new[] { ComponentType.ReadOnly<Game.Vehicles.PublicTransport>(), ComponentType.ReadOnly<PrefabRef>() });
             foreach (var v in vs)
             {
                 string n = PrefabName(Em.GetComponentData<PrefabRef>(v).m_Prefab);
                 byType[n] = byType.TryGetValue(n, out int k) ? k + 1 : 1;
+                if (IsMovingLead(v)) moving[n] = moving.TryGetValue(n, out int m) ? m + 1 : 1;
             }
             int total = vs.Length;
             vs.Dispose();
@@ -723,7 +1040,7 @@ namespace Cs1ConvTransit
             int routes = rs.Length; rs.Dispose();
             var ss = Query(new[] { ComponentType.ReadOnly<Game.Routes.TransportStop>() });
             int stops = ss.Length; ss.Dispose();
-            return new Dictionary<string, object> { { "publicTransportVehicles", total }, { "byPrefab", byType }, { "depots", depots }, { "routes", routes }, { "stops", stops }, { "frame", UnityEngine.Time.frameCount } };
+            return new Dictionary<string, object> { { "publicTransportVehicles", total }, { "byPrefab", byType }, { "movingByPrefab", moving }, { "depots", depots }, { "routes", routes }, { "stops", stops }, { "frame", UnityEngine.Time.frameCount } };
         }
 
         static object Infoviews(string name)

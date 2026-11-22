@@ -66,14 +66,14 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Bus and tram lines | CS2 lines with colour, name, number and stops | converts, approximated | Trolleybus, tourist and intercity buses become bus lines. |
+| Bus and tram lines | CS2 lines with colour, name, number and stops | converts, approximated | Trolleybus, tourist and intercity buses become bus lines. They get no vehicles yet (known limit, being fixed). |
 | Train, metro, ship and plane lines | CS2 lines at the placed stations | converts, approximated | Need their stations from the buildings step. Metro and train yards go at the crop edge where the track leaves it (or you place them); never inside the city. |
 
 ## Buildings
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Service buildings, stations, depots, parks, landmarks | Closest CS2 building (same service, then capacity and size) | converts, approximated | Check or change each type in the Assets tab. A building that doesn't fit at its spot is not moved by default: it is listed for you to place. Bus and tram depots are the exception when none of their type fits: one is placed nearby so the lines get vehicles. |
+| Service buildings, stations, depots, parks, landmarks | Closest CS2 building (same service, then capacity and size) | converts, approximated | Check or change each type in the Assets tab. A building that doesn't fit at its spot is not moved by default: it is listed for you to place. Bus and tram depots are the exception when none of their type fits: one is placed nearby so the lines have a depot. |
 | Zoned (growable) buildings | Grown by CS2 on the converted zones | converts | Not placed one by one. |
 | Libraries, taxi stands, cable car stops | – | not converted | No CS2 equivalent. |
 

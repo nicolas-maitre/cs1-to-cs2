@@ -174,6 +174,8 @@ Screenshots are in `.gamectl/buildings/<ts>/` (git-ignored).
 
 **Default depots:** when the plan has transit lines of a type with no depot among the items, `buildBuildingsPlan` (via `addDefaultDepots`, also used by the web tool) adds one `BusDepot01` / `TramDepot01` item at the line's first stop, `default: true`. Metro and train yards are planned in game by transit/'s `yards.plan` at the crop edge where the line's track leaves, in the same item shape, placed by this placer and linked by `tracklink` (decision #30, DECISIONS.md #83).
 
+**Placed the object tool's way (decision #47):** buildings are created from Temp definitions in batches. Their visible sub-nets (tracks, platforms) are written the same way, and the active tool's Apply commits them (`SetApply`), as a click with the object tool does. CS2 then joins their spawn locations to the street, so depots dispatch buses. Imported two-edge nodes carry a temporary `Fixed` during the apply, so CS2's node reduction doesn't merge imported roads; `roadGuard` checks it. Run option `toolApply: "depots"` or `"none"` restricts or turns this off.
+
 **Depots for lines (decision #46, DECISIONS.md #152):** a bus or tram depot kind with none placed after the normal pass retries its first CS1 depot with `nearby`, so its lines get vehicles. The report says it was placed away from its CS1 spot, and run option `depotFallback: false` opts out. Rail and subway yards and every other building stay strict.
 
 **Idempotent:** an item whose prefab (or an alternative) already stands within 30 m + the slide range of its spot is `alreadyPlaced`, so re-runs on a saved city don't stack duplicates.

@@ -21,7 +21,7 @@ Passed release candidate 3 on Skibidi, CacaoCity (left-hand) and Westfield throu
   - roads keep their lanes (bus-stop roads get their bus bay at once, not on the next load);
   - lane connections and arrows survive the reload, with no Traffic mod load failures;
   - lane arrows follow CS1's geometry.
-- **Bus and tram lines get a depot** (#152): when none of the city's bus (or tram) depots fits at its CS1 spot, one is placed nearby, and the report says so. On Skibidi, the Bus Depot is placed 117 m away and its 9 lines run 31 buses (4 in RC3). Rail and subway yards and other buildings still never move.
+- **Bus and tram lines get a depot** (#152): when none of the city's bus (or tram) depots fits at its CS1 spot, one is placed nearby, and the report says so (on Skibidi, the Bus Depot is placed 117 m away). The lines still get no buses: see Known limits. The "31 buses on 9 lines" first given here counted buses parked in the depot (DECISIONS.md #164). Rail and subway yards and other buildings still never move.
 - **The import report lists every step**, and names each building it couldn't place, each power plant that needs a transformer, and each depot type left with none (#121, #150, #152).
 
 **Opt-in**
@@ -30,7 +30,8 @@ Passed release candidate 3 on Skibidi, CacaoCity (left-hand) and Westfield throu
 - **Rail and subway yards inside the area** (transit decision #14; command-line runs only). By default a yard is placed only where the line's track leaves the converted area (#83).
 
 **Known limits**
-- **Trains and metros don't run yet** (#99, #133). Lines, stations and paths are created, and a yard spawns trains, but they don't leave the yard. Buses and trams run.
+- **Bus and tram lines get no vehicles yet** (DECISIONS.md #164, #165). The lines, their stops and paths are created, but the depot doesn't dispatch: the buses stay parked and every line reports it needs vehicles. It has been so since the mod flow began (RC2 included); being fixed.
+- **Trains and metros don't run yet** (#99, #133). Lines, stations and paths are created, and a yard spawns trains, but they don't leave the yard.
 - **Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed** (#106); they're listed as "place it yourself" with both positions. On a 3 km Skibidi crop that's 30 of 108.
 - **Power producers away from any road produce nothing** (#150): CS2 needs the building's own road connection, and no road is invented. They're named in the report.
 - **A pump on dry CS2 land** becomes a groundwater pump where possible, otherwise it's flagged (#139).

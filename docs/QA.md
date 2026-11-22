@@ -243,6 +243,8 @@ Runs: `.gamectl/tracklink/6k-run7`, diagnostics `node transit/tools/node-diag.mj
 
 ## 7. Release candidate (buildings worker)
 
+> **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+
 `node tools/release/acceptance.mjs --simulate 300 [--skip-build] [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after e17a74c: a fresh release build (product 0.3.0; exporter 1.2.1, **importer 0.3.1**, **web 0.5.2**, buildings 0.3.0).
 - **Install:** the importer from `cs2-importer-0.3.1.zip` before each city.
 - **Flow:** the user's: Install Road Builder configs → restart → new city on Corral Riches → Check → Prepare map → 20 s → Import → 300 s at speed 3.
@@ -294,6 +296,8 @@ Runs: `.gamectl/tracklink/6k-run7`, diagnostics `node transit/tools/node-diag.mj
 8. **The imported rail network itself carries trains:** 4 passenger trains (EU_TrainPassengerEngine01 + 12 cars) were running within 240 s, from the rail outside connection.
 
 ## 8. Release (RC2, vanilla roads) (cs2-importer worker)
+
+> **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
 
 `node tools/release/acceptance.mjs --skip-build --simulate 300 [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after `node tools/release/build.mjs`.
 
@@ -433,11 +437,20 @@ Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,1
 
 - **Skibidi's unlinked stub:** its pipe start lies 3 m into a three-way junction, and the pipe (10 m down) isn't joined to the road's pipes there. The low-voltage stub at the same spot is joined. The city's other three water connections carry the supply.
 
+**Stub starts away from dead ends and stops** (web worker, after worker-4's Bus Line 2 test, `.gamectl/tracklink/bus-line2.json`; results `.gamectl/qa/oc167.json`).
+- **Cause:** a stub node 2 m from an avenue's dead end (Skibidi node 19810, the "main grid, north" pick) kept CS2 from building the turnaround there. Bus Line 2's buses couldn't turn back, and the line got none. Without that stub it got 2 moving buses.
+- **Fix** (`oc.utilities`): a stub never starts on a dead-end chain, meaning a node with one road edge (by real endpoints) and the two-edge nodes leading to it, up to the first junction. That also covers one-way chains to the crop edge. It also never starts within 50 m (`stopGuard`) of either end of a road segment that carries a kerbside bus or tram stop. Picks are made among the remaining nodes with ≥ 2 road edges.
+- **Skibidi:** 241 dead-end-chain nodes and 290 stop segment ends excluded, leaving 1048 of 1407 candidates. The north pick moved from (618, 1498) to the junction at (−328, 1472); the south pick from (−1174, −1499) to (−1334, −1497). CacaoCity: 95 dead-end-chain nodes excluded.
+- **Results**, 3 min at speed 3, then save, reload and 1 min: 0 splits before and after the reload in both cities. Skibidi residential supply 99.2 / 98.8 / 98.8 % after the reload, with 140 991 electricity imported and 0 produced. CacaoCity 99.2 / 97.9 / 97.9 %. Skibidi's east water stub still doesn't reach a road (the junction case above).
+- **Not yet shown:** Bus Line 2 running with buses. It also needs the placer fix (#166) and comes with the acceptance.
+
 **Rail hunt stopped (coordinator #133).** In run 13 (`cs1conv-train6k-st3-yards2`), the opt-in interior SubwayYard02's 110 m link to the elevated metro line **was built**: the yard node has the link edge, and the line node has 3 edges (`.gamectl/tracklink/yardjoint-run13.json`). Metro Lines 1 and 3 have paths (27 and 78 elements). Even so, the yard's 2 trains stayed parked for 480 s and the lines show 0 vehicles.
 - **Open lead:** the depot doesn't dispatch to the lines. Possibly it can't pathfind from the yard to a line waypoint (lane direction), or the dispatch request needs something else.
 - **Status:** trains and metros remain a known limit for this release. Interior yards and bridges stay opt-in or default as recorded in DECISIONS-transit #12–14.
 
 ## 10. Full city, all features (cs2-importer worker, docs/DECISIONS.md #143)
+
+> **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
 
 **Setup:**
 - **Package:** Skibidi at the largest crop (`--auto-crop 14336`, centre 1250/1250), web 0.9.3 (HEAD f39eac3): 4741 segments (101 tunnels, 112 with Node Controller shifts), conform burn 3208 segments and walls burn 877 (none skipped), 253 buildings, 38,900 trees and 539 rocks, 16 transit lines, 928 TM:PE lane connections.
@@ -510,6 +523,8 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
 
 ## 11. Release candidate 3 (buildings worker)
 
+> **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+
 `node tools/release/acceptance.mjs --skip-build --simulate 300 [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after `node tools/release/build.mjs --npm-ci` and `--check`.
 
 **Clean build:** from a `git archive` of **b71a160** in `%LOCALAPPDATA%\cs1-to-cs2\rc3\b71a160`, plus the machine's `local.props`.
@@ -561,6 +576,8 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
 
 ## 12. Final release acceptance, 0.3.1 (buildings worker)
 
+> **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+
 Same procedure as RC3 (§11): a `git archive` of **13c25e5** in `%LOCALAPPDATA%\cs1-to-cs2\final\13c25e5` plus `local.props`; `node tools/release/build.mjs --npm-ci`, then `--check`; then `node tools/release/acceptance.mjs --skip-build --simulate 300` per city.
 - **Artefacts:** product **0.3.1**: exporter 1.2.2, **importer 0.4.0**, **buildings 0.4.0**, **web 0.9.4**. Build and `--check` passed.
 - **Result:** all three **ok=true**, every step passed. The release mod was installed per city and the dev mod restored, and CS2 was stopped before the lock was released.
@@ -604,6 +621,8 @@ Same procedure as RC3 (§11): a `git archive` of **13c25e5** in `%LOCALAPPDATA%\
 **Not covered:** trains and metros (known limit, #99).
 
 ## 13. Final release acceptance, 0.3.1 with Node Controller offsets (buildings worker)
+
+> **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
 
 Same procedure as §11 and §12: a `git archive` of **693ba8a** in `%LOCALAPPDATA%\cs1-to-cs2\final\693ba8a` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city.
 - **Artefacts:** product 0.3.1: exporter 1.2.2, importer 0.4.0, buildings 0.4.0, **web 0.9.5**. Build and `--check` passed.
@@ -688,6 +707,8 @@ Smooth targets are preferred, within 45° of the chord at both ends; otherwise t
 Trains run with the opt-in; metros remain a known limit until the yard can be aligned.
 
 ## 14. Final release acceptance, 0.3.1 with CS1 line names (buildings worker)
+
+> **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow. The per-line count of 0 below was right; this is a known limit, being fixed.
 
 Same procedure as §13: a `git archive` of **af82ed1** in `%LOCALAPPDATA%\cs1-to-cs2\final\af82ed1` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).
 - **Artefacts:** product 0.3.1: exporter 1.2.2, importer 0.4.0, buildings 0.4.0, web 0.9.5. Build and `--check` passed. **`LICENSE.txt` is in all three zips.**

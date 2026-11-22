@@ -13,7 +13,8 @@
 // 8. import     press "Import into this city", wait for the mod to finish
 // 9. verify     report completeness (every registered and enabled step has an entry), heights and tunnels (op heights,
 //               CS1 tunnel count), utility stubs (terrain op oc.stubcheck, step utility-stubs), lane directions (op "lanedirs" vs the export's CS1 lanes: tools/release/lanedirs-compare.mjs), simulate
-//               (--simulate s), public-transport vehicles by kind (transit exec library, read-only), utilities supply
+//               (--simulate s), vehicles running on each imported line (transit exec library, read-only; a bus or tram line
+//               with none fails, #164), utilities supply
 //               (tools/qa, read-only), screenshots, the mod's
 //               import report, save as cs1conv-acceptance-<date>, quit, release the lock
 //
@@ -29,6 +30,7 @@ import { REPO, LOCAL_DIR, waitAndTakeLock, releaseLock, planShots } from '../../
 import { checkVersions } from './build.mjs';
 import { buildQa, measureUtilities, summariseUtilities } from '../qa/lib/utilities.mjs';
 import { DLL as TERRAIN_DLL } from '../../terrain/apply.mjs';
+import { evaluateLines } from './lines-check.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : d; };
@@ -327,19 +329,21 @@ try {
   // Public-transport vehicles after the simulation (read-only count from the transit exec library): are buses,
   // trams, metros and trains actually running? Lines without vehicles show up here, not in the import status.
   if (fs.existsSync(TRANSIT_LIB)) {
+    // Vehicles running on the imported lines (docs/DECISIONS.md #164): a prefab total counted parked buses as running
+    // while every line was NotEnoughVehicles. Only vehicles on a line's route, not parked and not DummyTraffic, count; an
+    // imported bus or tram line with none fails the step (the run goes on). Train and metro lines are reported only while
+    // rail is opt-in. The verdict is game-free in lines-check.mjs.
     await step('vehicles', async () => {
       const r = await b.exec(TRANSIT_LIB, { type: TRANSIT_TYPE, args: { op: 'counts' }, timeout: 300 });
-      const by = r.byPrefab ?? {};
-      const kind = (n) => /subway|metro/i.test(n) ? 'metro' : /train|engine|locomotive/i.test(n) ? 'train' : /tram/i.test(n) ? 'tram' : /bus/i.test(n) ? 'bus' : 'other';
-      const byKind = {};
-      for (const [n, c] of Object.entries(by)) { const k = kind(n); byKind[k] = (byKind[k] ?? 0) + (typeof c === 'number' ? c : (c?.count ?? 0)); }
-      // per imported line (#161): its vehicles and path; train and metro lines with vehicles are the rail check
-      const lines = (await b.exec(TRANSIT_LIB, { type: TRANSIT_TYPE, args: { op: 'lines.list' }, timeout: 300 }).catch(() => [])) ?? [];
-      const perLine = (Array.isArray(lines) ? lines : []).map((l) => ({ name: l.name, prefab: l.prefab, vehicles: l.vehicles, pathElements: l.pathElements }));
-      const rail = perLine.filter((l) => /train|subway/i.test(l.prefab ?? ''));
-      return { total: r.publicTransportVehicles, byKind, byPrefab: by, depots: r.depots, routes: r.routes, lines: perLine,
-        railLines: rail.length, railLinesWithVehicles: rail.filter((l) => (l.vehicles ?? 0) > 0).length };
-    });
+      const lines = await b.exec(TRANSIT_LIB, { type: TRANSIT_TYPE, args: { op: 'lines.list' }, timeout: 300 });
+      const dc = await b.exec(TRANSIT_LIB, { type: TRANSIT_TYPE, args: { op: 'depots.check' }, timeout: 300 }).catch(() => null);
+      const v = evaluateLines(lines, r.movingByPrefab, dc?.depots);
+      const perLine = (Array.isArray(lines) ? lines : []).map((l) => ({ name: l.name, prefab: l.prefab, movingVehicles: l.movingVehicles, vehicles: l.vehicles, pathElements: l.pathElements }));
+      const res = { summary: v.summary, moving: v.moving, byKind: v.byKind, idle: v.idle, capacityLimited: v.capacityLimited, lines: perLine, allByPrefab: r.byPrefab, depots: r.depots, routes: r.routes };
+      if (v.error) throw new Error(v.error);
+      if (!v.ok) throw new Error(`${v.idle.length} imported bus / tram line(s) without a running vehicle: ${v.idle.slice(0, 8).join(', ')} (${v.summary.join('; ')})`);
+      return res;
+    }).catch(() => {});
   }
   // Utilities (docs/DECISIONS.md #109, tools/qa): electricity / water / sewage supply after the simulation, read-only.
   // Informational: its ok=false doesn't fail the acceptance (CS2's economy needs time); the lines go into summary.json.

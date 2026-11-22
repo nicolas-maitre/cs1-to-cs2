@@ -71,7 +71,7 @@ jobs:
         run: node --test buildings/match/*.test.mjs buildings/lib/*.test.mjs
 
       - name: Release script – tests
-        run: node --test tools/release/build.test.mjs
+        run: node --test tools/release/build.test.mjs tools/release/lines-check.test.mjs
 
       - name: CS2 importer core – tests (no game DLLs)
         run: dotnet run --project cs2-importer/tests/CoreTests
