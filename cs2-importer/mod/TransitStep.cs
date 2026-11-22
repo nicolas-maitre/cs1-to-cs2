@@ -10,7 +10,8 @@
 // yards at the crop edge where a line's track leaves the area (#83; interior only if the plan's depotMode says so),
 // placed with the buildings worker's placer, then the transit worker's `tracklink` (station platform ends and yards
 // joined to the imported track with smooth curves, `tangentLinks`, DECISIONS-transit #16; yards in their own track
-// prefab; never across a road at grade, `avoidRoads`, so imported roads aren't split into level crossings). Train and metro lines are
+// prefab; never across a road at grade, `avoidRoads`, so imported roads aren't split into level crossings; and
+// `guardRoads`: imported two-edge road nodes near the links are kept through the apply, which would otherwise merge them). Train and metro lines are
 // created after that, so they pathfind over the joined track; no repath is needed.
 // The jobs come from Cs2Importer.Core.TransitPlan, a C# port of transit/lib/plan.mjs transitJobs, kept in step by a
 // golden test (tests/CoreTests/TransitPlanTests.cs).
@@ -207,7 +208,7 @@ namespace Cs2ImporterMod
             }
 
             // station platform ends and yards joined to the imported track (smooth curves; touchEnds stays off)
-            var link = (IEnumerator)Ops.Run(new Dictionary<string, object> { { "op", "tracklink" }, { "maxDistance", 2500.0 }, { "tangentLinks", true }, { "yardLinkPrefab", "yard" }, { "avoidRoads", true } });
+            var link = (IEnumerator)Ops.Run(new Dictionary<string, object> { { "op", "tracklink" }, { "maxDistance", 2500.0 }, { "tangentLinks", true }, { "yardLinkPrefab", "yard" }, { "avoidRoads", true }, { "guardRoads", true }, { "bridgeYard", true } });
             object lr = null;
             while (link.MoveNext()) { if (link.Current != null) lr = link.Current; yield return null; }
             var ld = lr as Dictionary<string, object>;

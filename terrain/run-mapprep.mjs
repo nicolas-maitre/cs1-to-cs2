@@ -13,10 +13,12 @@ import { start, stop, connect, status } from '../tools/gamectl/lib/index.js';
 import { mapprep } from './mapprep.mjs';
 import { main as applyMain } from './apply.mjs';
 import { readZip } from './lib/zip.mjs';
+import { holdCs2, freeCs2 } from './lib/cs2lock.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const LOCK = join(process.env.LOCALAPPDATA || '', 'cs1-to-cs2', 'cs2.lock');
+const SESSION = 'terrain worker (terrain/run-mapprep.mjs)', OWNER = SESSION;
 const IMPORTER_DLL = join(REPO, 'cs2-importer', 'bin', 'Release', 'net48', 'Cs2Importer.dll');
 export const DEFAULT_MAP = 'Sunshine Peninsula'; // fewest base nets, see DECISIONS-terrain.md #16
 
@@ -56,18 +58,7 @@ async function step(n, f) {
 async function takeLock() {
   const deadline = Date.now() + Number(opt('--lock-wait', 120)) * 60e3;
   const body = JSON.stringify({ session: 'terrain worker (terrain/ folder)', since: new Date().toISOString(), purpose: 'M2 map prep check' }) + '\n';
-  for (;;) {
-    if (existsSync(LOCK) && /terrain worker/.test(readFileSync(LOCK, 'utf8'))) { writeFileSync(LOCK, body); return; }
-    try {
-      writeFileSync(LOCK, body, { flag: 'wx' });
-      // a game still running belongs to whoever just released the lock (between their runs): give it back and wait
-      const st = await status('cs2').catch(() => null);
-      if (!st || !(st.running ?? st.pids?.length)) return;
-      unlinkSync(LOCK);
-    } catch (e) { if (e.code !== 'EEXIST') throw e; }
-    if (Date.now() > deadline) throw new Error('CS2 is locked: ' + readFileSync(LOCK, 'utf8').trim());
-    await new Promise(r => setTimeout(r, 10e3));
-  }
+  await holdCs2(OWNER, SESSION);
 }
 
 // Road Builder reads its road types once, when CS2 starts: install this package's *-cs1conv configs first (keeping
@@ -159,7 +150,7 @@ try {
   save();
   if (started && !flag('--keep-running')) {
     try { await stop('cs2', { wait: 90 }); } catch (e) { log('stop: ' + e.message); }
-    try { if (existsSync(LOCK) && /terrain worker/.test(readFileSync(LOCK, 'utf8'))) unlinkSync(LOCK); } catch { /* ignore */ }
+    try { await freeCs2(OWNER); } catch { /* ignore */ }
   }
   console.log(join(out, 'summary.json'));
 }

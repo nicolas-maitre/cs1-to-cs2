@@ -64,6 +64,7 @@ namespace Cs1ConvTransit
                 case "lines.reach": return TrackLink.Reach(Str(a, "name", null));
                 case "lanes.reach": return TrackLink.LaneReach(Str(a, "name", null), Str(a, "track", "Subway"));
                 case "lanes.joint": return TrackLink.LaneJoint(a);
+                case "edges.at": return EdgesAt(a);
                 case "counts": return Counts();
                 case "stops.touch": return StopsTouch();
                 case "vehicles": return Vehicles(Str(a, "match", "Subway"));
@@ -581,6 +582,18 @@ namespace Cs1ConvTransit
         {
             var names = W.GetOrCreateSystemManaged<Game.UI.NameSystem>();
             var r = new List<object>();
+            // vehicles per line: the route's RouteVehicle buffer can stay empty while buses run on it, so also count the
+            // vehicles whose CurrentRoute is the line (engines / lead vehicles only: a controller with its own carriages
+            // counts once)
+            var onRoute = new Dictionary<Entity, int>();
+            var vq = Query(new[] { ComponentType.ReadOnly<Game.Routes.CurrentRoute>() });
+            foreach (var v in vq)
+            {
+                if (Em.HasComponent<Game.Vehicles.Controller>(v) && Em.GetComponentData<Game.Vehicles.Controller>(v).m_Controller != v && Em.GetComponentData<Game.Vehicles.Controller>(v).m_Controller != Entity.Null) continue;
+                var rt = Em.GetComponentData<Game.Routes.CurrentRoute>(v).m_Route;
+                onRoute[rt] = onRoute.TryGetValue(rt, out int n) ? n + 1 : 1;
+            }
+            vq.Dispose();
             var es = Query(new[] { ComponentType.ReadOnly<Route>(), ComponentType.ReadOnly<TransportLine>() });
             foreach (var e in es)
             {
@@ -596,7 +609,7 @@ namespace Cs1ConvTransit
                     { "complete", (route.m_Flags & RouteFlags.Complete) != 0 },
                     { "waypoints", Em.HasBuffer<RouteWaypoint>(e) ? Em.GetBuffer<RouteWaypoint>(e, true).Length : 0 },
                     { "segments", Em.HasBuffer<RouteSegment>(e) ? Em.GetBuffer<RouteSegment>(e, true).Length : 0 },
-                    { "vehicles", Em.HasBuffer<RouteVehicle>(e) ? Em.GetBuffer<RouteVehicle>(e, true).Length : 0 },
+                    { "vehicles", math.max(Em.HasBuffer<RouteVehicle>(e) ? Em.GetBuffer<RouteVehicle>(e, true).Length : 0, onRoute.TryGetValue(e, out int vr) ? vr : 0) },
                     { "pathElements", PathStats(e, out int failed) }, { "failedSegments", failed },
                 });
             }
@@ -650,6 +663,46 @@ namespace Cs1ConvTransit
             }
             es.Dispose();
             return r;
+        }
+
+        /// <summary>Diagnostic (#161 round 2): every edge whose curve passes within r of each point (x/z): prefab, owner
+        /// (top building), start/end node positions and edge count, elevation, and whether it carries road or track.</summary>
+        static object EdgesAt(Dictionary<string, object> a)
+        {
+            float r = F(a, "r", 6f);
+            var pts = new List<float2>();
+            if (a.TryGetValue("points", out var po) && po is IList<object> pl)
+                foreach (var o in pl) { var xz = o as IList<object>; pts.Add(new float2(Convert.ToSingle(xz[0]), Convert.ToSingle(xz[xz.Count > 2 ? 2 : 1]))); }
+            var res = new List<object>();
+            var es = Query(new[] { ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Curve>(), ComponentType.ReadOnly<PrefabRef>() });
+            foreach (var q in pts)
+            {
+                var hits = new List<object>();
+                foreach (var e in es)
+                {
+                    var c = Em.GetComponentData<Curve>(e).m_Bezier;
+                    float best = float.MaxValue; float bt = 0;
+                    for (int i = 0; i <= 16; i++) { float d = math.distance(MathUtils.Position(c, i / 16f).xz, q); if (d < best) { best = d; bt = i / 16f; } }
+                    if (best > r) continue;
+                    var pf = Em.GetComponentData<PrefabRef>(e).m_Prefab;
+                    var ed = Em.GetComponentData<Edge>(e);
+                    Entity top = e; for (int k = 0; k < 8 && Em.HasComponent<Owner>(top); k++) top = Em.GetComponentData<Owner>(top).m_Owner;
+                    var it = new Dictionary<string, object> {
+                        { "edge", Id(e) }, { "prefab", PrefabName(pf) }, { "dist", best }, { "y", MathUtils.Position(c, bt).y },
+                        { "road", Em.HasComponent<RoadData>(pf) }, { "track", Em.HasComponent<TrackData>(pf) },
+                        { "owner", top != e && Em.HasComponent<PrefabRef>(top) ? PrefabName(Em.GetComponentData<PrefabRef>(top).m_Prefab) : null },
+                        { "start", V(Em.GetComponentData<Node>(ed.m_Start).m_Position) }, { "end", V(Em.GetComponentData<Node>(ed.m_End).m_Position) },
+                        { "startEdges", Em.HasBuffer<ConnectedEdge>(ed.m_Start) ? Em.GetBuffer<ConnectedEdge>(ed.m_Start, true).Length : -1 },
+                        { "endEdges", Em.HasBuffer<ConnectedEdge>(ed.m_End) ? Em.GetBuffer<ConnectedEdge>(ed.m_End, true).Length : -1 },
+                    };
+                    if (Em.HasComponent<Game.Net.Elevation>(e)) it["elevation"] = Em.GetComponentData<Game.Net.Elevation>(e).m_Elevation.ToString();
+                    if (Em.HasComponent<Game.Net.Composition>(e)) it["composition"] = Id(Em.GetComponentData<Game.Net.Composition>(e).m_Edge);
+                    hits.Add(it);
+                }
+                res.Add(new Dictionary<string, object> { { "at", new List<object> { q.x, q.y } }, { "edges", hits } });
+            }
+            es.Dispose();
+            return res;
         }
 
         static object Counts()

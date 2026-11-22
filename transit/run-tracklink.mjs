@@ -11,10 +11,12 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { start, stop, status } from '../tools/gamectl/lib/index.js';
 import { DLL, transit } from './transit.mjs';
+import { holdCs2, freeCs2 } from '../terrain/lib/cs2lock.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const LOCK = join(process.env.LOCALAPPDATA || '', 'cs1-to-cs2', 'cs2.lock');
+const SESSION = 'terrain worker (transit/run-tracklink.mjs)', OWNER = SESSION;
 const BUILDINGS_DLL = join(REPO, 'buildings', 'bin', 'Release', 'net48', 'Cs2Buildings.dll');
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
@@ -33,11 +35,7 @@ async function step(n, f) {
 }
 async function takeLock() {
   const body = JSON.stringify({ session: 'terrain worker (transit/ tracklink)', since: new Date().toISOString(), purpose: 'yard track link check' }) + '\n';
-  for (;;) {
-    try { writeFileSync(LOCK, body, { flag: 'wx' }); const st = await status('cs2').catch(() => null); if (!st?.running) return; unlinkSync(LOCK); }
-    catch (e) { if (e.code !== 'EEXIST') throw e; }
-    await new Promise(r => setTimeout(r, 10e3));
-  }
+  await holdCs2(OWNER, SESSION);
 }
 
 let started = false;
@@ -95,7 +93,7 @@ try {
   dump();
   if (started && !flag('--keep-running')) {
     try { await stop('cs2', { wait: 90 }); } catch (e) { log('stop: ' + e.message); }
-    try { if (existsSync(LOCK) && /terrain worker/.test(readFileSync(LOCK, 'utf8'))) unlinkSync(LOCK); } catch { /* ignore */ }
+    try { await freeCs2(OWNER); } catch { /* ignore */ }
   }
   console.log(join(out, 'summary.json'));
 }

@@ -723,3 +723,16 @@ Same procedure as §13: a `git archive` of **af82ed1** in `%LOCALAPPDATA%\cs1-to
 **Finding: the new per-line vehicle count reports 0 for every Skibidi line** (`vehicles.lines`, from the transit library's `lines.list`), while 33 buses run on the city's 9 routes. Most likely `lines.list` doesn't count a line's vehicles the way CS2 assigns them; the totals by prefab are right. For worker-4 (transit library); it doesn't change the result.
 
 **Not covered:** imported metro and train lines with rail on (worker-4's runs).
+
+### 5f. Rail in the mod, round 2 (#161, 8 game runs, `.gamectl/acceptance/20261122-04*`, `-0521*`; opt-in `ConnectRail`)
+
+1. **Imported roads lost near elevated stations: cause found and fixed.** The roads weren't deleted: each pair of plan segments was merged into one CS2 edge (`edges.at`, `transit/tools/rail-roads.mjs`).
+   - **Cause:** the links' forced apply runs CS2's `NodeReductionSystem`, which removes plain two-edge nodes in the affected area.
+   - **Fix:** `guardRoads` gives imported top-level two-edge nodes near the links a temporary `Game.Net.Fixed`, which that system's query excludes, and removes it after the apply.
+   - **Result:** in acceptance run 4 the 4 roads are back, roads-reload is 0/3409, and lane reload is 468/468.
+2. **Still open: 4 track segments next to the gap bridges** (e.g. 4244 and 7481 at (−1557, 619) / (−1381, 617)) are merged into the bridge course. Guarding the link end nodes too made it worse (run 8: 33 missing, and the metro lines lost their paths), so that's reverted.
+3. **Yard joins:** `avoidRoads` blocks every course from Skibidi's RailYard02 (all cross roads at grade). `bridgeYard` builds a 3-piece bridge cut from the smooth curve (ramps ≤ 6 %, 10 m span, 5 m clear of roads), and acceptance reports it "linked". Run 7 (pieces still straight) showed the yard lanes still isolated; the tangent pieces are untested.
+4. **Train Line 1 has no path in the mod:** its two stations don't reach each other along the track (`lanes.reach`, run 7), independent of the yard.
+5. **Per-line vehicles:** still 0 for every bus line even when counted by `CurrentRoute`. The 34 `Bus01` may be depot-parked rather than running; to check with the `vehicles` op.
+
+Rail stays off by default.

@@ -901,6 +901,7 @@ namespace Cs1ConvTransit
                 if (targets.Count == 0) { item["status"] = "no-network"; item["reason"] = "no " + y.Track + " track outside buildings"; continue; }
                 // candidate pairs by distance
                 var pairs = new List<KeyValuePair<float, KeyValuePair<Entity, Target>>>();
+                var crossPairs = new List<KeyValuePair<float, KeyValuePair<Entity, Target>>>(); // only at-grade road crossings
                 foreach (var en in ends)
                 {
                     float3 ep = Em.GetComponentData<Node>(en).m_Position;
@@ -913,7 +914,7 @@ namespace Cs1ConvTransit
                         bool ok = gradeLimit > 0f ? dd <= maxDist && dd >= 20f && math.abs(t.Pos.y - ep.y) <= gradeLimit * dd : dd <= maxDist && dd > 1f;
                         // tangent mode: smooth candidates sort first (a straight one only when no smooth one exists)
                         float key = dd + (tangentMode && !TangentOk(ep, en, t, out _, out _) ? 100000f : 0f);
-                        if (ok && avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node)) ok = false;
+                        if (ok && avoidRoads && CrossesRoad(ep, t.Pos, en, t.Node)) { ok = false; crossPairs.Add(new KeyValuePair<float, KeyValuePair<Entity, Target>>(dd, new KeyValuePair<Entity, Target>(en, t))); }
                         if (ok) pairs.Add(new KeyValuePair<float, KeyValuePair<Entity, Target>>(key, new KeyValuePair<Entity, Target>(en, t)));
                     }
                 }
@@ -943,17 +944,84 @@ namespace Cs1ConvTransit
                     if (!dry) pendingTemp.Add(item);
                     done = true;
                 }
+                // bridgeYard (the mod's rail step, #161 round 2): every course crosses a road at grade, so try a bridge:
+                // ramp up to `bridgeHeight` above the terrain, an elevated span, ramp down, each piece clear of every
+                // road by 5 m in height; ramps at most maxGrade (default 6 %), so only long enough candidates qualify
+                if (!done && avoidRoads && a != null && a.TryGetValue("bridgeYard", out var by) && by is bool byb && byb)
+                {
+                    crossPairs.Sort((p, q) => p.Key.CompareTo(q.Key));
+                    float h = F(a, "bridgeHeight", 10f), g = F(a, "maxGrade", 0.06f);
+                    var data2 = W.GetOrCreateSystemManaged<TerrainSystem>().GetHeightData(true);
+                    for (int i = 0; i < crossPairs.Count && i < candidates && !done; i++)
+                    {
+                        var en = crossPairs[i].Value.Key; var t = crossPairs[i].Value.Value;
+                        float3 ep = Em.GetComponentData<Node>(en).m_Position;
+                        float len = crossPairs[i].Key;
+                        if (len * 0.25f * g < h) continue; // ramps too steep for this length
+                        float2 dA, arr; bool tan = TangentOk(ep, en, t, out dA, out arr);
+                        if (!tan) { dA = math.normalizesafe(t.Pos.xz - ep.xz); arr = dA; }
+                        float k = len / 3f;
+                        var curve = new Bezier4x3(ep, new float3(ep.x + dA.x * k, math.lerp(ep.y, t.Pos.y, 1f / 3f), ep.z + dA.y * k), new float3(t.Pos.x - arr.x * k, math.lerp(ep.y, t.Pos.y, 2f / 3f), t.Pos.z - arr.y * k), t.Pos);
+                        float3 p1 = MathUtils.Position(curve, 0.25f), p2 = MathUtils.Position(curve, 0.75f);
+                        p1.y = TerrainUtils.SampleHeight(ref data2, p1) + h; p2.y = TerrainUtils.SampleHeight(ref data2, p2) + h;
+                        if (CrossesRoad(ep, p1, en, Entity.Null) || CrossesRoad(p1, p2, Entity.Null, Entity.Null) || CrossesRoad(p2, t.Pos, Entity.Null, t.Node)) continue;
+                        var yt = YardPrefab(a, t, en);
+                        var prefab = yt.Prefab != Entity.Null ? yt.Prefab : Em.GetComponentData<PrefabRef>(t.Edge).m_Prefab;
+                        float e0 = ep.y - TerrainUtils.SampleHeight(ref data2, ep), e1 = t.Pos.y - TerrainUtils.SampleHeight(ref data2, t.Pos);
+                        item["link"] = new Dictionary<string, object> { { "from", Id(en) }, { "fromPos", V(ep) }, { "to", Id(t.Node) }, { "toPos", V(t.Pos) }, { "distance", len }, { "prefab", PrefabName(prefab) }, { "bridge", new List<object> { V(p1), V(p2) } }, { "bridgeHeight", h } };
+                        if (!dry)
+                        {
+                            // pieces of the one smooth curve (MathUtils.Cut), so each joint keeps the tangent: a straight
+                            // ramp would leave the yard track at an angle, which gets no lanes (#160)
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0f, 0.25f)), ep.y, p1.y), en, Entity.Null, e0, h, true, false);
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0.25f, 0.75f)), p1.y, p2.y), Entity.Null, Entity.Null, h, h, false, false);
+                            CreateChainCourse(prefab, Lift(MathUtils.Cut(curve, new float2(0.75f, 1f)), p2.y, t.Pos.y), Entity.Null, t.Node, h, e1, false, true);
+                            pendingTemp.Add(item);
+                        }
+                        item["status"] = dry ? "planned" : "linked";
+                        linkEnds.Add(en); linkEnds.Add(t.Node);
+                        done = true;
+                    }
+                }
                 if (!done) { item["status"] = "blocked"; item["reason"] = "every candidate course crosses another edge"; }
                 if (tried.Count > 0) item["rejected"] = tried;
             }
             bool applied = false; int touchedCount = 0, touchedB = 0;
             var linkEndPos = new List<float3>();
             foreach (var n in linkEnds) if (Em.Exists(n) && Em.HasComponent<Node>(n)) linkEndPos.Add(Em.GetComponentData<Node>(n).m_Position);
+            var guarded = new List<Entity>();
             if (pendingTemp.Count > 0)
             {
+                // guardRoads (the mod's rail step, #161 round 2): the apply runs CS2's NodeReductionSystem, which removes
+                // a plain two-edge node in the affected area and merges its two imported roads or tracks into one edge (seen
+                // under elevated metro stations). Its query excludes Game.Net.Fixed, so imported top-level nodes with two
+                // edges near the links get a temporary Fixed for the apply, removed right after.
+                if (a != null && a.TryGetValue("guardRoads", out var gr) && gr is bool grb && grb && linkEndPos.Count > 0)
+                {
+                    var gq = Em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Node>(), ComponentType.ReadOnly<ConnectedEdge>() }, None = new[] { ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>(), ComponentType.ReadOnly<Owner>(), ComponentType.ReadOnly<Game.Net.Fixed>() } });
+                    using (var gn = gq.ToEntityArray(Allocator.Temp))
+                        foreach (var n in gn)
+                        {
+                            float3 np = Em.GetComponentData<Node>(n).m_Position;
+                            bool near = false; foreach (var p0 in linkEndPos) if (math.distance(p0.xz, np.xz) < F(a, "guardRadius", 600f)) { near = true; break; }
+                            if (!near) continue;
+                            var ce = ConnectedEdges(n);
+                            // two-edge nodes only: also fixing the link ends themselves made it worse (#161 round 2, run 8:
+                            // 33 track segments missing instead of 15 and the metro lines lost their paths)
+                            if (ce.Count != 2) continue;
+                            // imported roads and tracks alike (a reduced track node merges two plan track segments too);
+                            // never building-owned edges (stations, yards)
+                            bool top = true; foreach (var e in ce) if (Em.HasComponent<Owner>(e)) top = false;
+                            if (!top) continue;
+                            Em.AddComponentData(n, new Game.Net.Fixed { m_Index = -1 });
+                            guarded.Add(n);
+                        }
+                    gq.Dispose();
+                }
                 yield return null;                // generation makes the Temp edges
                 applied = Ops.SetApply();         // this frame's ToolOutputSystem runs the vanilla ApplyTool phase
                 for (int i = 0; i < 30; i++) yield return null;
+                foreach (var n in guarded) if (Em.Exists(n) && Em.HasComponent<Game.Net.Fixed>(n)) Em.RemoveComponent<Game.Net.Fixed>(n);
                 foreach (var it in pendingTemp) it["status"] = applied ? "linked" : "not-applied";
                 // touchEnds (passed with --interior-yards, opt-in, #159): CS2 doesn't rebuild the lanes of a building's own
                 // track when a link joins its end node, so the yard's track lanes keep their dead-end flags
@@ -981,7 +1049,7 @@ namespace Cs1ConvTransit
                     touchedCount = touched; touchedB = touchedBuildings;
                 }
             }
-            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "touched", touchedCount }, { "touchedBuildings", touchedB }, { "trimmedEdges", trimmedEdges }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
+            yield return new Dictionary<string, object> { { "op", "tracklink" }, { "dryRun", dry }, { "applied", applied }, { "touched", touchedCount }, { "touchedBuildings", touchedB }, { "trimmedEdges", trimmedEdges }, { "guardedNodes", guarded.Count }, { "stations", stationResults }, { "bridges", bridgeResults }, { "yards", results } };
         }
 
         /// <summary>From an imported dead end lying under a station platform, the chain of imported track edges up to
@@ -1182,6 +1250,35 @@ namespace Cs1ConvTransit
                 m_Curve = curve,
                 m_StartPosition = Pos(curve, a, na, 0f, CoursePosFlags.IsFirst | CoursePosFlags.IsLeft | CoursePosFlags.IsRight, e0),
                 m_EndPosition = Pos(curve, b, nb, 1f, CoursePosFlags.IsLast | CoursePosFlags.IsLeft | CoursePosFlags.IsRight, e1),
+                m_Elevation = new float2(math.max(0f, e0), math.max(0f, e1)),
+                m_Length = MathUtils.Length(curve),
+                m_FixedIndex = -1,
+            };
+            var e = Em.CreateEntity();
+            Em.AddComponentData(e, def);
+            Em.AddComponentData(e, course);
+            Em.AddComponent<Updated>(e);
+            Em.AddComponent<Deleted>(e);
+        }
+
+        /// <summary>One piece of a multi-course link (bridgeYard): a straight course whose inner ends are new points (no
+        /// node entity) shared with the next piece; IsFirst / IsLast only on the chain's own ends; elevations per end.</summary>
+        /// <summary>The curve with its heights set linearly from y0 to y1 (a ramp along the piece).</summary>
+        static Bezier4x3 Lift(Bezier4x3 c, float y0, float y1)
+        {
+            c.a.y = y0; c.b.y = math.lerp(y0, y1, 1f / 3f); c.c.y = math.lerp(y0, y1, 2f / 3f); c.d.y = y1;
+            return c;
+        }
+
+        static void CreateChainCourse(Entity prefab, Bezier4x3 curve, Entity na, Entity nb, float e0, float e1, bool first, bool last)
+        {
+            float3 a = curve.a, b = curve.d;
+            var def = new CreationDefinition { m_Prefab = prefab, m_RandomSeed = UnityEngine.Random.Range(0, int.MaxValue), m_Flags = CreationFlags.SubElevation };
+            var course = new NetCourse
+            {
+                m_Curve = curve,
+                m_StartPosition = Pos(curve, a, na, 0f, (first ? CoursePosFlags.IsFirst : 0) | CoursePosFlags.IsLeft | CoursePosFlags.IsRight, e0),
+                m_EndPosition = Pos(curve, b, nb, 1f, (last ? CoursePosFlags.IsLast : 0) | CoursePosFlags.IsLeft | CoursePosFlags.IsRight, e1),
                 m_Elevation = new float2(math.max(0f, e0), math.max(0f, e1)),
                 m_Length = MathUtils.Length(curve),
                 m_FixedIndex = -1,

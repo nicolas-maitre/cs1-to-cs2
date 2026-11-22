@@ -29,7 +29,8 @@ namespace Cs2Importer
         /// - labels [option names]: the active locale's labels for those options, to check translations;
         /// - setStatic {"Type.Field": value}: test hooks on the mod's static fields (e.g. Actions.TestRoadBuilderFolder);
         /// - census (bool): the counts Remove imported works on (Undo.Take: top-level roads, nodes, buildings, objects,
-        ///   areas, routes); items (bool): the "Packages on this PC" entries.
+        ///   areas, routes); items (bool): the "Packages on this PC" entries;
+        /// - get [option names]: their current values, under "values".
         /// Returns the settings, the status text and the action's result.
         /// </summary>
         public static object Drive(Dictionary<string, object> args)
@@ -77,6 +78,19 @@ namespace Cs2Importer
             var snap0 = Snapshot(setting, press, pressed);
             if (answer != null) snap0["dialog"] = s_DialogResult;
             AddLabels(args, setting, snap0);
+            // get [option names]: their current values (scripts read them before changing Options, to restore exactly)
+            if (args != null && args.TryGetValue("get", out object go) && go is List<object> gl)
+            {
+                var vals = new Dictionary<string, object>();
+                foreach (var o in gl)
+                {
+                    var pn = o as string; var pi = pn != null ? setting.GetType().GetProperty(pn) : null;
+                    if (pi == null || !pi.CanRead) continue;
+                    var v = pi.GetValue(setting);
+                    vals[pn] = v is float fv ? (object)(double)fv : v;
+                }
+                snap0["values"] = vals;
+            }
             if (args != null && args.TryGetValue("census", out object ce) && ce is bool cb && cb) snap0["census"] = Census(asm);
             if (args != null && args.TryGetValue("items", out object it) && it is bool ib && ib)
             {

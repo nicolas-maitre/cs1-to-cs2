@@ -10,8 +10,10 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { start, stop, connect } from '../tools/gamectl/lib/index.js';
 import { main as applyMain } from './apply.mjs';
+import { holdCs2, freeCs2 } from './lib/cs2lock.mjs';
 
 const LOCK = join(process.env.LOCALAPPDATA || '', 'cs1-to-cs2', 'cs2.lock');
+const SESSION = 'terrain worker (terrain/run-newcity.mjs)', OWNER = SESSION;
 
 function parseArgs(argv) {
   const a = { name: 'cs1conv-terrain-test', map: null, keep: false };
@@ -32,20 +34,14 @@ function parseArgs(argv) {
   return a;
 }
 
-function takeLock() {
-  if (existsSync(LOCK)) {
-    const l = readFileSync(LOCK, 'utf8');
-    let ageMs = Infinity;
-    try { const j = JSON.parse(l); ageMs = Date.now() - Date.parse(j.since || j.time); } catch { /* unreadable lock: treat as held */ ageMs = 0; }
-    if (!(ageMs > 2 * 3600 * 1000) && !/terrain worker/.test(l)) throw new Error('CS2 is locked by another session: ' + l.trim());
-  }
-  writeFileSync(LOCK, JSON.stringify({ session: 'terrain worker (terrain/ folder)', since: new Date().toISOString(), purpose: 'terrain new-city check' }) + '\n');
+async function takeLock() {
+  await holdCs2(OWNER, SESSION);
 }
 
 const log = (...m) => console.error('[terrain]', ...m);
 
 async function run(a) {
-  takeLock();
+  await takeLock();
   const { bridge } = await start('cs2', { timeout: 400 });
   const maps = (await bridge.call('maps.list', { limit: 200 })).maps.filter(m => m.playable !== false);
   const want = a.map ?? 'Sunshine Peninsula'; // DECISIONS-terrain.md #16
@@ -84,6 +80,6 @@ try {
 } finally {
   if (!a.keep) {
     try { await stop('cs2', { wait: 90 }); } catch (e) { console.error('stop: ' + e.message); }
-    try { if (existsSync(LOCK) && /terrain worker/.test(readFileSync(LOCK, 'utf8'))) unlinkSync(LOCK); } catch { /* ignore */ }
+    try { await freeCs2(OWNER); } catch { /* ignore */ }
   }
 }

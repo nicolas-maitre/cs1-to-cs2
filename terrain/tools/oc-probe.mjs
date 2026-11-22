@@ -8,6 +8,7 @@ import { writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { start, stop, status } from '../../tools/gamectl/lib/index.js';
 import { DLL } from '../apply.mjs';
+import { holdCs2, freeCs2 } from '../lib/cs2lock.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
@@ -15,12 +16,9 @@ const flag = (n) => argv.includes(n);
 const map = opt('--map', 'Corral Riches');
 const outFile = resolve(opt('--out', '.gamectl/mapprep/oc-probe.json'));
 const LOCK = join(process.env.LOCALAPPDATA || '', 'cs1-to-cs2', 'cs2.lock');
+const SESSION = 'terrain worker (terrain/tools/oc-probe.mjs)', OWNER = SESSION;
 const body = JSON.stringify({ session: 'terrain worker (terrain/tools/oc-probe.mjs)', since: new Date().toISOString() }) + '\n';
-for (;;) {
-  try { writeFileSync(LOCK, body, { flag: 'wx' }); const st = await status('cs2').catch(() => null); if (!st?.running) break; unlinkSync(LOCK); }
-  catch (e) { if (e.code !== 'EEXIST') throw e; }
-  await new Promise(r => setTimeout(r, 15e3));
-}
+await holdCs2(OWNER, SESSION);
 const out = { map, started: new Date().toISOString() };
 const op = (b, args, o = {}) => b.exec(DLL, { type: 'Cs1ConvTerrain.MapPrep', args, timeout: 600, ...o });
 const summarize = (list) => ({
@@ -43,7 +41,7 @@ try {
   if (!flag('--keep-running')) await stop('cs2');
 } catch (e) { out.error = e.stack || e.message; }
 finally {
-  if (!flag('--keep-running')) try { unlinkSync(LOCK); } catch { /* ignore */ }
+  if (!flag('--keep-running')) try { await freeCs2(OWNER); } catch { /* ignore */ }
   mkdirSync(dirname(outFile), { recursive: true });
   writeFileSync(outFile, JSON.stringify(out, null, 2) + '\n');
   console.log(outFile);

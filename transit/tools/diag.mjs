@@ -6,8 +6,10 @@ import { join } from 'node:path';
 import { start, stop, status } from '../../tools/gamectl/lib/index.js';
 import { DLL } from '../transit.mjs';
 import { transitJobs } from '../lib/plan.mjs';
+import { holdCs2, freeCs2 } from '../../terrain/lib/cs2lock.mjs';
 
 const LOCK = join(process.env.LOCALAPPDATA || '', 'cs1-to-cs2', 'cs2.lock');
+const SESSION = 'terrain worker (transit/tools/diag.mjs)', OWNER = SESSION;
 const plan = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const save = process.argv[3] || 'cs1conv-m3-buildings';
 const steps = (process.argv[4] || 'stops3,metro,bus1').split(',');
@@ -15,10 +17,7 @@ const logf = join(process.cwd(), '.gamectl', 'transit', 'diag.log');
 writeFileSync(logf, '');
 const log = (k, v) => { appendFileSync(logf, k + ' ' + JSON.stringify(v).slice(0, 3000) + '\n'); console.error(k); };
 const body = JSON.stringify({ session: 'terrain worker (transit/ folder)', since: new Date().toISOString(), purpose: 'transit diagnostic' }) + '\n';
-for (;;) {
-  try { writeFileSync(LOCK, body, { flag: 'wx' }); const st = await status('cs2').catch(() => null); if (!st?.running) break; unlinkSync(LOCK); } catch (e) { if (e.code !== 'EEXIST') throw e; }
-  await new Promise(r => setTimeout(r, 10e3));
-}
+await holdCs2(OWNER, SESSION);
 const j = transitJobs(plan);
 try {
   const { bridge: b } = await start('cs2', { load: save, timeout: 400 });
@@ -52,5 +51,5 @@ try {
 } catch (e) { log('error', e.message); }
 finally {
   try { await stop('cs2', { wait: 90 }); } catch { /* ignore */ }
-  if (existsSync(LOCK) && /terrain worker/.test(readFileSync(LOCK, 'utf8'))) unlinkSync(LOCK);
+  await freeCs2(OWNER);
 }

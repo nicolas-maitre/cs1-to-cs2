@@ -35,6 +35,7 @@ const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i
 const flag = (n) => argv.includes('--' + n);
 // --mod-set '{"AddTransformers":true}': extra Options values for this run (opt-ins); booleans are switched back after the save
 const MOD_SET = JSON.parse(opt('mod-set', '{}'));
+let MOD_PREV = null; // the user's values of the --mod-set Options (and ConnectRail) before this run
 const log = (...a) => console.error(`[acceptance ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const OWNER = 'acceptance', SESSION = 'release acceptance test (tools/release/acceptance.mjs, buildings worker)';
 
@@ -156,7 +157,14 @@ try {
     return { pid: r.pid, ready_s: r.ready_s, city };
   });
   await step('check', async () => {
-    const r = await modExec(b, { set: { PackageFolder: S.package, ClearArea: true, ApplyZoning: true, ApplyTrafficSettings: true, ApplyTrafficMod: true, ApplyLaneConnections: true, ApplyBuildings: true, ApplyTransit: true, ApplyConnections: true, OffsetX: 0, OffsetZ: 0, ...MOD_SET }, press: 'Check' });
+    // remember the user's current ConnectRail (pinned off below) and --mod-set Options first; they're restored exactly,
+    // even when the run fails (the coordinator, 2026-11-22: these are the user's own game settings)
+    if (!MOD_PREV) {
+      const g = await modExec(b, { get: Object.keys({ ConnectRail: 0, ...MOD_SET }) });
+      MOD_PREV = g?.values ?? null;
+      S.modSetPrevious = MOD_PREV;
+    }
+    const r = await modExec(b, { set: { PackageFolder: S.package, ClearArea: true, ApplyZoning: true, ApplyTrafficSettings: true, ApplyTrafficMod: true, ApplyLaneConnections: true, ApplyBuildings: true, ApplyTransit: true, ApplyConnections: true, ConnectRail: false, OffsetX: 0, OffsetZ: 0, ...MOD_SET }, press: 'Check' });
     return { status: r.StatusText, result: r };
   });
   // Check tells a new city to press "Prepare map" first (terrain, water, map clearing from the package).
@@ -353,13 +361,15 @@ try {
     return planShots(b, plan, { dir: runDir, tag: 'acceptance', log });
   });
   await step('save', () => b.saveWrite(`cs1conv-acceptance-${tag}`));
-  if (Object.keys(MOD_SET).length) await step('mod-set-restore', () => modExec(b, { set: Object.fromEntries(Object.entries(MOD_SET).filter(([, v]) => typeof v === 'boolean').map(([k, v]) => [k, !v])) }).then(() => ({ restored: Object.keys(MOD_SET) })));
+  if (MOD_PREV) await step('mod-set-restore', async () => { await modExec(b, { set: MOD_PREV }); const done = MOD_PREV; MOD_PREV = null; return { restored: done }; });
   await step('stop', () => stop('cs2', {}));
   S.ok = S.steps.every((s) => s.ok);
 } catch (e) {
   log('FAILED:', e.message);
   S.ok = false;
   S.error = String(e.message ?? e);
+  // a failed run still puts the user's Options back (the game must be up for that)
+  if (MOD_PREV && locked) try { const b2 = await connect('cs2'); await modExec(b2, { set: MOD_PREV }); S.modSetRestoredAfterFailure = MOD_PREV; MOD_PREV = null; } catch (e2) { S.modSetRestoreError = String(e2.message ?? e2); }
   try { if ((await status('cs2')).running && locked) await stop('cs2', {}); } catch {}
 } finally {
   if (installed && backup && !flag('keep-mod')) {

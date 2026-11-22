@@ -5,13 +5,12 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { start, stop, status } from '../../tools/gamectl/lib/index.js';
 import { DLL } from '../apply.mjs';
+import { holdCs2, freeCs2 } from '../lib/cs2lock.mjs';
 const LOCK = join(process.env.LOCALAPPDATA || '', 'cs1-to-cs2', 'cs2.lock');
+const SESSION = 'terrain worker (terrain/tools/water-diag2.mjs)', OWNER = SESSION;
 const save = process.argv[2] || 'cs1conv-mapprep-test';
 const body = JSON.stringify({ session: 'terrain worker (terrain/ folder)', since: new Date().toISOString(), purpose: 'water diagnostic 2' }) + '\n';
-for (;;) {
-  try { writeFileSync(LOCK, body, { flag: 'wx' }); const st = await status('cs2').catch(() => null); if (!st?.running) break; unlinkSync(LOCK); } catch (e) { if (e.code !== 'EEXIST') throw e; }
-  await new Promise(r => setTimeout(r, 10e3));
-}
+await holdCs2(OWNER, SESSION);
 const out = {};
 try {
   const { bridge: b } = await start('cs2', { load: save, timeout: 400 });
@@ -33,7 +32,7 @@ try {
 } catch (e) { out.error = e.stack || e.message; }
 finally {
   try { await stop('cs2', { wait: 90 }); } catch { /* ignore */ }
-  if (existsSync(LOCK) && /terrain worker/.test(readFileSync(LOCK, 'utf8'))) unlinkSync(LOCK);
+  await freeCs2(OWNER);
   writeFileSync(join(process.cwd(), '.gamectl', 'mapprep', 'water-diag2.json'), JSON.stringify(out, null, 2));
   console.log(JSON.stringify(out).slice(0, 3000));
 }
