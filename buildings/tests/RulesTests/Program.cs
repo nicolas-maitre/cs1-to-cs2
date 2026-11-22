@@ -122,6 +122,33 @@ namespace RulesTests
             Eq(2, PlacementRules.DepotRetries(new[] { "tram", "bus" }, new[] { false, false }, new[] { true, true }).Count, "one per kind");
         }
 
+        // Decision #48: the station pose puts the platform on the CS1 track, keeping the facing.
+        public static void TestAnchorPose()
+        {
+            double px, pz, fx, fz;
+            // platform along local x, 10 m in front of the centre; CS1 track along world x at z = -5; facing +z
+            PlacementRules.AnchorPose(1, 0, 0, 10, 1, 0, 0, -5, 0, 0, 0, 1, out px, out pz, out fx, out fz);
+            Eq("0.00 1.00", fx.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + " " + fz.ToString("F2", System.Globalization.CultureInfo.InvariantCulture), "facing kept");
+            Eq("-15.00", pz.ToString("F2", System.Globalization.CultureInfo.InvariantCulture), "platform on the track: centre 15 m south");
+            Eq("0.00", Math.Abs(px).ToString("F2", System.Globalization.CultureInfo.InvariantCulture), "no shift along");
+            // the facing points the other way (-z): the station turns around, platform still on the track
+            PlacementRules.AnchorPose(1, 0, 0, 10, 1, 0, 0, -5, 0, 0, 0, -1, out px, out pz, out fx, out fz);
+            Eq("-1.00", fz.ToString("F2", System.Globalization.CultureInfo.InvariantCulture), "facing -z");
+            Eq("5.00", pz.ToString("F2", System.Globalization.CultureInfo.InvariantCulture), "platform 10 m behind the centre now: centre at z = 5");
+            // platform off-centre along its axis (local x = 12): centre moves 12 m back so the platform centre is level with CS1's
+            PlacementRules.AnchorPose(1, 0, 12, 0, 1, 0, 0, 0, 0, 0, 0, 1, out px, out pz, out fx, out fz);
+            Eq("-12.00", px.ToString("F2", System.Globalization.CultureInfo.InvariantCulture), "along");
+        }
+
+        // Decision #48: a single platform line goes onto the CS1 line nearest it, not between two.
+        public static void TestNearestLines()
+        {
+            Eq(-9f, PlacementRules.NearestLines(new float[] { -25f, -9f }, 1, 20f), "1 platform, 2 CS1 tracks: the nearer one");
+            Eq(-17f, PlacementRules.NearestLines(new float[] { -25f, -9f }, 2, 20f), "2 and 2: both");
+            Eq(-9f, PlacementRules.NearestLines(new float[] { -9f }, 2, 0f), "fewer CS1 lines: their mean");
+            Eq(5f, PlacementRules.NearestLines(new float[0], 1, 5f), "none: unchanged");
+        }
+
         // The web report's wording: CS1 = plan − transform, CS2 = plan + import offset.
         public static void TestPlaceYourselfText()
         {

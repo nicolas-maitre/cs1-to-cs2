@@ -108,6 +108,49 @@ namespace Cs2Buildings
             return res;
         }
 
+        /// <summary>
+        /// Decision #48, the station pose (game-free, x/z plane, building local x = right, z = front): u is the platform
+        /// axis in local space, (cx, cz) the platform centroid in local space, (tx, tz) the CS1 track direction, (qx, qz) a
+        /// point on the CS1 bundle's centre line, (ox, oz) the CS1 lot centre and (fx, fz) the CS1 facing. Returns the
+        /// building's centre and forward so the local axis lies along the track (the facing nearer the CS1 one), the
+        /// platform centroid on the bundle line, and level with the CS1 lot centre along the track.
+        /// </summary>
+        public static void AnchorPose(double ux, double uz, double cx, double cz, double tx, double tz, double qx, double qz,
+            double ox, double oz, double fx, double fz, out double px, out double pz, out double fwdX, out double fwdZ)
+        {
+            double tl = Math.Sqrt(tx * tx + tz * tz); tx /= tl; tz /= tl;
+            double psi = Math.Atan2(uz, ux) - Math.Atan2(tz, tx);
+            fwdX = Math.Sin(psi); fwdZ = Math.Cos(psi);
+            if (fwdX * fx + fwdZ * fz < 0) { fwdX = -fwdX; fwdZ = -fwdZ; }
+            double rx = fwdZ, rz = -fwdX;                       // local x (right) in world
+            double wx = ox + cx * rx + cz * fwdX, wz = oz + cx * rz + cz * fwdZ; // the platform centroid at the CS1 centre
+            double nx = -tz, nz = tx;
+            double across = (qx - wx) * nx + (qz - wz) * nz;
+            double along = (ox - wx) * tx + (oz - wz) * tz;
+            px = ox + nx * across + tx * along;
+            pz = oz + nz * across + tz * along;
+        }
+
+        /// <summary>
+        /// Decision #48: the offset (across the track) to put a station's platform centroid on, from the CS1 track lines'
+        /// offsets (sorted). With k platform lines and at least k CS1 lines: the mean of the k adjacent CS1 lines nearest
+        /// `from` (the unaligned platform); with fewer CS1 lines, the mean of all.
+        /// </summary>
+        public static float NearestLines(IList<float> lines, int k, float from)
+        {
+            if (lines.Count == 0) return from;
+            if (k <= 0) k = 1;
+            if (lines.Count <= k) { float s = 0; foreach (var l in lines) s += l; return s / lines.Count; }
+            float best = 0, bestD = float.MaxValue;
+            for (int i = 0; i + k <= lines.Count; i++)
+            {
+                float m = 0; for (int j = i; j < i + k; j++) m += lines[j]; m /= k;
+                float d = Math.Abs(m - from);
+                if (d < bestD) { bestD = d; best = m; }
+            }
+            return best;
+        }
+
         /// <summary>The report note for a depot placed by decision #152.</summary>
         public const string DepotMovedNote = "placed away from its CS1 spot because its lines need a depot";
 

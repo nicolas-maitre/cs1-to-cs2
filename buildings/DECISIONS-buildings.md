@@ -308,3 +308,25 @@ All taken by Claude while the user was asleep; review them. To be merged into `d
       - heights 0 missing; roads and lane connections unchanged after reload; the 6 buildings with visible sub-nets all have them;
       - **23 buses running on 6 of 8 bus lines** (before: 0 on every line). The other 2 lines wait for capacity: the one CS1 Bus Depot's 24–25 buses are all out.
     - **Acceptance:** `tools/release/lines-check.mjs` counts only vehicles running on a line's route. A bus or tram line with none fails the run unless every depot of that kind is out of vehicles; then it's reported as waiting for capacity.
+48. **Stations can be anchored on the CS1 track (opt-in `alignStations`, on with the mod's `ConnectRail`)** (DECISIONS.md #170).
+    - **Why:** placed at the lot centre, Skibidi's CS2 train stations stood 14–30 m off the CS1 tracks they served. The track links then needed a sharp S, and Train Line 1's path failed (QA §5g).
+    - **Rule:** for a station item whose prefab has platform tracks (its sub-nets on the Train, Subway or Tram track layer):
+      - **Platform:** the axis and centroid come from the prefab's parallel track sub-nets, in local space.
+      - **CS1 lines:** the plan's tracks of the same family inside the CS1 lot's depth band (`cs1Lot`) and parallel to it, merged within 3 m.
+      - **Orientation:** the station keeps the CS1 orientation (the platform along the CS1 lot axis; of the two facings, the one nearer the CS1 one). The CS1 tracks' tangent where they start bent the first try by 4.7°.
+      - **Across:** the platform centroid goes onto the k adjacent CS1 lines nearest the unaligned platform, where k is the station's platform line count; with fewer CS1 lines, onto their mean. Skibidi's terminus has 1 double-track platform beside 2 CS1 double tracks, and the centroid of both had left it between them.
+      - **Along:** the platform centre goes level with the CS1 lot centre.
+      - Only slides of ±4/8 m along the track (`stationMaxSlide`). When the anchored lot collides or no CS1 track runs along the lot, the station is placed as before (#36/#37); it never fails for the anchor (#106).
+      - The pose arithmetic is `PlacementRules.AnchorPose` and `NearestLines` (RulesTests).
+    - **Report:** `stationsAligned`, `stationsNotAligned`, `stationsAnchorBlocked`; per station `alignShift`, `alignNote` and `platformCheck` (each placed track edge's closest approach to a parallel CS1 track). The reply's `stations` lists every station, so the mod's import report has them all. The read-only op `platformcheck {plan}` measures a loaded city.
+    - **Mod:** worker-3's `Mod.cs` passes `buildings.alignStations` = `ConnectRail` to the buildings step.
+    - **Verified** with worker-4 on Skibidi 6 km, `ConnectRail` on (the coordinator's run budget):
+      - their runs 1–4: Train Line 1 got its own path for the first time (180 elements) once the anchor fallback was in;
+      - this one (`.gamectl/acceptance/20261122-095047`, ok=true):
+        - both train stations anchored, 4.0 m across each, not turned; platforms 1.2 m and 0.0 m from their CS1 track (`platformcheck` on the save);
+        - Train Line 1 path 180 elements; placer road guard 3263 edges, 0 gone;
+        - roads-reload 0 changed; lane connections after reload 468/468, 0 loader failures.
+    - **Open:**
+      - The 3 elevated metro stations collide at their anchored pose (over a ground road) and stay as before, 2–23 m off.
+      - The 5 underground metro entrances have no CS1 metro track along their small lot, 9–12 m off.
+      - No train ran in 300 s: yard dispatch, worker-4's side.

@@ -67,6 +67,10 @@ namespace Cs2Buildings
             public Entity Placed;
             public int SubNetsExpected = -1, SubNetsBuilt = -1; // course definitions written / edges owned by the building
             public bool DepotRetry;
+            public string AlignNote;         // decision #48: station anchored on the CS1 track ("shifted 21 m across, 3 m along, turned 1 deg")
+            public float AlignShift = -1;
+            public double[] Cs1Lot;
+            public string PlatformCheck;     // decision #48: placed platform tracks against the nearest CS1 track ("2 tracks: 0.4 / 1.1 m")          // the CS1 lot in cells (width along the road, depth), for the station anchor    // metres between the aligned and the CS1 lot centre
             public bool ToolApplied;         // decision #47: built through the tool's Temp + Apply path          // decision #152: a bus / tram CS1 depot retried with "nearby" (none of its kind placed)
             public string PumpWater;         // surface-water pump: "shore N m away" (slid toward the water) or "groundwater pump" (swapped)
         }
@@ -130,6 +134,12 @@ namespace Cs2Buildings
             var pumpSamples = new List<object>();
 
             var items = LoadItems(P.Required(a, "plan"), limit);
+            // Decision #48 (opt-in, the mod's rail step turns it on): stations with platform tracks are placed so their
+            // platform track lies on the CS1 track they served, not at the lot centre (Skibidi's TrainStation03 sat 14-30 m
+            // off CS1's tracks, and Train Line 1's path failed on the S between them).
+            bool alignStations = P.Bool(a, "alignStations", false);
+            var cs1Tracks = alignStations ? LoadTracks(P.Required(a, "plan")) : new List<Cs1Track>();
+            int stationsAligned = 0, stationsNoTrack = 0, stationsAnchorBlocked = 0;
             foreach (var x in items) { x.Ox = ox; x.Oz = oz; }
             // Stations first: they must take their CS1 spot (their tracks continue the imported track), while other
             // buildings can slide or move. A wide CS2 police station had taken the Large Trainstation's spot.
@@ -333,7 +343,37 @@ namespace Cs2Buildings
 
                 string lastHit = null;
                 bool done = false;
-                if (road == null)
+                if (alignStations && it.Station)
+                {
+                    string why = null;
+                    for (int ni = 0; ni < prefabs.Count && !done; ni++)
+                    {
+                        float2 apos, afwd;
+                        string note;
+                        if (!StationAnchor(em, prefabs[ni].Value, it, centre, cs1Tracks, out apos, out afwd, out note)) { why = note; continue; }
+                        // the anchor keeps the platform on the track: only short slides along the track (stationMaxSlide)
+                        var along = new float2(afwd.y, -afwd.x);
+                        foreach (var sl in new[] { 0f, 4f, -4f, 8f, -8f })
+                        {
+                            if (math.abs(sl) > stationMaxSlide + 0.01f) continue;
+                            if (TryAt(it, prefabs[ni], ni, apos + along * sl, afwd, float.NaN, grid, existing, placedLots, checkCollisions, ref heights, ref lastHit))
+                            {
+                                done = true;
+                                it.Slide = sl;
+                                it.AlignShift = math.distance(apos + along * sl, centre);
+                                it.AlignNote = note + (sl != 0 ? ", slid " + sl + " m along the track" : "");
+                                stationsAligned++;
+                                break;
+                            }
+                        }
+                    }
+                    // no CS1 track to anchor on, or the anchored lot collides (Skibidi's elevated metro stations over a ground
+                    // road): the station is placed as before (its CS1 spot, short slides along its road), never failed for it
+                    if (!done && lastHit != null) { stationsAnchorBlocked++; it.AlignNote = "not aligned: the anchored lot overlaps " + Article(lastHit) + "; placed at its CS1 spot as before"; lastHit = null; }
+                    else if (!done && why != null) { stationsNoTrack++; it.AlignNote = "not aligned: " + why; }
+                }
+                if (done) { }
+                else if (road == null)
                 {
                     // No road to snap to: the CS1 position and facing, as is.
                     var forward = it.Facing != null ? math.normalizesafe(new float2((float)it.Facing[0], (float)it.Facing[1]), new float2(0, 1)) : new float2(0, 1);
@@ -537,6 +577,7 @@ namespace Cs2Buildings
                 }
                 if (best == Entity.Null) { Fail(it, failures, "notCreated", "no building appeared at the spot"); continue; }
                 it.Placed = best;
+                if (alignStations && it.AlignShift >= 0) it.PlatformCheck = PlatformCheck(em, best, cs1Tracks, (float)ox, (float)oz);
                 if (subNets)
                 {
                     it.SubNetsExpected = ExpectedSubNets(em, it.PrefabEntity, it.ToolApplied ? ps : null);
@@ -552,7 +593,8 @@ namespace Cs2Buildings
                 it.Reason = (road != Entity.Null ? "connected" : "placed, not connected to a road" + (it.RoadSide != null ? " (road side: " + it.RoadSide + ")" : ""))
                     + (it.Alternative > 0 ? "; alternative #" + it.Alternative : "") + (it.Slide != 0 ? "; slid " + it.Slide + " m along the road" : "") + (it.NearJunction ? "; front near a junction" : "")
                     + (it.Moved >= 0 ? "; moved " + it.Moved.ToString("F0") + " m to free land (" + it.FallbackPass + " pass)" + (it.MovedToOtherRoad ? " on another road" : " on the same road") : "")
-                    + (it.DepotRetry ? "; " + PlacementRules.DepotMovedNote : "");
+                    + (it.DepotRetry ? "; " + PlacementRules.DepotMovedNote : "")
+                    + (it.AlignNote != null ? "; " + it.AlignNote : "");
                 if (it.PumpWater != null)
                 {
                     if (it.PumpWater.StartsWith("shore", StringComparison.Ordinal))
@@ -617,11 +659,12 @@ namespace Cs2Buildings
                     { "yaw", R(math.degrees(math.atan2(it.Forward.x, it.Forward.y))) },
                     { "lot", new List<object> { it.Lot.x, it.Lot.y } }, { "snapDistance", R(it.SnapDistance) },
                     { "alternative", it.Alternative }, { "slide", R(it.Slide) }, { "moved", R(it.Moved) }, { "distance", R(it.Distance) }, { "fallbackPass", it.FallbackPass }, { "movedToOtherRoad", it.MovedToOtherRoad },
+                    { "alignShift", it.AlignShift >= 0 ? (object)R(it.AlignShift) : null }, { "alignNote", it.AlignNote }, { "platformCheck", it.PlatformCheck },
                     { "entity", it.Placed == Entity.Null ? null : (object)it.Placed.Index }, { "subNetsExpected", it.SubNetsExpected }, { "subNetsBuilt", it.SubNetsBuilt },
                 });
             var report = new Dictionary<string, object>
             {
-                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "warnings", warnings }, { "placeYourself", placeYourself }, { "connectRoad", connectRoad }, { "depotRetries", depotRetries }, { "toolApply", toolApply }, { "toolApplied", applied.Count }, { "applyBatches", applyBatches }, { "applyFailed", applyFailed }, { "nodesGuarded", nodesGuarded }, { "roadGuard", roadCheck }, { "ok", roadsChanged == 0 && applyFailed == 0 }, { "depotsMoved", DepotsMoved(items) },
+                { "items", items.Count }, { "placed", placed }, { "alreadyPlaced", alreadyPlaced }, { "warnings", warnings }, { "placeYourself", placeYourself }, { "connectRoad", connectRoad }, { "depotRetries", depotRetries }, { "alignStations", alignStations }, { "stationsAligned", stationsAligned }, { "stationsNotAligned", stationsNoTrack }, { "stationsAnchorBlocked", stationsAnchorBlocked }, { "toolApply", toolApply }, { "toolApplied", applied.Count }, { "applyBatches", applyBatches }, { "applyFailed", applyFailed }, { "nodesGuarded", nodesGuarded }, { "roadGuard", roadCheck }, { "ok", roadsChanged == 0 && applyFailed == 0 }, { "depotsMoved", DepotsMoved(items) },
                 { "pumps", new Dictionary<string, object> { { "slidToWater", pumpsSlidToWater }, { "groundwater", pumpsSwapped }, { "dry", pumpsDry }, { "noWaterData", pumpsUnknown }, { "shoreReach", pumpShoreReach }, { "samples", pumpSamples } } }, { "usedAlternative", usedAlternative }, { "netAttachedSkipped", skippedAttached }, { "slid", slid }, { "movedToFreeLand", moved }, { "movedByPass", ToObj(movedByPass) }, { "distanceStats", DistanceStats(items) }, { "fallback", defaultFallback }, { "nearbyRadius", nearbyRadius }, { "wideRadius", wideRadius }, { "connected", connected }, { "connectedToSnappedRoad", connectedToSnapEdge },
                 { "failed", items.Count - placed - alreadyPlaced }, { "failuresByReason", ToObj(failures) },
                 { "roadEdges", roads.Count }, { "existingBuildings", existing.Count }, { "batches", batches }, { "frames", frames }, { "subNetCourses", subNetCourses }, { "buildingsWithSubNets", withSubNets }, { "subNetsMissing", subNetsMissing }, { "resolveFrames", resolveFrames }, { "frameBudgetMs", frameBudgetMs },
@@ -638,6 +681,16 @@ namespace Cs2Buildings
             var reply = new Dictionary<string, object>(report);
             reply.Remove("results");
             reply["sample"] = list.GetRange(0, Math.Min(10, list.Count));
+            // every station, compact (decision #48: the alignment per station must reach the mod's import report)
+            var stations = new List<object>();
+            foreach (var it in items)
+                if (it.Station)
+                    stations.Add(new Dictionary<string, object>
+                    {
+                        { "cs1Info", it.Cs1Info }, { "prefab", it.Prefab }, { "status", it.Status }, { "alignShift", it.AlignShift >= 0 ? (object)R(it.AlignShift) : null },
+                        { "alignNote", it.AlignNote }, { "platformCheck", it.PlatformCheck }, { "subNets", it.SubNetsBuilt + "/" + it.SubNetsExpected },
+                    });
+            reply["stations"] = stations;
             yield return reply;
         }
 
@@ -690,6 +743,193 @@ namespace Cs2Buildings
             return true;
         }
 
+        /// <summary>
+        /// Decision #48: each placed track edge of the station (its sub-nets): the closest approach to a parallel CS1 track
+        /// (sampled along the edge): "1 track edge(s): 0.4 m from the nearest parallel CS1 track".
+        /// </summary>
+        static string PlatformCheck(EntityManager em, Entity building, List<Cs1Track> tracks, float ox, float oz)
+        {
+            if (!em.HasBuffer<Game.Net.SubNet>(building)) return "no sub-nets";
+            var buf = em.GetBuffer<Game.Net.SubNet>(building, true);
+            var dists = new List<string>();
+            for (int i = 0; i < buf.Length; i++)
+            {
+                var e = buf[i].m_SubNet;
+                if (!em.HasComponent<Edge>(e) || !em.HasComponent<Curve>(e) || !em.HasComponent<PrefabRef>(e)) continue;
+                var np = em.GetComponentData<PrefabRef>(e).m_Prefab;
+                if (!em.HasComponent<NetData>(np) || (em.GetComponentData<NetData>(np).m_RequiredLayers & (Layer.TrainTrack | Layer.SubwayTrack | Layer.TramTrack)) == 0) continue;
+                // the closest approach between the platform edge and a parallel CS1 track (a CS1 track that continues the
+                // platform from its end counts as 0, wherever it bends afterwards)
+                var pc = em.GetComponentData<Curve>(e).m_Bezier;
+                var pdir = math.normalizesafe(pc.d.xz - pc.a.xz, new float2(1, 0));
+                float best = float.MaxValue;
+                foreach (var tr in tracks)
+                {
+                    var bz = new Bezier4x3(new float3(tr.A.x + ox, 0, tr.A.y + oz), new float3(tr.B.x + ox, 0, tr.B.y + oz), new float3(tr.C.x + ox, 0, tr.C.y + oz), new float3(tr.D.x + ox, 0, tr.D.y + oz));
+                    for (int k = 0; k <= 16; k++)
+                    {
+                        var pp = MathUtils.Position(pc, k / 16f).xz;
+                        float t;
+                        float d = MathUtils.Distance(bz.xz, pp, out t);
+                        if (d >= best) continue;
+                        var tan = math.normalizesafe(MathUtils.Tangent(bz, t).xz, pdir);
+                        if (math.abs(math.dot(tan, pdir)) < 0.87f) continue; // a crossing track
+                        best = d;
+                    }
+                }
+                dists.Add(best == float.MaxValue ? "none" : best.ToString("F1"));
+            }
+            return dists.Count == 0 ? "no platform track built" : dists.Count + " track edge(s): " + string.Join(", ", dists) + " m from the nearest parallel CS1 track";
+        }
+
+        /// <summary>Line offsets merged when closer than tol (their mean), sorted.</summary>
+        static List<float> MergeLines(List<float> offsets, float tol)
+        {
+            var o = new List<float>(offsets); o.Sort();
+            var res = new List<float>();
+            int i = 0;
+            while (i < o.Count)
+            {
+                int j = i; float sum = 0;
+                while (j < o.Count && o[j] - o[i] <= tol) { sum += o[j]; j++; }
+                res.Add(sum / (j - i));
+                i = j;
+            }
+            return res;
+        }
+
+        sealed class Cs1Track { public float2 A, B, C, D; public string Family; }
+
+        /// <summary>The plan's track segments (prefab type TrackPrefab), in plan coordinates, with their family.</summary>
+        static List<Cs1Track> LoadTracks(string path)
+        {
+            path = Environment.ExpandEnvironmentVariables(path);
+            if (Directory.Exists(path)) path = Path.Combine(path, "cs1conv-plan.json");
+            var root = MiniJson.Parse(File.ReadAllText(path, Encoding.UTF8)) as Dictionary<string, object>;
+            var res = new List<Cs1Track>();
+            var prefabs = root != null && root.ContainsKey("prefabs") ? root["prefabs"] as Dictionary<string, object> : null;
+            var segs = root != null && root.ContainsKey("segments") ? root["segments"] as List<object> : null;
+            if (prefabs == null || segs == null) return res;
+            foreach (var o in segs)
+            {
+                var d = o as Dictionary<string, object>;
+                if (d == null) continue;
+                var key = P.Str(d, "prefab", "");
+                var pf = prefabs.ContainsKey(key) ? prefabs[key] as Dictionary<string, object> : null;
+                if (pf == null || P.Str(pf, "type", "") != "TrackPrefab") continue;
+                var fam = TrackFamily(P.Str(pf, "name", "") + " " + P.Str(pf, "source", ""));
+                var bz = d.ContainsKey("bezier") ? d["bezier"] as List<object> : null;
+                if (fam == null || bz == null || bz.Count != 4) continue;
+                Func<int, float2> pt = i => { var l = (List<object>)bz[i]; return new float2(Convert.ToSingle(l[0]), Convert.ToSingle(l[2])); };
+                res.Add(new Cs1Track { A = pt(0), B = pt(1), C = pt(2), D = pt(3), Family = fam });
+            }
+            return res;
+        }
+
+        static string TrackFamily(string name)
+        {
+            if (name.IndexOf("Subway", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Metro", StringComparison.OrdinalIgnoreCase) >= 0) return "subway";
+            if (name.IndexOf("Tram", StringComparison.OrdinalIgnoreCase) >= 0) return "tram";
+            if (name.IndexOf("Train", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Rail", StringComparison.OrdinalIgnoreCase) >= 0) return "train";
+            return null;
+        }
+
+        /// <summary>
+        /// Decision #48: where a station must stand so its platform tracks lie on the CS1 tracks it served. The platform
+        /// axis and centre come from the prefab's track sub-nets (local space); the CS1 axis and bundle centre from the
+        /// plan's tracks of the same family within the station's reach, roughly parallel to its lot. The station keeps the
+        /// CS1 facing (of the two directions along the track, the one nearer it), and its platform centre goes to the CS1
+        /// lot centre along the track. False (with a reason) when the prefab has no platform track or no CS1 track is near.
+        /// </summary>
+        static bool StationAnchor(EntityManager em, Entity prefab, Item it, float2 centre, List<Cs1Track> tracks, out float2 pos, out float2 forward, out string note)
+        {
+            pos = centre; forward = new float2(0, 1); note = null;
+            if (!em.HasBuffer<Game.Prefabs.SubNet>(prefab)) { note = "no platform track in the prefab"; return false; }
+            var buf = em.GetBuffer<Game.Prefabs.SubNet>(prefab, true);
+            string fam = null;
+            var mids = new List<float2>(); var dirs = new List<float2>();
+            for (int i = 0; i < buf.Length; i++)
+            {
+                var np = buf[i].m_Prefab;
+                if (np == Entity.Null || !em.HasComponent<NetData>(np)) continue;
+                var layers = em.GetComponentData<NetData>(np).m_RequiredLayers;
+                string f = (layers & Layer.TrainTrack) != 0 ? "train" : (layers & Layer.SubwayTrack) != 0 ? "subway" : (layers & Layer.TramTrack) != 0 ? "tram" : null;
+                if (f == null) continue;
+                if (fam == null) fam = f;
+                var c = buf[i].m_Curve;
+                var dv = c.d.xz - c.a.xz;
+                if (math.lengthsq(dv) < 1f) continue;
+                mids.Add(MathUtils.Position(c, 0.5f).xz);
+                dirs.Add(math.normalize(dv));
+            }
+            if (fam == null || dirs.Count == 0) { note = "no platform track in the prefab"; return false; }
+            var u = dirs[0];
+            float2 usum = 0, csum = 0; int un = 0;
+            for (int i = 0; i < dirs.Count; i++)
+            {
+                var dv = math.dot(dirs[i], u) < 0 ? -dirs[i] : dirs[i];
+                if (math.abs(math.dot(dv, u)) < 0.87f) continue; // crossovers off the platform axis
+                usum += dv; csum += mids[i]; un++;
+            }
+            u = math.normalize(usum);
+            var cLocal = csum / un;
+            // CS1 tracks of the same family near the station, roughly along its lot (perpendicular to the CS1 facing)
+            var facing = it.Facing != null ? math.normalizesafe(new float2((float)it.Facing[0], (float)it.Facing[1]), new float2(0, 1)) : new float2(0, 1);
+            var lotAxis = new float2(facing.y, -facing.x);
+            var lotSize = em.HasComponent<BuildingData>(prefab) ? em.GetComponentData<BuildingData>(prefab).m_LotSize : new int2(16, 6);
+            float reach = math.max(lotSize.x, lotSize.y) * 4f + 24f;
+            var ox = (float)it.Ox; var oz = (float)it.Oz;
+            // only the tracks inside the CS1 lot's depth band and near its length: a station can sit beside a whole
+            // bundle of through tracks (Skibidi's west terminus: 6 parallel tracks, 2 within its lot)
+            float halfDepth = (it.Cs1Lot != null ? (float)it.Cs1Lot[1] : lotSize.y) * 4f + 4f;
+            float halfWidth = (it.Cs1Lot != null ? (float)it.Cs1Lot[0] : lotSize.x) * 4f + 40f;
+            var closest = new List<float2>();
+            foreach (var tr in tracks)
+            {
+                if (tr.Family != fam) continue;
+                var bz = new Bezier4x3(new float3(tr.A.x + ox, 0, tr.A.y + oz), new float3(tr.B.x + ox, 0, tr.B.y + oz), new float3(tr.C.x + ox, 0, tr.C.y + oz), new float3(tr.D.x + ox, 0, tr.D.y + oz));
+                float t;
+                float dd = MathUtils.Distance(bz.xz, centre, out t);
+                if (dd > reach) continue;
+                var tan = math.normalizesafe(MathUtils.Tangent(bz, t).xz, lotAxis);
+                if (math.abs(math.dot(tan, lotAxis)) < 0.87f) continue; // a crossing track
+                var cp = MathUtils.Position(bz, t).xz;
+                if (math.abs(math.dot(cp - centre, facing)) > halfDepth || math.abs(math.dot(cp - centre, lotAxis)) > halfWidth) continue;
+                closest.Add(cp);
+            }
+            if (closest.Count == 0) { note = "no CS1 " + fam + " track along the CS1 lot"; return false; }
+            // The station keeps the CS1 orientation: its platform runs along the CS1 lot (a CS1 station's own tracks do).
+            // The CS1 tracks' tangent where they start, at the station's end, turned Skibidi's terminus 4.7 deg (6 m off at
+            // its middle).
+            var tdir = lotAxis;
+            var n = new float2(-tdir.y, tdir.x);
+            // CS1 track lines across the lot (offsets along n, merged within 3 m) and the station's own platform lines
+            var cs1Lines = new List<float>();
+            foreach (var q in closest) cs1Lines.Add(math.dot(q - centre, n));
+            cs1Lines = MergeLines(cs1Lines, 3f);
+            var uPerp = new float2(-u.y, u.x);
+            var ownLines = new List<float>();
+            for (int i = 0; i < mids.Count; i++) if (math.abs(math.dot(math.dot(dirs[i], u) < 0 ? -dirs[i] : dirs[i], u)) >= 0.87f) ownLines.Add(math.dot(mids[i], uPerp));
+            int k = MergeLines(ownLines, 3f).Count;
+            // where the platform centroid would be unaligned (CS1 centre and facing), across the track
+            var right0 = new float2(facing.y, -facing.x);
+            float off0 = math.dot(cLocal.x * right0 + cLocal.y * facing, n);
+            // fewer platform lines than CS1 lines in the lot (Skibidi's terminus: 1 double-track platform, 2 CS1 double
+            // tracks): the k adjacent CS1 lines nearest the unaligned platform, not the centre of all (which left the
+            // platform between two tracks)
+            float target = PlacementRules.NearestLines(cs1Lines, k, off0);
+            var Q = centre + n * target;
+            // rotation and position (PlacementRules.AnchorPose, tested game-free)
+            double px, pz, fx, fz;
+            PlacementRules.AnchorPose(u.x, u.y, cLocal.x, cLocal.y, tdir.x, tdir.y, Q.x, Q.y, centre.x, centre.y, facing.x, facing.y, out px, out pz, out fx, out fz);
+            pos = new float2((float)px, (float)pz);
+            forward = new float2((float)fx, (float)fz);
+            float across = math.dot(pos - centre, n), alongShift = math.dot(pos - centre, tdir);
+            float turned = math.degrees(math.acos(math.clamp(math.dot(forward, facing), -1f, 1f)));
+            note = "anchored on " + Math.Min(k, cs1Lines.Count) + " of " + cs1Lines.Count + " CS1 " + fam + " track line(s): shifted " + math.abs(across).ToString("F1") + " m across and " + math.abs(alongShift).ToString("F1") + " m along, turned " + turned.ToString("F1") + " deg";
+            return true;
+        }
+
         /// <summary>Report lines for the depots placed away from their CS1 spot by decision #152.</summary>
         static List<object> DepotsMoved(List<Item> items)
         {
@@ -698,6 +938,24 @@ namespace Cs2Buildings
                 if (it.DepotRetry && it.Status == "placed")
                     l.Add((it.Cs1Info ?? it.Prefab) + ": " + PlacementRules.DepotMovedNote + " (" + it.Distance.ToString("F0") + " m from its CS1 spot, " + Cs1Pos(it) + ")");
             return l;
+        }
+
+        /// <summary>op platformcheck {plan, offsetX, offsetZ} [main]: PlatformCheck for every placed station building with track sub-nets. Read only.</summary>
+        public static object PlatformCheckOp(Dictionary<string, object> a)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            var em = world.EntityManager;
+            var ps = world.GetOrCreateSystemManaged<PrefabSystem>();
+            var tracks = LoadTracks(P.Required(a, "plan"));
+            float ox = (float)P.Num(a, "offsetX", 0), oz = (float)P.Num(a, "offsetZ", 0);
+            var res = new List<object>();
+            foreach (var b in FindBuildings(em))
+            {
+                var pf = b.Prefab;
+                if (!em.HasComponent<TransportStationData>(pf) && !em.HasComponent<PublicTransportStationData>(pf)) continue;
+                res.Add(ps.GetPrefabName(pf) + " @ " + PlacementRules.Position(b.Position.x, b.Position.z) + ": " + PlatformCheck(em, b.Entity, tracks, ox, oz));
+            }
+            return new Dictionary<string, object> { { "stations", res } };
         }
 
         static void Fail(Item it, Dictionary<string, int> failures, string kind, string reason)
@@ -849,7 +1107,7 @@ namespace Cs2Buildings
                     Dx = dx, Dz = dz,
                     Cs1Info = P.Str(d, "cs1Info", null),
                     X = P.Num(d, "x", 0), Z = P.Num(d, "z", 0), Score = P.Num(d, "score", 0),
-                    Front = Pair(d, "front"), Facing = Pair(d, "facing"),
+                    Front = Pair(d, "front"), Facing = Pair(d, "facing"), Cs1Lot = Pair(d, "cs1Lot"),
                     AccessSegment = (int)P.Num(d, "accessSegment", 0),
                     Alternatives = Strings(d, "alternatives"),
                 });

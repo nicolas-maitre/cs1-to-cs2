@@ -36,7 +36,12 @@ namespace Cs2ImporterMod
             Settings.RegisterInOptionsUI();
             // buildings/ worker's steps (buildings, objects, districts, surfaces), behind one Options toggle
             Cs2Buildings.Steps.RegisterAll((name, step) => ImportSteps.Register(name, args =>
-                Settings.ApplyBuildings ? step(args) : SkippedStep("label.ApplyBuildings")));
+            {
+                if (!Settings.ApplyBuildings) return SkippedStep("label.ApplyBuildings");
+                // #170: station platforms aligned on the CS1 track, opt-in with rail like transit.rail
+                if (name == "buildings") args["buildings.alignStations"] = Settings.ConnectRail;
+                return step(args);
+            }));
             // transit after the buildings (stations and depots first)
             ImportSteps.Register("transit", args =>
             {

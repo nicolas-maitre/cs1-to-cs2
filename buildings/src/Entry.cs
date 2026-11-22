@@ -45,6 +45,7 @@ namespace Cs2Buildings
                 case "linetest": return LineTest.Start(args);
                 case "nodes": return NodesOp(args);
                 case "census": return CensusOp(args);
+                case "platformcheck": return Placement.PlatformCheckOp(args);
                 case "zonecells": return ZoneCellsOp(args);
                 default: throw new ArgumentException("unknown op '" + op + "' (catalogue, place, inspect, list, objects, areas, prefab, utilities, netlayers, instance, water)");
             }
