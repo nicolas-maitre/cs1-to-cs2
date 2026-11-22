@@ -244,6 +244,8 @@ Runs: `.gamectl/tracklink/6k-run7`, diagnostics `node transit/tools/node-diag.mj
 ## 7. Release candidate (buildings worker)
 
 > **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+>
+> **Fixed in 2680feb** (DECISIONS.md #166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street, and imported bus lines get buses.
 
 `node tools/release/acceptance.mjs --simulate 300 [--skip-build] [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after e17a74c: a fresh release build (product 0.3.0; exporter 1.2.1, **importer 0.3.1**, **web 0.5.2**, buildings 0.3.0).
 - **Install:** the importer from `cs2-importer-0.3.1.zip` before each city.
@@ -298,6 +300,8 @@ Runs: `.gamectl/tracklink/6k-run7`, diagnostics `node transit/tools/node-diag.mj
 ## 8. Release (RC2, vanilla roads) (cs2-importer worker)
 
 > **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+>
+> **Fixed in 2680feb** (DECISIONS.md #166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street, and imported bus lines get buses.
 
 `node tools/release/acceptance.mjs --skip-build --simulate 300 [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after `node tools/release/build.mjs`.
 
@@ -451,6 +455,8 @@ Raw results: `.gamectl/qa/utilities-cs1conv-acceptance-20261121-{133435,134438,1
 ## 10. Full city, all features (cs2-importer worker, docs/DECISIONS.md #143)
 
 > **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+>
+> **Fixed in 2680feb** (DECISIONS.md #166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street, and imported bus lines get buses.
 
 **Setup:**
 - **Package:** Skibidi at the largest crop (`--auto-crop 14336`, centre 1250/1250), web 0.9.3 (HEAD f39eac3): 4741 segments (101 tunnels, 112 with Node Controller shifts), conform burn 3208 segments and walls burn 877 (none skipped), 253 buildings, 38,900 trees and 539 rocks, 16 transit lines, 928 TM:PE lane connections.
@@ -524,6 +530,8 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
 ## 11. Release candidate 3 (buildings worker)
 
 > **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+>
+> **Fixed in 2680feb** (DECISIONS.md #166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street, and imported bus lines get buses.
 
 `node tools/release/acceptance.mjs --skip-build --simulate 300 [--cs1x %LOCALAPPDATA%/cs1-to-cs2/qa/<city>.cs1x]` after `node tools/release/build.mjs --npm-ci` and `--check`.
 
@@ -577,6 +585,8 @@ Memory wasn't captured (the sampler's parsing failed on the localised `tasklist`
 ## 12. Final release acceptance, 0.3.1 (buildings worker)
 
 > **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+>
+> **Fixed in 2680feb** (DECISIONS.md #166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street, and imported bus lines get buses.
 
 Same procedure as RC3 (§11): a `git archive` of **13c25e5** in `%LOCALAPPDATA%\cs1-to-cs2\final\13c25e5` plus `local.props`; `node tools/release/build.mjs --npm-ci`, then `--check`; then `node tools/release/acceptance.mjs --skip-build --simulate 300` per city.
 - **Artefacts:** product **0.3.1**: exporter 1.2.2, **importer 0.4.0**, **buildings 0.4.0**, **web 0.9.4**. Build and `--check` passed.
@@ -623,6 +633,8 @@ Same procedure as RC3 (§11): a `git archive` of **13c25e5** in `%LOCALAPPDATA%\
 ## 13. Final release acceptance, 0.3.1 with Node Controller offsets (buildings worker)
 
 > **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow; this is a known limit, being fixed.
+>
+> **Fixed in 2680feb** (DECISIONS.md #166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street, and imported bus lines get buses.
 
 Same procedure as §11 and §12: a `git archive` of **693ba8a** in `%LOCALAPPDATA%\cs1-to-cs2\final\693ba8a` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city.
 - **Artefacts:** product 0.3.1: exporter 1.2.2, importer 0.4.0, buildings 0.4.0, **web 0.9.5**. Build and `--check` passed.
@@ -709,6 +721,8 @@ Trains run with the opt-in; metros remain a known limit until the yard can be al
 ## 14. Final release acceptance, 0.3.1 with CS1 line names (buildings worker)
 
 > **Correction (2026-11-22, DECISIONS.md #164, #165):** the bus totals in this section count every `Bus01` in the city, parked ones included. No imported bus line got a vehicle: the buses stayed parked in the depot and every line's vehicle request failed. Imported bus lines have never got vehicles in the mod flow. The per-line count of 0 below was right; this is a known limit, being fixed.
+>
+> **Fixed in 2680feb** (DECISIONS.md #166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street, and imported bus lines get buses.
 
 Same procedure as §13: a `git archive` of **af82ed1** in `%LOCALAPPDATA%\cs1-to-cs2\final\af82ed1` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).
 - **Artefacts:** product 0.3.1: exporter 1.2.2, importer 0.4.0, buildings 0.4.0, web 0.9.5. Build and `--check` passed. **`LICENSE.txt` is in all three zips.**

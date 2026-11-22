@@ -66,7 +66,7 @@ Per city, the web tool also shows this per category with your numbers (Overview 
 
 | CS1 | CS2 | Status | Notes |
 | --- | --- | --- | --- |
-| Bus and tram lines | CS2 lines with colour, name, number and stops | converts, approximated | Trolleybus, tourist and intercity buses become bus lines. They get no vehicles yet (known limit, being fixed). |
+| Bus and tram lines | CS2 lines with colour, name, number and stops | converts, approximated | Trolleybus, tourist and intercity buses become bus lines. A depot is placed for them; a city with few depots may not have enough buses for every line. |
 | Train, metro, ship and plane lines | CS2 lines at the placed stations | converts, approximated | Need their stations from the buildings step. Metro and train yards go at the crop edge where the track leaves it (or you place them); never inside the city. |
 
 ## Buildings

@@ -68,7 +68,13 @@ Les bâtiments CS2 ont souvent besoin de plus de place que leurs équivalents CS
 
 ## Ma ligne de bus ou de tram n'a pas de véhicules.
 
-C'est une limite connue de cette version, en cours de correction. L'importeur crée les lignes de bus et de tram avec leurs noms, couleurs et arrêts, et veille à ce que chaque type ait un dépôt, mais le dépôt n'envoie encore aucun véhicule : les bus restent garés.
+Les lignes de bus et de tram reçoivent leurs véhicules d'un dépôt de leur type, et l'importeur en place un pour elles (à proximité, si aucun ne tient à sa place CS1). Si une ligne n'en a toujours pas, cherchez l'une de ces causes :
+
+**Capacité du dépôt :** tous les véhicules des dépôts de ce type de la ville roulent déjà sur d'autres lignes. Une ville avec peu de dépôts peut manquer de bus pour toutes ses lignes ; ajoutez un dépôt, ou des véhicules, dans le jeu.
+
+**Un arrêt retiré au bord de la découpe :** un arrêt sur une route à sens unique qui ne mène qu'au bord du carré (ou n'en vient que) ne peut pas être desservi ; l'outil web le retire et le rapport le nomme. Le reste de la ligne est gardé.
+
+**Aucun dépôt de ce type :** le rapport d'import le signale ; placez-en un dans le jeu.
 
 ## Ma ligne de métro ou de train n'a pas de véhicules.
 

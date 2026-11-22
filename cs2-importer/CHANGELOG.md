@@ -5,6 +5,8 @@ The CS1 → CS2 Importer, a Cities: Skylines II mod (`Cs2ImporterMod`). The vers
 ## 0.4.0 (2026-11-22)
 
 **Added after release candidate 3** (final acceptance, docs/QA.md §14)
+- **Fix: bus and tram lines run.** The buildings step now places buildings through the game's own apply (DECISIONS.md #166, #168), so a depot is joined to the street and sends out its vehicles. Before, imported bus and tram lines never got vehicles, RC2 and RC3 included (#164). On Skibidi, 6 of 8 imported bus lines run 23 buses; the other 2 wait for vehicles, because the CS1 city's one bus depot has 24 buses, all out.
+- **Utility stubs stay clear of dead ends and bus stops** (#167): a stub beside a road's dead end kept CS2 from building the turnaround buses need there.
 - **New opt-in setting: "Connect train and metro stations and add rail yards at the edge of the area"** (off by default, DECISIONS.md #161). Before the train and metro lines are created, each station's platform ends are joined to the imported track with smooth curves. Where a line's track leaves the converted area, a rail or subway yard is placed there and joined to it. A line whose track stays inside the area is named in the report ("place a yard yourself"). Joins never cross a road at grade.
 - **Fix: transit lines get their CS1 names and numbers again in the mod.** The line results came back as a typed list that the mod read as empty, so `named` was always 0.
 - Why it's off by default:
@@ -21,7 +23,7 @@ Passed release candidate 3 on Skibidi, CacaoCity (left-hand) and Westfield throu
   - roads keep their lanes (bus-stop roads get their bus bay at once, not on the next load);
   - lane connections and arrows survive the reload, with no Traffic mod load failures;
   - lane arrows follow CS1's geometry.
-- **Bus and tram lines get a depot** (#152): when none of the city's bus (or tram) depots fits at its CS1 spot, one is placed nearby, and the report says so (on Skibidi, the Bus Depot is placed 117 m away). The lines still get no buses: see Known limits. The "31 buses on 9 lines" first given here counted buses parked in the depot (DECISIONS.md #164). Rail and subway yards and other buildings still never move.
+- **Bus and tram lines get a depot** (#152): when none of the city's bus (or tram) depots fits at its CS1 spot, one is placed nearby, and the report says so (on Skibidi, the Bus Depot is placed 117 m away), so its lines get buses. Rail and subway yards and other buildings still never move.
 - **The import report lists every step**, and names each building it couldn't place, each power plant that needs a transformer, and each depot type left with none (#121, #150, #152).
 
 **Opt-in**
@@ -30,7 +32,7 @@ Passed release candidate 3 on Skibidi, CacaoCity (left-hand) and Westfield throu
 - **Rail and subway yards inside the area** (transit decision #14; command-line runs only). By default a yard is placed only where the line's track leaves the converted area (#83).
 
 **Known limits**
-- **Bus and tram lines get no vehicles yet** (DECISIONS.md #164, #165). The lines, their stops and paths are created, but the depot doesn't dispatch: the buses stay parked and every line reports it needs vehicles. It has been so since the mod flow began (RC2 included); being fixed.
+- **Depot capacity:** A city with few depots may not have enough buses for every line; add depots or vehicles in game. A bus or tram stop on a one-way road that only leads to the crop edge is dropped (web tool 0.9.6), and the report names it.
 - **Trains and metros don't run yet** (#99, #133). Lines, stations and paths are created, and a yard spawns trains, but they don't leave the yard.
 - **Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed** (#106); they're listed as "place it yourself" with both positions. On a 3 km Skibidi crop that's 30 of 108.
 - **Power producers away from any road produce nothing** (#150): CS2 needs the building's own road connection, and no road is invented. They're named in the report.

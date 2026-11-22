@@ -52,7 +52,7 @@ Output goes to `release/<product version>/` (git-ignored):
 2. makes the package with the web CLI (`--cs1x`, default the Skibidi sample; `--auto-crop`, default 3000, or a fixed square with `--crop cx,cz,size`);
 3. presses the mod's Options buttons as a user would: **Install Road Builder configs**, restart CS2, new city (`--map`, default Corral Riches), **Check**, **Prepare map**, **Import into this city**;
 4. checks that every road runs the way it did in CS1: the importer's op `lanedirs` dumps each segment's CS2 car-lane directions, and [`lanedirs-compare.mjs`](../tools/release/lanedirs-compare.mjs) compares them with the export's CS1 lanes (one-way, two-way and asymmetric roads; left-hand cities included);
-5. simulates for 60 s (`--simulate`), counts the public-transport vehicles by kind (bus, tram, metro, train) with the transit exec library (these totals include vehicles parked in depots; the vehicles on each imported line are what show whether its lines run, #164), takes screenshots, saves `cs1conv-acceptance-<time>`, and writes `.gamectl/acceptance/<time>/summary.json` with each step's time and result.
+5. simulates for 60 s (`--simulate`), counts the public-transport vehicles by kind (bus, tram, metro, train) with the transit exec library (these totals include vehicles parked in depots), counts the vehicles moving on each imported line, and fails when an imported bus or tram line has none, unless every depot of that kind is out of vehicles (#164, #168), takes screenshots, saves `cs1conv-acceptance-<time>`, and writes `.gamectl/acceptance/<time>/summary.json` with each step's time and result.
 
 The buttons are pressed through the Cs2Importer exec library's `op mod`, which calls the same `Actions` methods; there is no other way into the Options page from a script. Results go in [QA.md](QA.md) under "Release acceptance".
 
@@ -73,6 +73,7 @@ Built from a `git archive` of b71a160 and run through the real mod flow on Corra
 - **Fixed after RC3** (not in the tested build): matcher 1.2.1 (CS1's Water Tower → groundwater pump), the transit library built in acceptance, and the depot fallback of #152.
 - **Known limits:** trains and metros (#99), buildings that overlap a road at their CS1 spot (#106), power producers away from any road (#150). They're in each changelog.
 - **Correction (#164, #165):** imported bus and tram lines get no vehicles; the depot doesn't dispatch. This was found after RC3 and holds for RC2 and RC3 too: the bus counts in their acceptance runs (QA.md §8, §11) included parked buses. It's a known limit in each changelog, being fixed.
+- **Fixed in 2680feb** (#166, #168): buildings are now placed through the game's own apply, so the depot is joined to the street. On Skibidi, 6 of 8 imported bus lines run 23 buses; the other 2 wait for vehicles from the city's one bus depot. The changelogs now say bus and tram lines run.
 
 ## Before you publish
 

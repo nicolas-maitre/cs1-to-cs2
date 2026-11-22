@@ -68,7 +68,13 @@ CS2 buildings often need more room than their CS1 counterparts. When one doesn't
 
 ## My bus or tram line has no vehicles.
 
-That's a known limit of this version, being fixed. The importer creates bus and tram lines with their names, colours and stops, and makes sure each type has a depot, but the depot doesn't send out any vehicles yet: the buses stay parked.
+Bus and tram lines get their vehicles from a depot of their kind, and the importer places one for them (nearby, if none fits at its CS1 spot). If a line still has none, look for one of these:
+
+**Depot capacity:** every vehicle of the city's depots of that kind is already out on other lines. A city with few depots may not have enough buses for every line; add a depot, or more vehicles, in game.
+
+**A stop dropped at the crop edge:** a stop on a one-way road that only leads to (or comes from) the edge of the square can't be served, so the web tool drops it and the report names it ("stop 15 (CS1 segment 20357) dropped: its road only leads to the crop edge"). The rest of the line is kept.
+
+**No depot of that kind:** the import report says so ("no bus depot placed"); place one in game.
 
 ## My metro or train line has no vehicles.
 

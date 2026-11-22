@@ -66,7 +66,7 @@ Pour chaque ville, l'outil web montre aussi ceci par catégorie avec vos chiffre
 
 | CS1 | CS2 | État | Remarques |
 | --- | --- | --- | --- |
-| Lignes de bus et de tram | Lignes CS2 avec couleur, nom, numéro et arrêts | converti, approché | Trolleybus, bus touristiques et interurbains deviennent des lignes de bus. Elles n'ont pas encore de véhicules (limite connue, en cours de correction). |
+| Lignes de bus et de tram | Lignes CS2 avec couleur, nom, numéro et arrêts | converti, approché | Trolleybus, bus touristiques et interurbains deviennent des lignes de bus. Un dépôt est placé pour elles ; une ville avec peu de dépôts peut manquer de bus pour toutes ses lignes. |
 | Lignes de train, métro, bateau et avion | Lignes CS2 aux gares placées | converti, approché | Ont besoin de leurs gares, placées avec les bâtiments. Les dépôts de métro et de train vont au bord de la découpe, là où la voie en sort (ou vous les placez) ; jamais dans la ville. |
 
 ## Bâtiments

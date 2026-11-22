@@ -40,10 +40,10 @@ Requirements:
 
 Known limits:
 
-* **Bus and tram lines are created with their stops but get no vehicles yet** (the depot doesn't dispatch); known limit, being fixed.
 * **Trains and metros don't run yet:** their lines and stations are created, but no train leaves its yard.
 * Buildings whose CS2 lot overlaps a road at the CS1 spot aren't placed; the report lists each one ("place it yourself").
 * Big power plants feed the city only through a transformer station (opt-in setting); producers away from any road produce nothing.
+* A city with few depots may not have enough buses for every line; add depots or vehicles in game.
 * Growable buildings are left to the zoning.
 
 The source is open (MIT licence). This mod isn't affiliated with or endorsed by Colossal Order or Paradox Interactive.
@@ -60,8 +60,7 @@ The source is open (MIT licence). This mod isn't affiliated with or endorsed by 
 * Power and water from outside the map: electricity and water outside connections at the edge of the imported roads, so a city without its own plants still gets supplied.
 * CS1's own power lines and pipes are rebuilt; small power plants get a line to the nearest road. Transformer stations next to big power plants are an opt-in setting.
 * The city stays the same after a save and reload: roads keep their lanes, and lane connections and arrows survive.
-* When none of a city's bus or tram depots fits at its CS1 spot, one is placed nearby.
-* Bus and tram lines are created with their stops but get no vehicles yet (the depot doesn't dispatch); known limit, being fixed.
+* Bus and tram lines run: a depot is placed for them, nearby when none fits at its CS1 spot. A city with few depots may not have enough buses for every line; add depots or vehicles in game.
 * The import report lists every step and everything left to do by hand.
 * Transit lines keep their CS1 names and numbers.
 * New opt-in setting: connect train and metro stations and add rail yards at the edge of the area (off by default for now).
