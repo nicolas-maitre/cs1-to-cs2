@@ -900,6 +900,39 @@ Rail stays off by default; nothing here is in the release.
 
 Rail stays off by default; nothing here is in the release.
 
+### 5j. Metro paths: skew trim (2 load-only diagnostics + 2 acceptance runs + 1 load-only per-segment check, on a1ef653 + working copy; opt-in `ConnectRail`)
+
+**Question:** why does Metro Line 3 on the standard Skibidi 3 km crop have no path, with rail off (§15) or on (§16)?
+
+**Cause** (`transit/tools/metro-diag.mjs` on the §15 and §16 saves, `.gamectl/tracklink/metro-diag-1.json`, `-2.json`):
+- **With rail off,** no link joins the stations' platforms to the imported track: each station is an island. That's expected.
+- **With rail on,** the stations are edge-connected but not lane-connected, at two joints:
+  - station A's east end: a 5 m link stepping 7 m sideways, built straight;
+  - station B's east end: an 8 m link stepping 6 m sideways.
+- Both joints are far sharper than a shallow switch, so CS2 gives them no lanes (#16). The SubwayStationElevated02 platforms sit 6–8 m off the CS1 track axis (not anchored, #48).
+- The west ends worked, because their trim moved the target 40–90 m back.
+
+**Fix (behind `frontOnly`): skew trim.** A station-end target must lie ahead by at least 5× its sideways offset (within ~11° of the platform axis; `skew`, `skewMinLateral`). Otherwise the imported track is trimmed back along its chain (`TrimChain`, never past a junction) to the first node that does, and the link is built smoothly to it. The results are `skewTrim` or `skewNotTrimmed` per link, and the trims count in `trimmedEdges`.
+
+**Results:**
+
+| | Skibidi 3 km (`20261122-124038`) | Skibidi 6 km (`20261122-125049`) |
+| --- | --- | --- |
+| Acceptance | **ok=true**, every gate | **ok=true**, every gate |
+| Placer's road guard | 2015 road edges, 0 gone | 3263, 0 gone |
+| Roads after reload / lanes after reload | 0 of 2030 / 120 of 120 | 0 of 3401 / 468 of 468 |
+| Heights | 5 track segments missing: 7 trimmed, 2 merged, 0 unexplained | 23 missing: 19 trimmed, 10 merged, 0 unexplained |
+| Skew trims | 2 (A east to (−844, 684), B east to (111, 669)) | the same 2; 8 others not trimmed (a junction lies right behind the target) |
+| **Metro Line 3, path per segment** | **20 / 19 / 19 / 20** (0 before) | **37 / 32 / 20 / 18 / 18 / 20** |
+| Metro Lines 1 and 2, per segment | – | 37 / 0 / 0 / 0 / 31 and 0 / 0 / 0 / 37 / 31 |
+| Train Line 1 | – | 86 / 94; **1 moving train** |
+| Buses | 7 of 8 lines, 23 running (capacity-limited) | 10 of 16, 21 running (capacity-limited) |
+
+**Still open:**
+- **Metro Lines 1 and 2** (6 km crop) have no path on 3 of 5 segments each. They run through the underground SubwayStation01 entrances, which are placed 14–44 m sideways of the CS1 track ("no CS1 subway track along the CS1 lot"). The skew trim stops there, because a junction lies right behind the imported dead end.
+- **Next lead:** anchor underground metro stations on their CS1 track (buildings placer), or link to a node beyond the junction.
+- **No metro line gets vehicles:** no subway yard is placed when the track stays inside the crop (#83).
+
 ## 15. Final release acceptance, 0.3.1 with running bus lines (buildings worker)
 
 Decision 168: a `git archive` of **66558c8** in `%LOCALAPPDATA%\cs1-to-cs2\final\66558c8` plus `local.props`; `build.mjs --npm-ci`, then `--check`; then `acceptance.mjs --skip-build --simulate 300` per city, with default settings (rail off).

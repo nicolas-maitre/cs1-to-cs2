@@ -1071,6 +1071,29 @@ namespace Cs1ConvTransit
                             }
                             else li["overlap"] = new Dictionary<string, object> { { "deadEnd", V(best.Pos) }, { "behind", -along }, { "notTrimmed", why } };
                         }
+                        // frontOnly (metro round, 2026-11-22): skew trim. A target ahead of the end but too far to the side
+                        // for its distance (a 5-8 m link stepping 6-7 m sideways at Skibidi's elevated metro stations) gets
+                        // a joint far sharper than a shallow switch: no lanes. It must lie ahead by at least `skew` times
+                        // its sideways offset (5: within ~11 deg of the platform axis); otherwise trim the imported track
+                        // back along its chain (never past a junction) to the first node that does, and link there.
+                        if (frontOnly)
+                        {
+                            float2 relS = (best.Pos - ep).xz;
+                            float alongS = math.dot(relS, dir), latS = math.abs(math.dot(relS, new float2(-dir.y, dir.x)));
+                            float skewK = F(a, "skew", 5f);
+                            if (alongS > -1f && latS > F(a, "skewMinLateral", 1f) && alongS < skewK * latS)
+                            {
+                                var ceS = new List<Entity>(); var cnS = new List<Entity>();
+                                if (TrimChain(best, y.Track, ep, dir, F(a, "beyond", 8f), ceS, cnS, out Target skewT, out string whyS, skewK))
+                                {
+                                    li["skewTrim"] = new Dictionary<string, object> { { "edges", ceS.Count }, { "deadEnd", V(best.Pos) }, { "to", V(skewT.Pos) }, { "ahead", alongS }, { "sideways", latS } };
+                                    trimEdges.AddRange(ceS); trimNodes.AddRange(cnS); trimTo.Add(skewT.Node); trimmedEdges += ceS.Count;
+                                    usedTargets.Add(skewT.Node);
+                                    best = skewT; bd = math.distance(ep.xz, skewT.Pos.xz);
+                                }
+                                else li["skewNotTrimmed"] = new Dictionary<string, object> { { "target", V(best.Pos) }, { "ahead", alongS }, { "sideways", latS }, { "why", whyS } };
+                            }
+                        }
                         if (frontOnly && !InFront(ep, en, best.Pos))
                         {
                             // still behind the end (not trimmed): a link would double back, which gets no lanes
@@ -1388,7 +1411,7 @@ namespace Cs1ConvTransit
         /// <summary>From an imported dead end lying under a station platform, the chain of imported track edges up to
         /// the first node more than `beyond` metres past the platform end (along dir). Stops at a junction (never
         /// deleted) or after 8 edges. nodes = the dead end and the chain's inner nodes (deleted once orphaned).</summary>
-        static bool TrimChain(Target d, TrackTypes track, float3 ep, float2 dir, float beyond, List<Entity> edges, List<Entity> nodes, out Target to, out string why)
+        static bool TrimChain(Target d, TrackTypes track, float3 ep, float2 dir, float beyond, List<Entity> edges, List<Entity> nodes, out Target to, out string why, float skew = 0f)
         {
             to = default; why = null;
             Entity node = d.Node, prev = Entity.Null;
@@ -1403,7 +1426,8 @@ namespace Cs1ConvTransit
                 Entity other = ed.m_Start == node ? ed.m_End : ed.m_Start;
                 edges.Add(next); nodes.Add(node);
                 float3 op = Em.GetComponentData<Node>(other).m_Position;
-                if (math.dot((op - ep).xz, dir) > beyond)
+                float alongOp = math.dot((op - ep).xz, dir), latOp = math.abs(math.dot((op - ep).xz, new float2(-dir.y, dir.x)));
+                if (alongOp > beyond && (skew <= 0f || alongOp >= skew * latOp))
                 {
                     to = new Target { Node = other, Pos = op, Edge = next, Prefab = Em.GetComponentData<PrefabRef>(next).m_Prefab };
                     return true;

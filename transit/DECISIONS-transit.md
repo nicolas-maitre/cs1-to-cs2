@@ -95,3 +95,11 @@ Decisions taken autonomously (by Claude) on 2026-11-21; please review them. The 
     - With `frontOnly`, the guard skips every link end node. The mod's rail acceptance on Skibidi 6 km is ok=true, with a moving train on Train Line 1.
     - **Also added:** landing repair (insurance; it rebuilds a link's last piece if it ends beside its target), and yard level crossings only over ground track.
     - **Still opt-in:** metro has no yard on this crop (#83).
+
+20. **Skew trim for station links (QA §5j, opt-in with `frontOnly`).** A station-end target must lie ahead by at least 5× its sideways offset. Otherwise the imported track is trimmed back along its chain (never past a junction) to the first node that does.
+    - **Why:** at Skibidi's elevated metro stations, 5–8 m links stepped 6–7 m sideways and got no lanes, so Metro Line 3 had no path on the 3 km crop.
+    - **Result:**
+      - Metro Line 3 has a path on every segment (3 km and 6 km);
+      - Train Line 1 still runs (6 km);
+      - every gate is green.
+    - **Open:** Metro Lines 1 and 2 on the 6 km crop, through underground stations placed 14–44 m off the track, where a junction blocks the trim.
