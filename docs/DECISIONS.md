@@ -582,3 +582,8 @@ Full reasoning is in each component's log: [cs1-exporter](../cs1-exporter/DECISI
     - **Bus Line 2:** the utility outside-connection stub (#144) started 2 m from the avenue's dead end, so CS2 built no turnaround. Removing it in game put 2 buses on Line 2.
     - **Fix:** `oc.utilities` never picks a dead-end road node or a node on a stub leading only to the crop edge, prefers the nearest node with 2 or more road edges, and stays clear of bus and tram stop ends (worker-2).
     - **Then:** one acceptance on the three cities with the placer fix (#166) and the per-line bus check.
+168. **Imported bus lines run** (Claude; 2680feb).
+    - **Change:** the buildings placer now builds through Temp definitions plus the tool's Apply, in batches (buildings #47). It writes only visible sub-nets, protects imported two-edge road nodes from CS2's node reduction during the apply, and carries a road guard.
+    - **Result:** on Skibidi, 6 of 8 imported bus lines run 23 buses; before this they had none, ever. The other 2 wait for capacity, because the CS1 city's one bus depot has 24 buses, all out. Acceptance passed on all three cities with 0 roads lost, 0 reload differences and lane reload intact.
+    - **Acceptance rule:** acceptance now counts moving vehicles per imported line. It fails an imported bus or tram line without a vehicle, unless every depot of that kind is out of vehicles.
+    - **Next:** the release texts are reworded to "bus and tram lines run (depot capacity permitting)", `oc.stubcheck` is brought in line with the new stub picks, then one final acceptance from a clean archive decides release 0.3.1.
